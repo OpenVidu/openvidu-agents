@@ -1,0 +1,87 @@
+api_key: devkey
+api_secret: secret
+ws_url: ws://localhost:7880
+
+stt:
+  # Whether to automatically connect to every Room or not
+  auto_connect: true
+  # Whether to automatically subscribe to every audio Track published to the Room or not
+  auto_subscriber: true
+  # Whether the agent Participant should be hidden in the Room or not
+  hidden: true
+  # Which Speech-To-Text provider to use: azure, google, opeanai, groq, deepgram, assemblyai, fal, clova
+  # The custom configuration for the selected provider must be set below
+  provider: openai
+
+  azure:
+    # Credentials for Azure Speech Service. See https://learn.microsoft.com/en-us/azure/ai-services/speech-service/get-started-speech-to-text?tabs=macos%2Cterminal&pivots=programming-language-python#prerequisites
+    # One of these combinations must be set:
+    #  - speech_host
+    #  - speech_key + speech_region
+    #  - speech_auth_token + speech_region
+    speech_host:
+    speech_key:
+    speech_auth_token:
+    speech_region:
+    # Azure handles multiple languages and can auto-detect the language used. It requires the candidate set to be set.
+    languages: [en-US]
+
+  google:
+    # API key for Google Cloud Speech-to-Text. See https://cloud.google.com/speech-to-text/docs/quickstart
+    credentials_file:
+
+  openai:
+    # API key for OpenAI. See https://platform.openai.com/api-keys
+    api_key:
+
+  groq:
+    # API key for Groq. See https://console.groq.com/keys
+    api_key:
+    # See https://console.groq.com/docs/speech-text
+    model: "whisper-large-v3-turbo"
+    # The language of the input audio. Supplying the input language in ISO-639-1 (https://en.wikipedia.org/wiki/List_of_ISO_639_language_codes) format will improve accuracy and latency
+    language: "en"
+
+  deepgram:
+    # See https://console.deepgram.com/
+    api_key:
+    # See https://developers.deepgram.com/reference/speech-to-text-api/listen-streaming#request.query.model
+    model: "nova-2-general"
+    # See https://developers.deepgram.com/reference/speech-to-text-api/listen-streaming#request.query.language
+    language: "en-US"
+    # Whether to return interim (non-final) transcription results. Defaults to true
+    interim_results: true
+    # Whether to apply smart formatting to numbers, dates, etc. Defaults to true
+    smart_format: true
+    # Whether to add punctuations to the transcription. Defaults to true. Turn detector will work better with punctuations
+    punctuate: true
+    # Whether to include filler words (um, uh, etc.) in transcription. Defaults to true
+    filler_words: true
+    # Whether to filter profanity from the transcription. Defaults to false
+    profanity_filter: false
+    # List of tuples containing keywords and their boost values for improved recognition. Defaults to None. keywords does not work with Nova-3 models. Use keyterms instead.
+    keywords:
+      - "OpenVidu"
+
+  assemblyai:
+    # API key for AssemblyAI. See https://assemblyai.com/app/
+    api_key:
+    # See https://www.assemblyai.com/docs/speech-to-text/streaming#add-custom-vocabulary
+    word_boost:
+      - "OpenVidu"
+    # See https://www.assemblyai.com/docs/speech-to-text/streaming#disable-partial-transcripts
+    disable_partial_transcripts: false
+
+  fal:
+    # API key for fal. See https://fal.ai/dashboard/keys
+    api_key:
+    # See https://fal.ai/models/fal-ai/wizper/api#schema
+    language: "en"
+
+  clova:
+    # Secret key issued when registering the app
+    api_key:
+    # API Gateway's unique invoke URL created in CLOVA Speech Domain. See https://guide.ncloud-docs.com/docs/en/clovaspeech-domain#create-domain
+    invoke_url:
+    # Default "en-US". See https://api.ncloud-docs.com/docs/en/ai-application-service-clovaspeech-longsentence
+    language:

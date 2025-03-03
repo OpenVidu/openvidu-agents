@@ -1,17 +1,37 @@
-api_key: devkey
-api_secret: secret
-ws_url: ws://localhost:7880
+##############################
+# Agent common configuration #
+##############################
 
-stt:
-  # Whether to automatically connect to every Room or not
-  auto_connect: true
-  # Whether to automatically subscribe to every audio Track published to the Room or not
-  auto_subscriber: true
-  # Whether the agent Participant should be hidden in the Room or not
-  hidden: true
-  # Which Speech-To-Text provider to use: azure, google, opeanai, groq, deepgram, assemblyai, fal, clova
+# Docker image of the agent.
+docker_image: docker.io/openvidu/agent-speech-to-text:latest
+
+# Whether or not an instance of this agent should be automatically connected to new Rooms.
+# If false, your application will need to call the API to connect the agent to a Room.
+automatic_dispatch: true
+
+# Whether or not the agent should automatically subscribe to every Track published to the Room once connected to it.
+# The kind of Tracks (audio/video) the Agent will subscribe to depends on the agent's capabilities.
+# If false, your application will need to call the API to subscribe the agent to a Track.
+automatic_subscription: true
+
+# Whether or not the agent should be hidden to the Participants of the Room.
+hidden: true
+
+################################
+# Agent specific configuration #
+################################
+speech_to_text:
+  # Which Speech-To-Text provider to use: aws, azure, google, opeanai, groq, deepgram, assemblyai, fal, clova
   # The custom configuration for the selected provider must be set below
-  provider: openai
+  provider: aws
+
+  aws:
+    # Credentials for AWS Transcribe. See https://docs.aws.amazon.com/transcribe/latest/dg/what-is.html
+    aws_access_key_id:
+    aws_secret_access_key:
+    aws_default_region:
+    # See https://docs.aws.amazon.com/transcribe/latest/dg/supported-languages.html
+    language:
 
   azure:
     # Credentials for Azure Speech Service. See https://learn.microsoft.com/en-us/azure/ai-services/speech-service/get-started-speech-to-text?tabs=macos%2Cterminal&pivots=programming-language-python#prerequisites

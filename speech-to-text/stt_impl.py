@@ -1,50 +1,108 @@
 import logging
 import os
-from livekit.plugins import azure, google, openai, deepgram, assemblyai, fal, clova
+from livekit.plugins import aws, azure, google, openai, deepgram, assemblyai, fal, clova
 
 logger = logging.getLogger("agent")
 
 
-def get_azure_stt_impl(agent_config):
-    wrong_azure_config_msg = "Wrong azure credentials. One of these combinations must be set:\n    - speech_host\n    - speech_key + speech_region\n   - speech_auth_token + speech_region"
+def get_aws_stt_impl(agent_config):
+    wrong_aws_config_msg = "Wrong AWS credentials. speech_to_text.aws.aws_access_key_id, speech_to_text.aws.aws_secret_access_key and speech_to_text.aws.aws_default_region must be set"
+
+    # Optional values: [language]
     try:
-        speech_host = agent_config["stt"]["azure"]["speech_host"]
-    except TypeError or KeyError:
+        language = agent_config["speech_to_text"]["aws"]["language"]
+    except Exception:
+        language = None
+
+    try:
+        api_key = agent_config["speech_to_text"]["aws"]["aws_access_key_id"]
+        api_secret = agent_config["speech_to_text"]["aws"]["aws_secret_access_key"]
+        default_region = agent_config["speech_to_text"]["aws"]["aws_default_region"]
+    except Exception:
+        raise ValueError(wrong_aws_config_msg)
+    if api_key is None or api_secret is None or default_region is None:
+        raise ValueError(wrong_aws_config_msg)
+    if language is None:
+        return aws.STT(
+            api_key=api_key, api_secret=api_secret, speech_region=default_region
+        )
+    else:
+        return aws.STT(
+            api_key=api_key,
+            api_secret=api_secret,
+            speech_region=default_region,
+            language=language,
+        )
+
+
+def get_azure_stt_impl(agent_config):
+    wrong_azure_config_msg = "Wrong azure credentials. One of these combinations must be set:\n    - speech_host\n    - speech_key + speech_region\n    - speech_auth_token + speech_region"
+
+    # Optional values: [languages]
+    try:
+        languages = agent_config["speech_to_text"]["azure"]["languages"]
+    except Exception:
+        languages = None
+
+    try:
+        speech_host = agent_config["speech_to_text"]["azure"]["speech_host"]
+    except Exception:
         speech_host = None
     if speech_host is not None:
-        return azure.STT(speech_host=speech_host)
+        if languages is None:
+            return azure.STT(speech_host=speech_host)
+        else:
+            return azure.STT(speech_host=speech_host, languages=languages)
     else:
         try:
-            speech_region = agent_config["stt"]["azure"]["speech_region"]
-        except TypeError or KeyError:
+            speech_region = agent_config["speech_to_text"]["azure"]["speech_region"]
+        except Exception:
             raise ValueError(wrong_azure_config_msg)
         if speech_region is None:
             raise ValueError(wrong_azure_config_msg)
         try:
-            speech_key = agent_config["stt"]["azure"]["speech_key"]
-        except TypeError or KeyError:
+            speech_key = agent_config["speech_to_text"]["azure"]["speech_key"]
+        except Exception:
             speech_key = None
         if speech_key is not None:
-            return azure.STT(speech_key=speech_key, speech_region=speech_region)
+            if languages is None:
+                return azure.STT(speech_key=speech_key, speech_region=speech_region)
+            else:
+                return azure.STT(
+                    speech_key=speech_key,
+                    speech_region=speech_region,
+                    languages=languages,
+                )
         else:
             try:
-                speech_auth_token = agent_config["stt"]["azure"]["speech_auth_token"]
-            except TypeError or KeyError:
+                speech_auth_token = agent_config["speech_to_text"]["azure"][
+                    "speech_auth_token"
+                ]
+            except Exception:
                 raise ValueError(wrong_azure_config_msg)
             if speech_auth_token is None:
                 raise ValueError(wrong_azure_config_msg)
             else:
-                return azure.STT(
-                    speech_auth_token=speech_auth_token,
-                    speech_region=speech_region,
-                )
+                if languages is None:
+                    return azure.STT(
+                        speech_auth_token=speech_auth_token,
+                        speech_region=speech_region,
+                    )
+                else:
+                    return azure.STT(
+                        speech_auth_token=speech_auth_token,
+                        speech_region=speech_region,
+                        languages=languages,
+                    )
 
 
 def get_google_stt_impl(agent_config):
-    wrong_google_config_msg = "Wrong Google credentials. stt.google.credentials_file must be set"
+    wrong_google_config_msg = (
+        "Wrong Google credentials. speech_to_text.google.credentials_file must be set"
+    )
     try:
-        credentials_file = agent_config["stt"]["google"]["credentials_file"]
-    except TypeError or KeyError:
+        credentials_file = agent_config["speech_to_text"]["google"]["credentials_file"]
+    except Exception:
         raise ValueError(wrong_google_config_msg)
     return google.STT(
         model="chirp_2",
@@ -54,10 +112,12 @@ def get_google_stt_impl(agent_config):
 
 
 def get_openai_stt_impl(agent_config):
-    wrong_openai_config_msg = "Wrong OpenAI credentials. stt.openai.api_key must be set"
+    wrong_openai_config_msg = (
+        "Wrong OpenAI credentials. speech_to_text.openai.api_key must be set"
+    )
     try:
-        api_key = agent_config["stt"]["openai"]["api_key"]
-    except TypeError or KeyError:
+        api_key = agent_config["speech_to_text"]["openai"]["api_key"]
+    except Exception:
         raise ValueError(wrong_openai_config_msg)
     if api_key is None:
         raise ValueError(wrong_openai_config_msg)
@@ -65,17 +125,25 @@ def get_openai_stt_impl(agent_config):
 
 
 def get_groq_stt_impl(agent_config):
-    wrong_groq_config_msg = "Wrong Groq credentials. stt.groq.api_key must be set"
+    wrong_groq_config_msg = (
+        "Wrong Groq credentials. speech_to_text.groq.api_key must be set"
+    )
     default_model = "whisper-large-v3-turbo"
     default_language = "en"
     try:
-        api_key = agent_config["stt"]["groq"]["api_key"]
-    except TypeError or KeyError:
+        api_key = agent_config["speech_to_text"]["groq"]["api_key"]
+    except Exception:
         raise ValueError(wrong_groq_config_msg)
     if api_key is None:
         raise ValueError(wrong_groq_config_msg)
-    model = agent_config["stt"]["groq"]["model"]
-    language = agent_config["stt"]["groq"]["language"]
+    try:
+        model = agent_config["speech_to_text"]["groq"]["model"]
+    except Exception:
+        model = None
+    try:
+        language = agent_config["speech_to_text"]["groq"]["language"]
+    except Exception:
+        language = None
     if model is None:
         model = default_model
     if language is None:
@@ -89,18 +157,18 @@ def get_groq_stt_impl(agent_config):
 
 def get_deepgram_stt_impl(agent_config):
     wrong_deepgram_config_msg = (
-        "Wrong Deepgram credentials. stt.deepgram.api_key must be set"
+        "Wrong Deepgram credentials. speech_to_text.deepgram.api_key must be set"
     )
     default_model = "nova-2-general"
     default_language = "en-US"
     try:
-        api_key = agent_config["stt"]["deepgram"]["api_key"]
-    except TypeError or KeyError:
+        api_key = agent_config["speech_to_text"]["deepgram"]["api_key"]
+    except Exception:
         raise ValueError(wrong_deepgram_config_msg)
     if api_key is None:
         raise ValueError(wrong_deepgram_config_msg)
-    model = agent_config["stt"]["deepgram"]["model"]
-    language = agent_config["stt"]["deepgram"]["language"]
+    model = agent_config["speech_to_text"]["deepgram"]["model"]
+    language = agent_config["speech_to_text"]["deepgram"]["language"]
     if model is None:
         model = default_model
     if language is None:
@@ -119,11 +187,11 @@ def get_deepgram_stt_impl(agent_config):
 
 def get_assemblyai_stt_impl(agent_config):
     wrong_assemblyai_config_msg = (
-        "Wrong AssemblyAI credentials. stt.assemblyai.api_key must be set"
+        "Wrong AssemblyAI credentials. speech_to_text.assemblyai.api_key must be set"
     )
     try:
-        api_key = agent_config["stt"]["assemblyai"]["api_key"]
-    except TypeError or KeyError:
+        api_key = agent_config["speech_to_text"]["assemblyai"]["api_key"]
+    except Exception:
         raise ValueError(wrong_assemblyai_config_msg)
     if api_key is None:
         raise ValueError(wrong_assemblyai_config_msg)
@@ -131,32 +199,35 @@ def get_assemblyai_stt_impl(agent_config):
 
 
 def get_fal_stt_impl(agent_config):
-    wrong_fal_config_msg = "Wrong FAL credentials. stt.fal.api_key must be set"
+    wrong_fal_config_msg = (
+        "Wrong FAL credentials. speech_to_text.fal.api_key must be set"
+    )
     try:
-        api_key = agent_config["stt"]["fal"]["api_key"]
-    except TypeError or KeyError:
+        api_key = agent_config["speech_to_text"]["fal"]["api_key"]
+    except Exception:
         raise ValueError(wrong_fal_config_msg)
     if api_key is None:
         raise ValueError(wrong_fal_config_msg)
     # livekit-plugins-fal require the FAL_KEY env var to be set
     os.environ["FAL_KEY"] = api_key
     return fal.WizperSTT(
-        language=agent_config.get("stt.fal.language"),
+        language=agent_config["speech_to_text"]["fal"]["language"],
     )
 
 
 def get_clova_stt_impl(agent_config):
-    wrong_clova_config_msg = (
-        "Wrong Clova credentials. stt.clova.api_key and stt.clova.api_key must be set"
-    )
+    wrong_clova_config_msg = "Wrong Clova credentials. speech_to_text.clova.api_key and speech_to_text.clova.api_key must be set"
     try:
-        api_key = agent_config["stt"]["clova"]["api_key"]
-        invoke_url = agent_config["stt"]["clova"]["invoke_url"]
-    except TypeError or KeyError:
+        api_key = agent_config["speech_to_text"]["clova"]["api_key"]
+        invoke_url = agent_config["speech_to_text"]["clova"]["invoke_url"]
+    except Exception:
         raise ValueError(wrong_clova_config_msg)
     if invoke_url is None or api_key is None:
         raise ValueError(wrong_clova_config_msg)
-    language = agent_config["stt"]["clova"]["language"]
+    try:
+        language = agent_config["speech_to_text"]["clova"]["language"]
+    except Exception:
+        language = None
     if language is None:
         return clova.STT(invoke_url=invoke_url, secret=api_key)
     else:
@@ -165,11 +236,13 @@ def get_clova_stt_impl(agent_config):
 
 def get_stt_impl(agent_config):
     try:
-        stt_provider = agent_config["stt"]["provider"]
-    except TypeError or KeyError:
+        stt_provider = agent_config["speech_to_text"]["provider"]
+    except Exception:
         stt_provider = None
     if stt_provider is None:
-        raise ValueError("stt.provider not defined in agent configuration")
+        raise ValueError("speech_to_text.provider not defined in agent configuration")
+    if stt_provider == "aws":
+        return get_aws_stt_impl(agent_config)
     if stt_provider == "azure":
         return get_azure_stt_impl(agent_config)
     elif stt_provider == "google":

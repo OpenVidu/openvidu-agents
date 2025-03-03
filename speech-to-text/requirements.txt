@@ -1,4 +1,5 @@
 livekit-agents>=0.12.15
+livekit-plugins-aws>=0.1.0
 livekit-plugins-azure>=0.5.4
 livekit-plugins-google>=0.10.5
 livekit-plugins-openai>=0.11.0

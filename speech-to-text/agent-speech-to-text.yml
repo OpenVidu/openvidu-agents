@@ -6,22 +6,17 @@
 docker_image: docker.io/openvidu/agent-speech-to-text:latest
 
 # Whether or not an instance of this agent should be automatically connected to new Rooms.
-# If false, your application will need to call the API to connect the agent to a Room.
+# If false, your application will need to call the Agent Dispatch API to connect the agent to a Room.
 automatic_dispatch: true
-
-# Whether or not the agent should automatically subscribe to every Track published to the Room once connected to it.
-# The kind of Tracks (audio/video) the Agent will subscribe to depends on the agent's capabilities.
-# If false, your application will need to call the API to subscribe the agent to a Track.
-automatic_subscription: true
-
-# Whether or not the agent should be hidden to the Participants of the Room.
-hidden: true
 
 ################################
 # Agent specific configuration #
 ################################
 speech_to_text:
-  # Which Speech-To-Text provider to use: aws, azure, google, opeanai, groq, deepgram, assemblyai, fal, clova
+  # Whether or not the agent should be hidden to the Participants of the Room.
+  hidden: true
+
+  # Which Speech-To-Text provider to use: aws, azure, google, opeanai, groq, deepgram, assemblyai, fal, clova, speechmatics
   # The custom configuration for the selected provider must be set below
   provider: aws
 
@@ -58,17 +53,17 @@ speech_to_text:
     # API key for Groq. See https://console.groq.com/keys
     api_key:
     # See https://console.groq.com/docs/speech-text
-    model: "whisper-large-v3-turbo"
+    model: whisper-large-v3-turbo
     # The language of the input audio. Supplying the input language in ISO-639-1 (https://en.wikipedia.org/wiki/List_of_ISO_639_language_codes) format will improve accuracy and latency
-    language: "en"
+    language: en
 
   deepgram:
     # See https://console.deepgram.com/
     api_key:
     # See https://developers.deepgram.com/reference/speech-to-text-api/listen-streaming#request.query.model
-    model: "nova-2-general"
+    model: nova-2-general
     # See https://developers.deepgram.com/reference/speech-to-text-api/listen-streaming#request.query.language
-    language: "en-US"
+    language: en-US
     # Whether to return interim (non-final) transcription results. Defaults to true
     interim_results: true
     # Whether to apply smart formatting to numbers, dates, etc. Defaults to true
@@ -96,12 +91,18 @@ speech_to_text:
     # API key for fal. See https://fal.ai/dashboard/keys
     api_key:
     # See https://fal.ai/models/fal-ai/wizper/api#schema
-    language: "en"
+    language: en
 
   clova:
     # Secret key issued when registering the app
     api_key:
     # API Gateway's unique invoke URL created in CLOVA Speech Domain. See https://guide.ncloud-docs.com/docs/en/clovaspeech-domain#create-domain
     invoke_url:
-    # Default "en-US". See https://api.ncloud-docs.com/docs/en/ai-application-service-clovaspeech-longsentence
-    language:
+    # See https://api.ncloud-docs.com/docs/en/ai-application-service-clovaspeech-longsentence
+    language: en-US
+
+  speechmatics:
+    # API key for Speechmatics. See https://portal.speechmatics.com/manage-access/
+    api_key:
+    # See https://docs.speechmatics.com/rt-api-ref#transcription-config
+    language: en

@@ -1,7 +1,3 @@
 # speech-to-text
 
-This agent transcribes the audio of a session to text in real-time. It supports the following providers:
-
-```text
-aws, azure, google, opeanai, groq, deepgram, assemblyai, fal, clova
-```
+This Agent transcribes the audio of a Room to text in real-time. See [https://openvidu.io/latest/docs/agents/speech-to-text/].

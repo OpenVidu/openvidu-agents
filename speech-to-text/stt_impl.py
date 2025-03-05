@@ -1,6 +1,18 @@
 import logging
 import os
-from livekit.plugins import aws, azure, google, openai, deepgram, assemblyai, fal, clova
+from livekit.plugins import (
+    aws,
+    azure,
+    google,
+    openai,
+    deepgram,
+    assemblyai,
+    fal,
+    clova,
+    speechmatics,
+)
+
+from livekit.plugins.speechmatics.types import TranscriptionConfig
 
 logger = logging.getLogger("agent")
 
@@ -234,6 +246,33 @@ def get_clova_stt_impl(agent_config):
         return clova.STT(invoke_url=invoke_url, secret=api_key, language=language)
 
 
+def get_speechmatics_stt_impl(agent_config):
+    wrong_speechmatics_config_msg = "Wrong Speechmatics credentials. speech_to_text.speechmatics.api_key must be set"
+    try:
+        api_key = agent_config["speech_to_text"]["speechmatics"]["api_key"]
+    except Exception:
+        raise ValueError(wrong_speechmatics_config_msg)
+    if api_key is None:
+        raise ValueError(wrong_speechmatics_config_msg)
+    # livekit-plugins-speechmatics require the SPEECHMATICS_API_KEY env var to be set
+    os.environ["SPEECHMATICS_API_KEY"] = api_key
+    try:
+        language = agent_config["speech_to_text"]["speechmatics"]["language"]
+    except Exception:
+        language = None
+    if language is None:
+        return speechmatics.STT()
+    else:
+        transcrpition_config = TranscriptionConfig(
+            language=language,
+            # Default values of livekit-plugin
+            operating_point="enhanced",
+            enable_partials=True,
+            max_delay=0.7,
+        )
+        return speechmatics.STT(transcription_config=transcrpition_config)
+
+
 def get_stt_impl(agent_config):
     try:
         stt_provider = agent_config["speech_to_text"]["provider"]
@@ -259,5 +298,7 @@ def get_stt_impl(agent_config):
         return get_fal_stt_impl(agent_config)
     elif stt_provider == "clova":
         return get_clova_stt_impl(agent_config)
+    elif stt_provider == "speechmatics":
+        return get_speechmatics_stt_impl(agent_config)
     else:
         raise ValueError(f"unknown STT provider: {stt_provider}")

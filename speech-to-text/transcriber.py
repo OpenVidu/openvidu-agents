@@ -254,7 +254,7 @@ if __name__ == "__main__":
                 can_publish_data=True,
                 # when set to true, the agent won't be visible to others in the room.
                 # when hidden, it will also not be able to publish tracks to the room as it won't be visible.
-                hidden=agent_config["hidden"],
+                hidden=agent_config["speech_to_text"]["hidden"],
             ),
         )
     )

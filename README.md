@@ -4,7 +4,7 @@ This is a collection of pre-configured and ready-to-use AI Agents for OpenVidu. 
 
 The list of available agents is:
 
-- [speech-to-text](speech-to-text/README.md): Transcribes the audio of a session to text in real-time.
+- [speech-to-text](speech-to-text/README.md): Transcribes the audio of a Room to text in real-time.
 
 # Agent configuration
 

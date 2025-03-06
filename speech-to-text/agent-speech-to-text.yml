@@ -27,23 +27,79 @@ speech_to_text:
     aws_default_region:
     # See https://docs.aws.amazon.com/transcribe/latest/dg/supported-languages.html
     language:
+    # The name of the custom vocabulary you want to use.
+    # See https://docs.aws.amazon.com/transcribe/latest/dg/custom-vocabulary.html
+    vocabulary_name:
+    # The name of the custom language model you want to use.
+    # See https://docs.aws.amazon.com/transcribe/latest/dg/custom-language-models-using.html
+    language_model_name:
+    # Whether or not to enable partial result stabilization. Partial result stabilization can reduce latency in your output, but may impact accuracy.
+    # See https://docs.aws.amazon.com/transcribe/latest/dg/streaming-partial-results.html#streaming-partial-result-stabilization
+    enable_partial_results_stabilization:
+    # Specify the level of stability to use when you enable partial results stabilization (enable_partial_results_stabilization: true). Valid values: high | medium | low
+    # See https://docs.aws.amazon.com/transcribe/latest/dg/streaming-partial-results.html#streaming-partial-result-stabilization
+    partial_results_stability:
+    # The name of the custom vocabulary filter you want to use to mask or remove words.
+    # See https://docs.aws.amazon.com/transcribe/latest/dg/vocabulary-filtering.html
+    vocab_filter_name:
+    # The method used to filter the vocabulary. Valid values: mask | remove | tag
+    # See https://docs.aws.amazon.com/transcribe/latest/dg/vocabulary-filtering.html
+    vocab_filter_method:
 
   azure:
-    # Credentials for Azure Speech Service. See https://learn.microsoft.com/en-us/azure/ai-services/speech-service/get-started-speech-to-text?tabs=macos%2Cterminal&pivots=programming-language-python#prerequisites
+    # Credentials for Azure Speech Service.
     # One of these combinations must be set:
     #  - speech_host
     #  - speech_key + speech_region
     #  - speech_auth_token + speech_region
+    # See https://learn.microsoft.com/en-us/azure/ai-services/speech-service/get-started-speech-to-text?tabs=macos%2Cterminal&pivots=programming-language-python#prerequisites
     speech_host:
     speech_key:
     speech_auth_token:
     speech_region:
     # Azure handles multiple languages and can auto-detect the language used. It requires the candidate set to be set.
-    languages: [en-US]
+    # See https://learn.microsoft.com/en-us/azure/ai-services/speech-service/language-support?tabs=stt#supported-languages
+    languages:
 
   google:
-    # API key for Google Cloud Speech-to-Text. See https://cloud.google.com/speech-to-text/docs/quickstart
-    credentials_file:
+    # Credentials for Google Cloud. This is the content of a Google Cloud credential JSON file.
+    # Below is a dummy example for a credential type of "Service Account" (https://cloud.google.com/iam/docs/service-account-creds#key-types)
+    credentials_info: |
+      {
+        "type": "service_account",
+        "project_id": "my-project",
+        "private_key_id": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "private_key": "-----BEGIN PRIVATE KEY-----\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n-----END PRIVATE KEY-----\n",
+        "client_email": "my-email@my-project.iam.gserviceaccount.com",
+        "client_id": "xxxxxxxxxxxxxxxxxxxxx",
+        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+        "token_uri": "https://oauth2.googleapis.com/token",
+        "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+        "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/my-email%40my-project.iam.gserviceaccount.com",
+        "universe_domain": "googleapis.com"
+      }
+    # Which model to use for recognition. If not set, uses the default model for the selected language.
+    # See https://cloud.google.com/speech-to-text/docs/transcription-model
+    model:
+    # The location to use for recognition. Default is "us-central1". Latency will be best if the location is close to your users.
+    # Check supported languages and locations at https://cloud.google.com/speech-to-text/v2/docs/speech-to-text-supported-languages
+    location:
+    # List of language codes to recognize. Default is ["en-US"].
+    # See https://cloud.google.com/speech-to-text/v2/docs/speech-to-text-supported-languages
+    languages:
+    # Whether to detect the language of the audio. Default is true.
+    detect_language:
+    # If 'true', adds punctuation to recognition result hypotheses. This feature is only available in select languages. Setting this
+    # for requests in other languages has no effect at all. The default 'false' value does not add punctuation to result hypotheses.
+    # See https://cloud.google.com/speech-to-text/docs/automatic-punctuation
+    punctuate:
+    # The spoken punctuation behavior for the call. If not set, uses default behavior based on model of choice.
+    # e.g. command_and_search will enable spoken punctuation by default. If 'true', replaces spoken punctuation
+    # with the corresponding symbols in the request. For example, "how are you question mark" becomes "how are you?".
+    # See https://cloud.google.com/speech-to-text/docs/spoken-punctuation for support. If 'false', spoken punctuation is not replaced.
+    spoken_punctuation:
+    # Whether to return interim (non-final) transcription results. Defaults to true.
+    interim_results:
 
   openai:
     # API key for OpenAI. See https://platform.openai.com/api-keys
@@ -52,18 +108,19 @@ speech_to_text:
   groq:
     # API key for Groq. See https://console.groq.com/keys
     api_key:
-    # See https://console.groq.com/docs/speech-text
+    # See https://console.groq.com/docs/speech-to-text
     model: whisper-large-v3-turbo
-    # The language of the input audio. Supplying the input language in ISO-639-1 (https://en.wikipedia.org/wiki/List_of_ISO_639_language_codes) format will improve accuracy and latency
-    language: en
+    # The language of the input audio. Supplying the input language in ISO-639-1 format
+    # (https://en.wikipedia.org/wiki/List_of_ISO_639-1_codes) will improve accuracy and latency.
+    language:
 
   deepgram:
     # See https://console.deepgram.com/
     api_key:
     # See https://developers.deepgram.com/reference/speech-to-text-api/listen-streaming#request.query.model
-    model: nova-2-general
+    model:
     # See https://developers.deepgram.com/reference/speech-to-text-api/listen-streaming#request.query.language
-    language: en-US
+    language:
     # Whether to return interim (non-final) transcription results. Defaults to true
     interim_results: true
     # Whether to apply smart formatting to numbers, dates, etc. Defaults to true
@@ -74,9 +131,14 @@ speech_to_text:
     filler_words: true
     # Whether to filter profanity from the transcription. Defaults to false
     profanity_filter: false
-    # List of tuples containing keywords and their boost values for improved recognition. Defaults to None. keywords does not work with Nova-3 models. Use keyterms instead.
-    keywords:
+    # List of tuples containing keywords and their boost values for improved recognition. Each tuple should be (keyword: str, boost: float). Defaults to None. keywords does not work with Nova-3 models. Use keyterms instead.
+    # keywords:
+    #   - [OpenVidu, 1.5]
+    #   - [WebRTC, 1]
+    # List of key terms to improve recognition accuracy. Defaults to None. keyterms is supported by Nova-3 models.
+    keyterms:
       - "OpenVidu"
+      - "WebRTC"
 
   assemblyai:
     # API key for AssemblyAI. See https://assemblyai.com/app/
@@ -91,7 +153,7 @@ speech_to_text:
     # API key for fal. See https://fal.ai/dashboard/keys
     api_key:
     # See https://fal.ai/models/fal-ai/wizper/api#schema
-    language: en
+    language:
 
   clova:
     # Secret key issued when registering the app
@@ -99,10 +161,10 @@ speech_to_text:
     # API Gateway's unique invoke URL created in CLOVA Speech Domain. See https://guide.ncloud-docs.com/docs/en/clovaspeech-domain#create-domain
     invoke_url:
     # See https://api.ncloud-docs.com/docs/en/ai-application-service-clovaspeech-longsentence
-    language: en-US
+    language:
 
   speechmatics:
     # API key for Speechmatics. See https://portal.speechmatics.com/manage-access/
     api_key:
     # See https://docs.speechmatics.com/rt-api-ref#transcription-config
-    language: en
+    language:

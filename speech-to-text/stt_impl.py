@@ -19,13 +19,6 @@ logger = logging.getLogger("agent")
 
 def get_aws_stt_impl(agent_config):
     wrong_aws_config_msg = "Wrong AWS credentials. speech_to_text.aws.aws_access_key_id, speech_to_text.aws.aws_secret_access_key and speech_to_text.aws.aws_default_region must be set"
-
-    # Optional values: [language]
-    try:
-        language = agent_config["speech_to_text"]["aws"]["language"]
-    except Exception:
-        language = None
-
     try:
         api_key = agent_config["speech_to_text"]["aws"]["aws_access_key_id"]
         api_secret = agent_config["speech_to_text"]["aws"]["aws_secret_access_key"]
@@ -39,17 +32,57 @@ def get_aws_stt_impl(agent_config):
         raise ValueError(wrong_aws_config_msg)
     if api_key is None or api_secret is None or default_region is None:
         raise ValueError(wrong_aws_config_msg)
-    if language is None:
-        return aws.STT(
-            api_key=api_key, api_secret=api_secret, speech_region=default_region
-        )
-    else:
-        return aws.STT(
-            api_key=api_key,
-            api_secret=api_secret,
-            speech_region=default_region,
-            language=language,
-        )
+
+    # Optional values
+    try:
+        language = agent_config["speech_to_text"]["aws"]["language"]
+    except Exception:
+        language = "en-US"
+    try:
+        vocabulary_name = agent_config["speech_to_text"]["aws"]["vocabulary_name"]
+    except Exception:
+        vocabulary_name = None
+    try:
+        language_model_name = agent_config["speech_to_text"]["aws"][
+            "language_model_name"
+        ]
+    except Exception:
+        language_model_name = None
+    try:
+        enable_partial_results_stabilization = agent_config["speech_to_text"]["aws"][
+            "enable_partial_results_stabilization"
+        ]
+    except Exception:
+        enable_partial_results_stabilization = None
+    try:
+        partial_results_stability = agent_config["speech_to_text"]["aws"][
+            "partial_results_stability"
+        ]
+    except Exception:
+        partial_results_stability = None
+    try:
+        vocab_filter_name = agent_config["speech_to_text"]["aws"]["vocab_filter_name"]
+    except Exception:
+        vocab_filter_name = None
+    try:
+        vocab_filter_method = agent_config["speech_to_text"]["aws"][
+            "vocab_filter_method"
+        ]
+    except Exception:
+        vocab_filter_method = None
+
+    return aws.STT(
+        api_key=api_key,
+        api_secret=api_secret,
+        speech_region=default_region,
+        language=language,
+        vocabulary_name=vocabulary_name,
+        language_model_name=language_model_name,
+        enable_partial_results_stabilization=enable_partial_results_stabilization,
+        partial_results_stability=partial_results_stability,
+        vocab_filter_name=vocab_filter_name,
+        vocab_filter_method=vocab_filter_method,
+    )
 
 
 def get_azure_stt_impl(agent_config):

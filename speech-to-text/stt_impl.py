@@ -115,16 +115,36 @@ def get_azure_stt_impl(agent_config):
 
 def get_google_stt_impl(agent_config):
     wrong_google_config_msg = (
-        "Wrong Google credentials. speech_to_text.google.credentials_file must be set"
+        "Wrong Google credentials. speech_to_text.google.credentials_info must be set"
     )
     try:
-        credentials_file = agent_config["speech_to_text"]["google"]["credentials_file"]
+        credentials_info_str = agent_config["speech_to_text"]["google"][
+            "credentials_info"
+        ]
     except Exception:
         raise ValueError(wrong_google_config_msg)
+    try:
+        import json
+
+        credentials_info = json.loads(credentials_info_str)
+    except Exception as jsonerror:
+        raise ValueError(
+            wrong_google_config_msg + " and must be a valid JSON", jsonerror
+        )
+    try:
+        import tempfile
+
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
+        temp_file.write(json.dumps(credentials_info).encode())
+        temp_file.close()
+    except Exception as e:
+        raise ValueError(
+            "Failed to create a temporary JSON file for google credentials", e
+        )
     return google.STT(
         model="chirp_2",
         spoken_punctuation=True,
-        credentials_file=credentials_file,
+        credentials_file=temp_file.name,
     )
 
 
@@ -176,29 +196,61 @@ def get_deepgram_stt_impl(agent_config):
     wrong_deepgram_config_msg = (
         "Wrong Deepgram credentials. speech_to_text.deepgram.api_key must be set"
     )
-    default_model = "nova-2-general"
-    default_language = "en-US"
     try:
         api_key = agent_config["speech_to_text"]["deepgram"]["api_key"]
     except Exception:
         raise ValueError(wrong_deepgram_config_msg)
     if api_key is None:
         raise ValueError(wrong_deepgram_config_msg)
-    model = agent_config["speech_to_text"]["deepgram"]["model"]
-    language = agent_config["speech_to_text"]["deepgram"]["language"]
-    if model is None:
-        model = default_model
-    if language is None:
-        language = default_language
+    try:
+        model = agent_config["speech_to_text"]["deepgram"]["model"]
+    except Exception:
+        model = "nova-2-general"
+    try:
+        language = agent_config["speech_to_text"]["deepgram"]["language"]
+    except Exception:
+        language = "en-US"
+    try:
+        interim_results = agent_config["speech_to_text"]["deepgram"]["interim_results"]
+    except Exception:
+        interim_results = True
+    try:
+        smart_format = agent_config["speech_to_text"]["deepgram"]["smart_format"]
+    except Exception:
+        smart_format = True
+    try:
+        punctuate = agent_config["speech_to_text"]["deepgram"]["punctuate"]
+    except Exception:
+        punctuate = True
+    try:
+        filler_words = agent_config["speech_to_text"]["deepgram"]["filler_words"]
+    except Exception:
+        filler_words = True
+    try:
+        profanity_filter = agent_config["speech_to_text"]["deepgram"][
+            "profanity_filter"
+        ]
+    except Exception:
+        profanity_filter = False
+    try:
+        keywords = agent_config["speech_to_text"]["deepgram"]["keywords"]
+    except Exception:
+        keywords = None
+    try:
+        keyterms = agent_config["speech_to_text"]["deepgram"]["keyterms"]
+    except Exception:
+        keyterms = None
     return deepgram.stt.STT(
+        api_key=api_key,
         model=model,
         language=language,
-        interim_results=True,
-        smart_format=True,
-        punctuate=True,
-        filler_words=True,
-        profanity_filter=False,
-        keywords=[("LiveKit", 1.5)],
+        interim_results=interim_results,
+        smart_format=smart_format,
+        punctuate=punctuate,
+        filler_words=filler_words,
+        profanity_filter=profanity_filter,
+        keywords=keywords,
+        keyterms=keyterms,
     )
 
 
@@ -285,6 +337,8 @@ def get_stt_impl(agent_config):
         stt_provider = None
     if stt_provider is None:
         raise ValueError("speech_to_text.provider not defined in agent configuration")
+    else:
+        print("Using", stt_provider, "as STT provider")
     if stt_provider == "aws":
         return get_aws_stt_impl(agent_config)
     if stt_provider == "azure":

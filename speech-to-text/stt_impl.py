@@ -30,6 +30,11 @@ def get_aws_stt_impl(agent_config):
         api_key = agent_config["speech_to_text"]["aws"]["aws_access_key_id"]
         api_secret = agent_config["speech_to_text"]["aws"]["aws_secret_access_key"]
         default_region = agent_config["speech_to_text"]["aws"]["aws_default_region"]
+
+        # FIX for: https://github.com/awslabs/amazon-transcribe-streaming-sdk/issues/7#issuecomment-1677230478
+        os.environ["AWS_ACCESS_KEY_ID"] = api_key
+        os.environ["AWS_SECRET_ACCESS_KEY"] = api_secret
+        os.environ["AWS_DEFAULT_REGION"] = default_region
     except Exception:
         raise ValueError(wrong_aws_config_msg)
     if api_key is None or api_secret is None or default_region is None:

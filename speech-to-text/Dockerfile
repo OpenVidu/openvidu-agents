@@ -1,6 +1,6 @@
 # This is an example Dockerfile that builds a minimal container for running LK Agents
 # syntax=docker/dockerfile:1
-ARG PYTHON_VERSION=3.13.1
+ARG PYTHON_VERSION=3.11.11
 FROM python:${PYTHON_VERSION}-slim
 
 # Prevents Python from writing pyc files.
@@ -21,11 +21,14 @@ RUN adduser \
     --uid "${UID}" \
     appuser
 
-# Install gcc and other build dependencies.
+# Install gcc, g++ and other build dependencies.
 RUN apt-get update && \
     apt-get install -y \
     gcc \
+    g++ \
     python3-dev \
+    # As long as there are pip dependencies in requirements.txt file declared as git repositories the below package is needed
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 USER appuser
@@ -41,7 +44,7 @@ RUN python -m pip install --user --no-cache-dir -r requirements.txt
 COPY . .
 
 # ensure that any dependent models are downloaded at build-time
-RUN python transcriber.py download-files
+# RUN python transcriber.py download-files
 
 # Run the application.
 ENTRYPOINT ["python", "transcriber.py"]

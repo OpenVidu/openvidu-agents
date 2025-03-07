@@ -60,6 +60,9 @@ speech_to_text:
     # Azure handles multiple languages and can auto-detect the language used. It requires the candidate set to be set.
     # See https://learn.microsoft.com/en-us/azure/ai-services/speech-service/language-support?tabs=stt#supported-languages
     languages:
+    # Removes profanity (swearing), or replaces letters of profane words with stars. Valid values: Masked | Removed | Raw
+    # See https://learn.microsoft.com/en-us/azure/ai-services/translator/profanity-filtering
+    profanity:
 
   google:
     # Credentials for Google Cloud. This is the content of a Google Cloud credential JSON file.
@@ -104,12 +107,17 @@ speech_to_text:
   openai:
     # API key for OpenAI. See https://platform.openai.com/api-keys
     api_key:
+    # See https://platform.openai.com/docs/guides/speech-to-text
+    model:
+    # The language of the input audio. Supplying the input language in ISO-639-1 format
+    # (https://en.wikipedia.org/wiki/List_of_ISO_639-1_codes) will improve accuracy and latency.
+    language:
 
   groq:
     # API key for Groq. See https://console.groq.com/keys
     api_key:
     # See https://console.groq.com/docs/speech-to-text
-    model: whisper-large-v3-turbo
+    model:
     # The language of the input audio. Supplying the input language in ISO-639-1 format
     # (https://en.wikipedia.org/wiki/List_of_ISO_639-1_codes) will improve accuracy and latency.
     language:
@@ -136,16 +144,19 @@ speech_to_text:
     #   - [OpenVidu, 1.5]
     #   - [WebRTC, 1]
     # List of key terms to improve recognition accuracy. Defaults to None. keyterms is supported by Nova-3 models.
+    # Commented below is an example
     keyterms:
-      - "OpenVidu"
-      - "WebRTC"
+      # - "OpenVidu"
+      # - "WebRTC"
 
   assemblyai:
     # API key for AssemblyAI. See https://assemblyai.com/app/
     api_key:
     # See https://www.assemblyai.com/docs/speech-to-text/streaming#add-custom-vocabulary
+    # Commented below is an example
     word_boost:
-      - "OpenVidu"
+      # - "OpenVidu"
+      # - "WebRTC"
     # See https://www.assemblyai.com/docs/speech-to-text/streaming#disable-partial-transcripts
     disable_partial_transcripts: false
 
@@ -153,7 +164,13 @@ speech_to_text:
     # API key for fal. See https://fal.ai/dashboard/keys
     api_key:
     # See https://fal.ai/models/fal-ai/wizper/api#schema
+    task:
+    # See https://fal.ai/models/fal-ai/wizper/api#schema
     language:
+    # See https://fal.ai/models/fal-ai/wizper/api#schema
+    chunk_level:
+    # See https://fal.ai/models/fal-ai/wizper/api#schema
+    version:
 
   clova:
     # Secret key issued when registering the app
@@ -162,9 +179,38 @@ speech_to_text:
     invoke_url:
     # See https://api.ncloud-docs.com/docs/en/ai-application-service-clovaspeech-longsentence
     language:
+    # Value between 0 and 1 indicating the threshold for the confidence score of the transcribed text. Default is 0.5.
+    # If the confidence score is lower than the threshold, the transcription event is not sent to the client.
+    # For a definition of the confidence score see https://api.ncloud-docs.com/docs/en/ai-application-service-clovaspeech-grpc
+    threshold:
 
   speechmatics:
     # API key for Speechmatics. See https://portal.speechmatics.com/manage-access/
     api_key:
     # See https://docs.speechmatics.com/rt-api-ref#transcription-config
     language:
+    # See https://docs.speechmatics.com/features/accuracy-language-packs#output-locale
+    output_locale:
+    # See https://docs.speechmatics.com/features/realtime-latency#partial-transcripts
+    enable_partials:
+    # See https://docs.speechmatics.com/features/realtime-latency#configuration-example
+    max_delay:
+    # See https://docs.speechmatics.com/features/realtime-latency#configuration-example
+    max_delay_mode:
+    # See https://docs.speechmatics.com/features/punctuation-settings
+    # Commented below is an example of punctuation settings
+    punctuation_overrides:
+      # permitted_marks: [ ".", "," ]
+      # sensitivity: 0.4
+    # See https://docs.speechmatics.com/features/custom-dictionary
+    # Commented below is an example of a custom dictionary
+    additional_vocab:
+      # - content: financial crisis
+      # - content: gnocchi
+      #   sounds_like:
+      #     - nyohki
+      #     - nokey
+      #     - nochi
+      # - content: CEO
+      #   sounds_like:
+      #     - C.E.O.

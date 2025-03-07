@@ -14,7 +14,9 @@ from livekit.plugins import (
     speechmatics,
 )
 from livekit.plugins.speechmatics.types import TranscriptionConfig
-from config_utils import ConfigManager
+from utils.config_utils import ConfigManager
+
+from azure.cognitiveservices.speech.enums import ProfanityOption
 
 logger = logging.getLogger("agent")
 
@@ -78,6 +80,7 @@ def get_azure_stt_impl(agent_config):
     speech_key = config_manager.optional_value("speech_key", None)
     speech_auth_token = config_manager.optional_value("speech_auth_token", None)
     languages = config_manager.optional_value("languages", ["en-US"])
+    profanity = config_manager.optional_enum_value("profanity", ProfanityOption, None)
 
     if speech_host is not None:
         return azure.STT(speech_host=speech_host, languages=languages)
@@ -90,6 +93,7 @@ def get_azure_stt_impl(agent_config):
             speech_auth_token=speech_auth_token,
             speech_region=speech_region,
             languages=languages,
+            profanity=profanity,
         )
     else:
         raise ValueError(wrong_credentials)
@@ -145,7 +149,10 @@ def get_openai_stt_impl(agent_config):
     )
 
     api_key = config_manager.mandatory_value("api_key", wrong_credentials)
-    return openai.STT(api_key=api_key)
+    model = config_manager.optional_value("model", "whisper-1")
+    language = config_manager.optional_value("language", "en")
+
+    return openai.STT(api_key=api_key, model=model, language=language)
 
 
 def get_groq_stt_impl(agent_config):
@@ -206,8 +213,16 @@ def get_assemblyai_stt_impl(agent_config):
     )
 
     api_key = config_manager.mandatory_value("api_key", wrong_credentials)
+    word_boost = config_manager.optional_value("word_boost", None)
+    disable_partial_transcripts = config_manager.optional_value(
+        "disable_partial_transcripts", False
+    )
 
-    return assemblyai.STT(api_key=api_key)
+    return assemblyai.STT(
+        api_key=api_key,
+        word_boost=word_boost,
+        disable_partial_transcripts=disable_partial_transcripts,
+    )
 
 
 def get_fal_stt_impl(agent_config):
@@ -216,12 +231,17 @@ def get_fal_stt_impl(agent_config):
     wrong_credentials = "Wrong FAL credentials. speech_to_text.fal.api_key must be set"
 
     api_key = config_manager.mandatory_value("api_key", wrong_credentials)
+    task = config_manager.optional_value("task", "transcribe")
     language = config_manager.optional_value("language", "en")
+    chunk_level = config_manager.optional_value("chunk_level", "segment")
+    version = config_manager.optional_value("version", "3")
 
     # livekit-plugins-fal require the FAL_KEY env var to be set
     os.environ["FAL_KEY"] = api_key
 
-    return fal.WizperSTT(language=language)
+    return fal.WizperSTT(
+        task=task, language=language, chunk_level=chunk_level, version=version
+    )
 
 
 def get_clova_stt_impl(agent_config):
@@ -232,8 +252,11 @@ def get_clova_stt_impl(agent_config):
     api_key = config_manager.mandatory_value("api_key", wrong_credentials)
     invoke_url = config_manager.mandatory_value("invoke_url", wrong_credentials)
     language = config_manager.optional_value("language", "en-US")
+    threshold = config_manager.optional_value("threshold", 0.5)
 
-    return clova.STT(invoke_url=invoke_url, secret=api_key, language=language)
+    return clova.STT(
+        invoke_url=invoke_url, secret=api_key, language=language, threshold=threshold
+    )
 
 
 def get_speechmatics_stt_impl(agent_config):
@@ -243,16 +266,27 @@ def get_speechmatics_stt_impl(agent_config):
 
     api_key = config_manager.mandatory_value("api_key", wrong_credentials)
     language = config_manager.optional_value("language", "en")
+    output_locale = config_manager.optional_value("output_locale", None)
+    enable_partials = config_manager.optional_value("enable_partials", True)
+    max_delay = config_manager.optional_value("max_delay", 0.7)
+    max_delay_mode = config_manager.optional_value("max_delay_mode", "flexible")
+    punctuation_overrides = config_manager.optional_dict_value(
+        "punctuation_overrides", None
+    )
+    additional_vocab = config_manager.optional_value("additional_vocab", None)
 
     # livekit-plugins-speechmatics require the SPEECHMATICS_API_KEY env var to be set
     os.environ["SPEECHMATICS_API_KEY"] = api_key
 
     transcrpition_config = TranscriptionConfig(
-        language=language,
-        # Default values of livekit-plugin
         operating_point="enhanced",
-        enable_partials=True,
-        max_delay=0.7,
+        language=language,
+        output_locale=output_locale,
+        punctuation_overrides=punctuation_overrides,
+        additional_vocab=additional_vocab,
+        enable_partials=enable_partials,
+        max_delay=max_delay,
+        max_delay_mode=max_delay_mode,
     )
     return speechmatics.STT(transcription_config=transcrpition_config)
 

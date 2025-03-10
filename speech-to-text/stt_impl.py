@@ -234,7 +234,7 @@ def get_fal_stt_impl(agent_config):
     task = config_manager.optional_value("task", "transcribe")
     language = config_manager.optional_value("language", "en")
     chunk_level = config_manager.optional_value("chunk_level", "segment")
-    version = config_manager.optional_value("version", "3")
+    version = config_manager.optional_string_value("version", "3")
 
     # livekit-plugins-fal require the FAL_KEY env var to be set
     os.environ["FAL_KEY"] = api_key

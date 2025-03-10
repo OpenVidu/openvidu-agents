@@ -84,6 +84,35 @@ class ConfigManager:
         if value is None:
             value = default
         return value
+    
+    def optional_string_value(self, key: str, default: Optional[str] = None) -> Optional[str]:
+        """
+        Retrieve an optional string value.
+
+        This method retrieves a string value from the configuration.
+        If the value is not a string, a TypeError is raised.
+        If the value is None or the key is not found, the default value is returned.
+
+        Args:
+            key (str): The key to look up in the configuration.
+            default (Optional[str], optional): The default value to return if the key is not found
+                                            or the value is None. Defaults to None.
+
+        Returns:
+            Optional[str]: The string value associated with the key if it exists and is valid,
+                        otherwise the default value.
+
+        Raises:
+            TypeError: If the value exists but it is not a string.
+        """
+        value = self.optional_value(key, None)
+        if value is None:
+            return default
+        if not isinstance(value, str):
+            raise TypeError(
+                f"Value for property {self.__full_key(key)} must be a string, got {type(value).__name__}"
+            )
+        return value
 
     def optional_enum_value(
         self, key: str, enum_class: Type[T], default: Optional[T] = None

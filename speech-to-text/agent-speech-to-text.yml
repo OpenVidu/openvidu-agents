@@ -175,7 +175,8 @@ speech_to_text:
   clova:
     # Secret key issued when registering the app
     api_key:
-    # API Gateway's unique invoke URL created in CLOVA Speech Domain. See https://guide.ncloud-docs.com/docs/en/clovaspeech-domain#create-domain
+    # API Gateway's unique invoke URL created in CLOVA Speech Domain.
+    # See https://guide.ncloud-docs.com/docs/en/clovaspeech-domain#create-domain
     invoke_url:
     # See https://api.ncloud-docs.com/docs/en/ai-application-service-clovaspeech-longsentence
     language:

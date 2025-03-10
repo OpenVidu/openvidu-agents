@@ -20,8 +20,10 @@ from livekit.agents import (
 from livekit.plugins import silero
 
 from stt_impl import get_stt_impl
+from utils.signal_utils import SignalManager
 
 logger = logging.getLogger("agent")
+signalManager = SignalManager(logger)
 
 
 def load_agent_config() -> tuple[object, str]:
@@ -218,43 +220,53 @@ async def request_fnc(req: JobRequest):
 
     print("Agent", agent_name, "received job request", req.job.id)
 
-    # accept the job request
-    await req.accept(
-        # the agent's name (Participant.name), defaults to ""
-        name=agent_name,
-        # the agent's identity (Participant.identity), defaults to "agent-<jobid>"
-        identity="agent-" + req.job.id,
-        # attributes to set on the agent participant upon join
-        # attributes={"myagent": "rocks"},
-    )
-    # or reject it
-    # await req.reject()
+    if not signalManager.can_accept_new_jobs():
+        logger.warning(f"Agent {agent_name} cannot accept new job requests")
+        await req.reject()
+        return
+    else:
+        print("Agent", agent_name, "can accept the job request", req.job.id)
+        await req.accept(
+            # the agent's name (Participant.name), defaults to ""
+            name=agent_name,
+            # the agent's identity (Participant.identity), defaults to "agent-<jobid>"
+            identity="agent-" + agent_name + "-" + req.job.id,
+            # attributes to set on the agent participant upon join
+            # attributes={"myagent": "rocks"},
+        )
 
 
 if __name__ == "__main__":
     agent_config, agent_name = load_agent_config()
 
-    print("Starting agent", agent_name)
-
-    cli.run_app(
-        WorkerOptions(
-            entrypoint_fnc=entrypoint,
-            request_fnc=request_fnc,
-            api_key=agent_config["api_key"],
-            api_secret=agent_config["api_secret"],
-            ws_url=agent_config["ws_url"],
-            # For speech transcription, we want to initiate a new instance of the agent for each room
-            worker_type=WorkerType.ROOM,
-            permissions=WorkerPermissions(
-                # no need to publish tracks
-                can_publish=False,
-                # must subscribe to audio tracks
-                can_subscribe=True,
-                # mandatory to send transcription events
-                can_publish_data=True,
-                # when set to true, the agent won't be visible to others in the room.
-                # when hidden, it will also not be able to publish tracks to the room as it won't be visible.
-                hidden=agent_config["speech_to_text"]["hidden"],
-            ),
-        )
+    worker_options = WorkerOptions(
+        entrypoint_fnc=entrypoint,
+        request_fnc=request_fnc,
+        api_key=agent_config["api_key"],
+        api_secret=agent_config["api_secret"],
+        ws_url=agent_config["ws_url"],
+        # For speech transcription, we want to initiate a new instance of the agent for each room
+        worker_type=WorkerType.ROOM,
+        permissions=WorkerPermissions(
+            # no need to publish tracks
+            can_publish=False,
+            # must subscribe to audio tracks
+            can_subscribe=True,
+            # mandatory to send transcription events
+            can_publish_data=True,
+            # when set to true, the agent won't be visible to others in the room.
+            # when hidden, it will also not be able to publish tracks to the room as it won't be visible.
+            hidden=agent_config["speech_to_text"]["hidden"],
+        ),
     )
+    if agent_config["automatic_dispatch"] == True:
+        worker_options.agent_name = agent_name
+
+    print(
+        "Starting agent",
+        agent_name,
+        "with automatic dispatch configured to",
+        agent_config["automatic_dispatch"],
+    )
+
+    cli.run_app(worker_options)

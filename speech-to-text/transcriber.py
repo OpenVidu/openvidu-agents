@@ -23,7 +23,7 @@ from stt_impl import get_stt_impl
 from utils.signal_utils import SignalManager
 
 logger = logging.getLogger("agent")
-signalManager = SignalManager(logger)
+signal_manager = SignalManager(logger)
 
 
 def load_agent_config() -> tuple[object, str]:
@@ -220,7 +220,7 @@ async def request_fnc(req: JobRequest):
 
     print("Agent", agent_name, "received job request", req.job.id)
 
-    if not signalManager.can_accept_new_jobs():
+    if not signal_manager.can_accept_new_jobs():
         logger.warning(f"Agent {agent_name} cannot accept new job requests")
         await req.reject()
         return

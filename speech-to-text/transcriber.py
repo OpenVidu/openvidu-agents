@@ -1,9 +1,8 @@
 import asyncio
 import logging
 import os
-import yaml
-import logging
-import re
+import sys
+import uuid
 
 from livekit import rtc
 from livekit.agents import (
@@ -18,130 +17,64 @@ from livekit.agents import (
     JobRequest,
 )
 from livekit.plugins import silero
+import psutil
 
 from stt_impl import get_stt_impl
 from utils.signal_utils import SignalManager
+from utils.config_loader import ConfigLoader
 
-logger = logging.getLogger("agent")
-signal_manager = SignalManager(logger)
+signal_manager: SignalManager = None
+config_loader: ConfigLoader = None
 
 
-def load_agent_config() -> tuple[object, str]:
-    agent_config: object = None
-    agent_name: str = None
+# Singleton pattern for SignalManager
+def get_signal_manager(
+    agent_config: object, agent_name: str, register_signals: bool
+) -> SignalManager:
+    """Ensure that SignalManager is initialized properly per process"""
+    global signal_manager
+    if signal_manager is None:
+        agent_main_pid = os.environ["AGENT_MAIN_PID"]
+        agent_process_uuid = os.environ["AGENT_UUID"]
+        signal_manager = SignalManager(
+            agent_config,
+            agent_name,
+            agent_process_uuid,
+            agent_main_pid,
+            register_signals,
+        )
+    return signal_manager
 
-    # Try to load configuration from env vars
-    config_body = os.environ.get("AGENT_CONFIG_BODY")
-    if config_body is not None:
-        try:
-            agent_config = yaml.safe_load(config_body)
-        except yaml.YAMLError as exc:
-            logger.error("Error loading configuration from AGENT_CONFIG_BODY env var")
-            logger.error(exc)
-            exit(1)
-        try:
-            agent_name = agent_config["agent_name"]
-        except Exception as exc:
-            logger.error(
-                'Property "agent_name" is missing. It must be defined when providing agent configuration through env var AGENT_CONFIG_BODY'
-            )
-            exit(1)
-        if agent_config["agent_name"] is None:
-            logger.error(
-                'Property "agent_name" is missing. It must be defined when providing agent configuration through env var AGENT_CONFIG_BODY'
-            )
-            exit(1)
-        agent_name = agent_config["agent_name"]
-    else:
-        config_file = os.environ.get("AGENT_CONFIG_FILE")
-        if config_file is not None:
-            if not is_agent_config_file(
-                os.path.dirname(config_file), os.path.basename(config_file)
-            ):
-                logger.error(
-                    f"Env var AGENT_CONFIG_FILE set to {config_file}, but file is not a valid agent configuration file. It must exist and be named agent-AGENT_NAME.yml"
-                )
-                exit(1)
-        else:
-            # If env vars are not defined, try to find the config file in the current working directory
 
-            # Possible paths for the config file are any file agent-AGENT_NAME.y(a)ml
-            # in the current working directory or in the location of the python script,
-            # being AGENT_NAME a unique string identifying the agent.
-            cwd = os.getcwd()
-            for f in os.listdir(cwd):
-                if is_agent_config_file(cwd, f):
-                    config_file = os.path.join(cwd, f)
-                    break
-            if config_file is None:
-                filedir = os.path.dirname(os.path.realpath(__file__))
-                for f in os.listdir(filedir):
-                    if is_agent_config_file(filedir, f):
-                        config_file = os.path.join(filedir, f)
-                        break
+def get_top_level_parent_id() -> int:
+    """Get the top-level parent process ID"""
+    current_pid = os.getpid()
 
-        if config_file is None:
-            logger.error(
-                "\nAgent configuration not found. One of these must be defined:\n    - env var AGENT_CONFIG_FILE with the path to the YAML configuration file.\n    - env var AGENT_CONFIG_BODY with the configuration YAML as a string.\n    - A file agent-AGENT_NAME.yml in the current working directory"
-            )
-            exit(1)
+    try:
+        process = psutil.Process(current_pid)
+        parent = process.parent()
 
-        with open(config_file) as stream:
+        # Keep traversing up until we reach init (PID 1) or can't go further
+        while parent and parent.pid != 1:
             try:
-                agent_config = yaml.safe_load(stream)
-            except yaml.YAMLError as exc:
-                logger.error(f"Error loading configuration file {config_file}")
-                logger.error(exc)
-                exit(1)
+                process = parent
+                parent = process.parent()
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                break
 
-        # Load agent name from the file name
-        agent_name = os.path.basename(config_file).split(".")[0].split("agent-")[1]
-        # If property "agent_name" of the config file is defined check that it matches the value inside the file name
-        agent_name_in_config_file = None
-        try:
-            agent_name_in_config_file = agent_config["agent_name"]
-        except Exception as exc:
-            # Do nothing
-            pass
-        if (
-            agent_name_in_config_file is not None
-            and agent_name_in_config_file != agent_name
-        ):
-            logger.error(
-                f"Agent name is defined as \"{agent_config['agent_name']}\" inside configuration file {config_file} and it does not match the value of the file name \"{agent_name}\""
-            )
-            exit(1)
+        return process.pid
 
-    if "api_key" not in agent_config:
-        if not os.environ.get("LIVEKIT_API_KEY"):
-            logger.error(
-                "api_key not defined in agent configuration or LIVEKIT_API_KEY env var"
-            )
-            exit(1)
-        agent_config["api_key"] = os.environ["LIVEKIT_API_KEY"]
-    if "api_secret" not in agent_config:
-        if not os.environ.get("LIVEKIT_API_SECRET"):
-            logger.error(
-                "api_secret not defined in agent configuration or LIVEKIT_API_SECRET env var"
-            )
-            exit(1)
-        agent_config["api_secret"] = os.environ["LIVEKIT_API_SECRET"]
-    if "ws_url" not in agent_config:
-        if not os.environ.get("LIVEKIT_URL"):
-            logger.error(
-                "ws_url not defined in agent configuration or LIVEKIT_URL env var"
-            )
-            exit(1)
-        agent_config["ws_url"] = os.environ["LIVEKIT_URL"]
-
-    return agent_config, agent_name
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        return current_pid
 
 
-def is_agent_config_file(file_folder: str, file_name: str) -> bool:
-    return (
-        os.path.isfile(os.path.join(file_folder, file_name))
-        and re.match(r"agent-[a-zA-Z0-9-_]+\.ya?ml", file_name) is not None
-    )
+# Singleton pattern for agent configuration
+def get_config_loader() -> ConfigLoader:
+    """Ensure that ConfigLoader is initialized properly per process"""
+    global config_loader
+    if config_loader is None:
+        config_loader = ConfigLoader()
+    return config_loader
 
 
 async def _forward_transcription(
@@ -151,25 +84,31 @@ async def _forward_transcription(
     async for ev in stt_stream:
         if ev.type == stt.SpeechEventType.INTERIM_TRANSCRIPT:
             # you may not want to log interim transcripts, they are not final and may be incorrect
-            logger.info(
+            logging.info(
                 f"{stt_forwarder._participant_identity} is saying -> {ev.alternatives[0].text}"
             )
         elif ev.type == stt.SpeechEventType.FINAL_TRANSCRIPT:
-            logger.info(
+            logging.info(
                 f"{stt_forwarder._participant_identity} said -> {ev.alternatives[0].text}"
             )
         elif ev.type == stt.SpeechEventType.RECOGNITION_USAGE:
-            logger.debug(f"metrics: {ev.recognition_usage}")
+            logging.debug(f"metrics: {ev.recognition_usage}")
 
         stt_forwarder.update(ev)
 
 
-async def entrypoint(ctx: JobContext):
-    agent_config, agent_name = load_agent_config()
+async def entrypoint(ctx: JobContext) -> None:
+    agent_config, agent_name = get_config_loader().load_agent_config()
 
-    print("Agent", agent_name, "joining room", ctx.room.name)
+    signal_manager: SignalManager = get_signal_manager(
+        agent_config, agent_name, register_signals=False
+    )
 
-    logger.info(f"starting transcriber (speech to text) example, room: {ctx.room.name}")
+    ctx.add_shutdown_callback(signal_manager.decrement_active_jobs)
+    signal_manager.increment_active_jobs()
+
+    print(f"Agent {agent_name} joining room {ctx.room.name}")
+
     stt_impl = get_stt_impl(agent_config)
 
     if not stt_impl.capabilities.streaming:
@@ -188,12 +127,7 @@ async def entrypoint(ctx: JobContext):
         )
 
         print(
-            "Agent",
-            agent_name,
-            "transcribing audio track",
-            track.sid,
-            "from participant",
-            participant.identity,
+            f"Agent {agent_name} transcribing audio track {track.sid} from participant {participant.identity}"
         )
 
         stt_stream = stt_impl.stream()
@@ -215,17 +149,21 @@ async def entrypoint(ctx: JobContext):
     await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
 
 
-async def request_fnc(req: JobRequest):
-    agent_config, agent_name = load_agent_config()
+async def request_fnc(req: JobRequest) -> None:
+    agent_config, agent_name = get_config_loader().load_agent_config()
 
-    print("Agent", agent_name, "received job request", req.job.id)
+    signal_manager = get_signal_manager(
+        agent_config, agent_name, register_signals=False
+    )
+
+    logging.info(f"Agent {agent_name} received job request {req.job.id}")
 
     if not signal_manager.can_accept_new_jobs():
-        logger.warning(f"Agent {agent_name} cannot accept new job requests")
+        logging.warning(f"Agent {agent_name} cannot accept new job requests")
         await req.reject()
         return
     else:
-        print("Agent", agent_name, "can accept the job request", req.job.id)
+        logging.info(f"Agent {agent_name} can accept job request {req.job.id}")
         await req.accept(
             # the agent's name (Participant.name), defaults to ""
             name=agent_name,
@@ -237,7 +175,13 @@ async def request_fnc(req: JobRequest):
 
 
 if __name__ == "__main__":
-    agent_config, agent_name = load_agent_config()
+    agent_config, agent_name = get_config_loader().load_agent_config()
+
+    os.environ["AGENT_MAIN_PID"] = str(os.getpid())
+    os.environ["AGENT_UUID"] = uuid.uuid4().hex
+
+    # Create a signal manager for the main process
+    get_signal_manager(agent_config, agent_name, register_signals=True)
 
     worker_options = WorkerOptions(
         entrypoint_fnc=entrypoint,
@@ -245,6 +189,7 @@ if __name__ == "__main__":
         api_key=agent_config["api_key"],
         api_secret=agent_config["api_secret"],
         ws_url=agent_config["ws_url"],
+        max_retry=sys.maxsize,
         # For speech transcription, we want to initiate a new instance of the agent for each room
         worker_type=WorkerType.ROOM,
         permissions=WorkerPermissions(
@@ -262,11 +207,8 @@ if __name__ == "__main__":
     if agent_config["automatic_dispatch"] == True:
         worker_options.agent_name = agent_name
 
-    print(
-        "Starting agent",
-        agent_name,
-        "with automatic dispatch configured to",
-        agent_config["automatic_dispatch"],
+    logging.info(
+        f"Starting agent {agent_name} with automatic dispatch configured to {agent_config['automatic_dispatch']}"
     )
 
     cli.run_app(worker_options)

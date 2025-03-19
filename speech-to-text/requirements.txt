@@ -1,4 +1,4 @@
-utils @ git+https://github.com/OpenVidu/openvidu-agents#egg=utils&subdirectory=utils
+openvidu-agents-utils @ git+https://github.com/OpenVidu/openvidu-agents#egg=openvidu-agents-utils&subdirectory=utils
 livekit-agents>=0.12.17
 livekit-plugins-aws>=0.1.1
 livekit-plugins-azure>=0.5.5

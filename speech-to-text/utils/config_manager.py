@@ -84,8 +84,10 @@ class ConfigManager:
         if value is None:
             value = default
         return value
-    
-    def optional_string_value(self, key: str, default: Optional[str] = None) -> Optional[str]:
+
+    def optional_string_value(
+        self, key: str, default: Optional[str] = None
+    ) -> Optional[str]:
         """
         Retrieve an optional string value.
 
@@ -148,23 +150,6 @@ class ConfigManager:
                 f"Invalid value '{value}' for property {self.__full_key(key)}. Valid values are: {valid_values}"
             )
 
-    def __full_key(self, key: str) -> str:
-        """
-        Construct a full key with the field_prefixes and the provided key.
-
-        If field_prefixes is empty, the key is returned unchanged.
-        Otherwise, the key is prefixed with field_prefixes followed by a dot.
-
-        Args:
-            key (str): The key to be prefixed.
-
-        Returns:
-            str: The prefixed key or the original key if field_prefixes is empty.
-        """
-        if not self.field_prefixes:
-            return key
-        return f"{self.field_prefixes}.{key}"
-
     def optional_dict_value(
         self, key: str, default: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
@@ -197,6 +182,23 @@ class ConfigManager:
             )
 
         return value
+
+    def __full_key(self, key: str) -> str:
+        """
+        Construct a full key with the field_prefixes and the provided key.
+
+        If field_prefixes is empty, the key is returned unchanged.
+        Otherwise, the key is prefixed with field_prefixes followed by a dot.
+
+        Args:
+            key (str): The key to be prefixed.
+
+        Returns:
+            str: The prefixed key or the original key if field_prefixes is empty.
+        """
+        if not self.field_prefixes:
+            return key
+        return f"{self.field_prefixes}.{key}"
 
     def __get_value(self, field: str) -> Any:
         """

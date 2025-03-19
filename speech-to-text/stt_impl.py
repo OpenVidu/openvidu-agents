@@ -14,11 +14,9 @@ from livekit.plugins import (
     speechmatics,
 )
 from livekit.plugins.speechmatics.types import TranscriptionConfig
-from utils.config_utils import ConfigManager
+from utils.config_manager import ConfigManager
 
 from azure.cognitiveservices.speech.enums import ProfanityOption
-
-logger = logging.getLogger("agent")
 
 
 def get_aws_stt_impl(agent_config):
@@ -299,7 +297,7 @@ def get_stt_impl(agent_config):
     if stt_provider is None:
         raise ValueError("speech_to_text.provider not defined in agent configuration")
     else:
-        print("Using", stt_provider, "as STT provider")
+        logging.info(f"Using {stt_provider} as STT provider")
     if stt_provider == "aws":
         return get_aws_stt_impl(agent_config)
     if stt_provider == "azure":

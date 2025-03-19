@@ -16,14 +16,20 @@ In order:
 
 # Run unit tests
 
-Run specific agent tests:
+Run specific test:
 
 ```bash
-python -m unittest discover -s <AGENT_FOLDER> -p 'test_*.py'
+python -m unittest test_stt_impl.py
+```
+
+Run tests in a folder:
+
+```bash
+python -m unittest discover -s .
 ```
 
 Run all tests:
 
 ```bash
-for d in */ ; do python -m unittest discover -s $d -p 'test_*.py'; done
+find . -name "test_*.py" -type f -not -path '*/venv/*' -exec sh -c 'cd $(dirname {}) && python -m unittest $(basename {})' \;
 ```

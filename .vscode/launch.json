@@ -11,7 +11,22 @@
       "program": "speech-to-text/transcriber.py",
       "console": "integratedTerminal",
       "justMyCode": false,
-      "args": ["dev"]
+      "args": ["dev"],
+      "env": {
+        // Configuration for OpenVidu Local Deployment
+        "LIVEKIT_API_KEY": "devkey",
+        "LIVEKIT_API_SECRET": "secret",
+        "LIVEKIT_URL": "ws://localhost:7880",
+        "REDIS_ADDRESS": "localhost:6379",
+        "REDIS_PASSWORD": "redispassword",
+        // // Configuration for OpenVidu Plaground
+        // "LIVEKIT_API_KEY": "key1",
+        // "LIVEKIT_API_SECRET": "abcdefghijklmnopqrstuvwxyz123456",
+        // "LIVEKIT_URL": "wss://playground-ha.openvidu-local.dev",
+        // "REDIS_SENTINEL_MASTER_NAME": "openvidu",
+        // "REDIS_SENTINEL_ADDRESSES": "10.5.0.3:7001,10.5.0.4:7001,10.5.0.5:7001,10.5.0.6:7001",
+        // "REDIS_SENTINEL_PASSWORD": "fUhZxagsL4evGRgQEeTyhrD5w4cHeNgja04g2iGh1rlD"
+      }
     }
   ]
 }

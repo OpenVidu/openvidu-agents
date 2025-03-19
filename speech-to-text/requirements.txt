@@ -1,5 +1,4 @@
-redis>=5.2.1
-python-dotenv>=1.0.1
+utils @ git+https://github.com/OpenVidu/openvidu-agents#egg=utils&subdirectory=utils
 livekit-agents>=0.12.17
 livekit-plugins-aws>=0.1.1
 livekit-plugins-azure>=0.5.5

@@ -1,5 +1,19 @@
 # openvidu-agents
 
+- [Introduction](#introduction)
+- [Developing an agent](#developing-an-agent)
+  - [Build as a Docker image](#build-as-a-docker-image)
+  - [Local development](#local-development)
+  - [Debugging in VSCode](#debugging-in-vscode)
+- [Shared common library](#shared-common-library)
+  - [Developing the common library](#developing-the-common-library)
+- [Agent configuration](#agent-configuration)
+  - [Environment variables](#environment-variables)
+  - [YAML configuration](#yaml-configuration)
+- [Run tests](#run-tests)
+
+## Introduction
+
 This is a collection of pre-configured and ready-to-use AI Agents for OpenVidu. They are built using the [LiveKit Agents framework](https://docs.livekit.io/agents/). They are designed to easily be added to an OpenVidu deployment and provide useful AI services.
 
 The list of available agents is:
@@ -46,24 +60,32 @@ All agents need a common utils library to work. This library is located at folde
 openviduagentutils @ git+https://github.com/OpenVidu/openvidu-agents#egg=openviduagentutils&subdirectory=openviduagentutils
 ```
 
-Any change done to the common library must be pushed to the remote repository, so agents are able to pull the latest version. To do so, the agent must simply reinstall the dependencies:
+Agents may bring any change pushed to the common library simply by reinstalling their dependencies:
 
 ```bash
+cd speech-to-text
 pip3 install -r requirements.txt --force-reinstall
 ```
 
 ### Developing the common library
 
-Install it as an [editable local package](https://pip.pypa.io/en/stable/topics/local-project-installs/#editable-installs) in the agent's virtual environment. For example, to develop the common library against agent `speech-to-text`:
+To make it easier to develop the common library, the best way is to install it as an [editable local package](https://pip.pypa.io/en/stable/topics/local-project-installs/#editable-installs) in the agent's virtual environment. For example, to develop the common library against agent `speech-to-text`:
 
 ```bash
 cd speech-to-text
 python3 -m pip install -e ../openviduagentutils/
 ```
 
-After that, any change done to the common library will be reflected in the agent without the need to reinstall the dependencies. Just restart the agent for the changes to take effect.
+After that, any change done to the common library will be reflected in the agent without the need to reinstall the dependencies. Just restart the agent for the changes to take effect. Remember to push any desired changes to the common library to the remote repository, so agents are able to include them when building their Docker images.
 
-> This strategy works great with the [VSCode debugger](#debugging-in-vscode).
+> This strategy works great with the [VSCode debugger](#debugging-in-vscode)!
+
+To remove the editable package from the agent, simply reinstall dependencies as usual:
+
+```bash
+cd speech-to-text
+pip3 install -r requirements.txt
+```
 
 ## Agent configuration
 

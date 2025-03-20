@@ -14,7 +14,7 @@ from livekit.plugins import (
     speechmatics,
 )
 from livekit.plugins.speechmatics.types import TranscriptionConfig
-from utils.config_manager import ConfigManager
+from openviduagentutils.config_manager import ConfigManager
 
 from azure.cognitiveservices.speech.enums import ProfanityOption
 

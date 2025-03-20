@@ -20,8 +20,8 @@ from livekit.plugins import silero
 import psutil
 
 from stt_impl import get_stt_impl
-from utils.signal_utils import SignalManager
-from utils.config_loader import ConfigLoader
+from openviduagentutils.config_loader import ConfigLoader
+from openviduagentutils.signal_manager import SignalManager
 
 signal_manager: SignalManager = None
 config_loader: ConfigLoader = None

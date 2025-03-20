@@ -21,7 +21,7 @@ import psutil
 
 from stt_impl import get_stt_impl
 from openviduagentutils.config_loader import ConfigLoader
-from openviduagentutils.signal_manager import SignalManager
+from openviduagentutils.signal_utils import SignalManager
 
 signal_manager: SignalManager = None
 config_loader: ConfigLoader = None

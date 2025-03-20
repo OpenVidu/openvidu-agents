@@ -1,0 +1,14 @@
+##############################
+# Agent common configuration #
+##############################
+
+# Docker image of the agent.
+docker_image: docker.io/openvidu/agent-minimal:latest
+
+# Whether or not an instance of this agent should be automatically connected to new Rooms.
+# If false, your application will need to call the Agent Dispatch API to connect the agent to a Room.
+automatic_dispatch: true
+
+################################
+# Agent specific configuration #
+################################

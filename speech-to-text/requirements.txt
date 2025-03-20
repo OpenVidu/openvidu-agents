@@ -10,5 +10,4 @@ livekit-plugins-fal>=0.2.4
 livekit-plugins-silero>=0.7.5
 livekit-plugins-clova @ git+https://github.com/livekit/agents#egg=livekit-plugins-clova&subdirectory=livekit-plugins/livekit-plugins-clova
 livekit-plugins-speechmatics>=0.0.2
-pyyaml>=6.0.2
 # livekit-plugins-turn-detector>=0.4.2 # Only available when using the VoicePipelineAgent?

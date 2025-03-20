@@ -2,18 +2,63 @@ import logging
 import os
 import re
 import sys
+import uuid
 import yaml
 from typing import TypeVar
 from enum import Enum
 from dotenv import load_dotenv
 
+from .signal_utils import SignalManager
+
 T = TypeVar("T", bound=Enum)
+
+# Singleton pattern for ConfigLoader
+config_loader = None
 
 
 class ConfigLoader:
     """Utility class to load agent configuration from environment variables or a YAML file."""
 
-    def load_agent_config(self) -> tuple[object, str]:
+    def __init__(self, main_process: bool):
+        global signal_manager
+        agent_config, agent_name = self.__load_agent_config()
+
+        agent_main_pid = os.environ["AGENT_MAIN_PID"]
+        agent_process_uuid = os.environ["AGENT_UUID"]
+        signal_manager = SignalManager(
+            agent_config,
+            agent_name,
+            agent_process_uuid,
+            agent_main_pid,
+            main_process,
+        )
+
+        self.__agent_config = agent_config
+        self.__agent_name = agent_name
+        self.__signal_manager = signal_manager
+
+    def get_instance(main_process: bool = False) -> "ConfigLoader":
+        """Get the singleton instance of ConfigLoader"""
+        global config_loader
+        if config_loader is None:
+            if main_process:
+                if not os.environ.get("AGENT_MAIN_PID"):
+                    os.environ["AGENT_MAIN_PID"] = str(os.getpid())
+                if not os.environ.get("AGENT_UUID"):
+                    os.environ["AGENT_UUID"] = uuid.uuid4().hex
+            config_loader = ConfigLoader(main_process)
+        return config_loader
+
+    def get_agent_config(self) -> object:
+        return self.__agent_config
+
+    def get_agent_name(self) -> str:
+        return self.__agent_name
+
+    def get_signal_manager(self) -> SignalManager:
+        return self.__signal_manager
+
+    def __load_agent_config(self) -> tuple[object, str]:
         agent_config: object = None
         agent_name: str = None
 

@@ -1,8 +1,6 @@
 import asyncio
 import logging
-import os
 import sys
-import uuid
 
 from livekit import rtc
 from livekit.agents import (
@@ -17,64 +15,9 @@ from livekit.agents import (
     JobRequest,
 )
 from livekit.plugins import silero
-import psutil
 
 from stt_impl import get_stt_impl
 from openviduagentutils.config_loader import ConfigLoader
-from openviduagentutils.signal_utils import SignalManager
-
-signal_manager: SignalManager = None
-config_loader: ConfigLoader = None
-
-
-# Singleton pattern for SignalManager
-def get_signal_manager(
-    agent_config: object, agent_name: str, register_signals: bool
-) -> SignalManager:
-    """Ensure that SignalManager is initialized properly per process"""
-    global signal_manager
-    if signal_manager is None:
-        agent_main_pid = os.environ["AGENT_MAIN_PID"]
-        agent_process_uuid = os.environ["AGENT_UUID"]
-        signal_manager = SignalManager(
-            agent_config,
-            agent_name,
-            agent_process_uuid,
-            agent_main_pid,
-            register_signals,
-        )
-    return signal_manager
-
-
-def get_top_level_parent_id() -> int:
-    """Get the top-level parent process ID"""
-    current_pid = os.getpid()
-
-    try:
-        process = psutil.Process(current_pid)
-        parent = process.parent()
-
-        # Keep traversing up until we reach init (PID 1) or can't go further
-        while parent and parent.pid != 1:
-            try:
-                process = parent
-                parent = process.parent()
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                break
-
-        return process.pid
-
-    except (psutil.NoSuchProcess, psutil.AccessDenied):
-        return current_pid
-
-
-# Singleton pattern for agent configuration
-def get_config_loader() -> ConfigLoader:
-    """Ensure that ConfigLoader is initialized properly per process"""
-    global config_loader
-    if config_loader is None:
-        config_loader = ConfigLoader()
-    return config_loader
 
 
 async def _forward_transcription(
@@ -98,11 +41,10 @@ async def _forward_transcription(
 
 
 async def entrypoint(ctx: JobContext) -> None:
-    agent_config, agent_name = get_config_loader().load_agent_config()
-
-    signal_manager: SignalManager = get_signal_manager(
-        agent_config, agent_name, register_signals=False
-    )
+    config_loader: ConfigLoader = ConfigLoader.get_instance()
+    agent_config = config_loader.get_agent_config()
+    agent_name = config_loader.get_agent_name()
+    signal_manager: SignalManager = config_loader.get_signal_manager()
 
     ctx.add_shutdown_callback(signal_manager.decrement_active_jobs)
     signal_manager.increment_active_jobs()
@@ -150,11 +92,9 @@ async def entrypoint(ctx: JobContext) -> None:
 
 
 async def request_fnc(req: JobRequest) -> None:
-    agent_config, agent_name = get_config_loader().load_agent_config()
-
-    signal_manager = get_signal_manager(
-        agent_config, agent_name, register_signals=False
-    )
+    config_loader = ConfigLoader.get_instance()
+    agent_name = config_loader.get_agent_name()
+    signal_manager = config_loader.get_signal_manager()
 
     logging.info(f"Agent {agent_name} received job request {req.job.id}")
 
@@ -175,13 +115,10 @@ async def request_fnc(req: JobRequest) -> None:
 
 
 if __name__ == "__main__":
-    agent_config, agent_name = get_config_loader().load_agent_config()
 
-    os.environ["AGENT_MAIN_PID"] = str(os.getpid())
-    os.environ["AGENT_UUID"] = uuid.uuid4().hex
-
-    # Create a signal manager for the main process
-    get_signal_manager(agent_config, agent_name, register_signals=True)
+    config_loader = ConfigLoader.get_instance(True)
+    agent_config = config_loader.get_agent_config()
+    agent_name = config_loader.get_agent_name()
 
     worker_options = WorkerOptions(
         entrypoint_fnc=entrypoint,

@@ -230,7 +230,9 @@ class ConfigLoader:
                 )
 
             # The attribute exists and is not None or empty string
-            has_address = self.__prop_exists_and_is_string_not_empty(redis_config, "address")
+            has_address = self.__prop_exists_and_is_string_not_empty(
+                redis_config, "address"
+            )
             has_sentinel = "sentinel_addresses" in redis_config
 
             if not (has_address or has_sentinel):

@@ -80,7 +80,7 @@ After that, any change done to the common library will be reflected in the agent
 
 > This strategy works great with the [VSCode debugger](#debugging-in-vscode)!
 
-To remove the editable package from the agent, simply reinstall dependencies as usual:
+To remove the editable package from the agent and start using the remote package again, simply reinstall dependencies:
 
 ```bash
 cd speech-to-text
@@ -135,5 +135,5 @@ python -m unittest discover -s .
 Run all tests:
 
 ```bash
-find . -name "test_*.py" -type f -maxdepth 4 -exec sh -c 'cd $(dirname {}) && python -m unittest $(basename {})' \;
+find . -maxdepth 4 -name "test_*.py" -type f -exec sh -c 'cd $(dirname {}) && python -m unittest $(basename {})' \;
 ```

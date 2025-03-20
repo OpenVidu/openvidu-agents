@@ -12,11 +12,11 @@ from .signal_utils import SignalManager
 
 T = TypeVar("T", bound=Enum)
 
-# Singleton pattern for ConfigLoader
-config_loader = None
+# Singleton pattern for OpenViduAgent
+openvidu_agent = None
 
 
-class ConfigLoader:
+class OpenViduAgent:
     """Utility class to load agent configuration from environment variables or a YAML file."""
 
     def __init__(self, main_process: bool):
@@ -37,26 +37,33 @@ class ConfigLoader:
         self.__agent_name = agent_name
         self.__signal_manager = signal_manager
 
-    def get_instance(main_process: bool = False) -> "ConfigLoader":
-        """Get the singleton instance of ConfigLoader"""
-        global config_loader
-        if config_loader is None:
+    def get_instance(main_process: bool = False) -> "OpenViduAgent":
+        """Get the singleton instance of OpenViduAgent"""
+        global openvidu_agent
+        if openvidu_agent is None:
             if main_process:
                 if not os.environ.get("AGENT_MAIN_PID"):
                     os.environ["AGENT_MAIN_PID"] = str(os.getpid())
                 if not os.environ.get("AGENT_UUID"):
                     os.environ["AGENT_UUID"] = uuid.uuid4().hex
-            config_loader = ConfigLoader(main_process)
-        return config_loader
+            openvidu_agent = OpenViduAgent(main_process)
+        return openvidu_agent
 
     def get_agent_config(self) -> object:
+        """Get the agent configuration"""
         return self.__agent_config
 
     def get_agent_name(self) -> str:
+        """Get the agent name"""
         return self.__agent_name
 
-    def get_signal_manager(self) -> SignalManager:
-        return self.__signal_manager
+    def new_active_job(self, ctx):
+        """Call this method in the entrypoint function"""
+        ctx.add_shutdown_callback(self.__signal_manager.decrement_active_jobs)
+        self.__signal_manager.increment_active_jobs()
+
+    def can_accept_new_jobs(self):
+        return not self.__signal_manager.is_waiting_to_shut_down()
 
     def __load_agent_config(self) -> tuple[object, str]:
         agent_config: object = None

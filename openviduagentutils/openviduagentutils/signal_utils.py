@@ -32,6 +32,7 @@ class SignalManager:
         self.__redis_utils = RedisUtils(agent_config)
 
     def increment_active_jobs(self):
+        """Increment the active jobs counter for this agent instance"""
         try:
             acquired = self.__redis_utils.acquire_lock(
                 REDIS_PREFIX_LOCK + self.__full_agent_id()
@@ -52,6 +53,7 @@ class SignalManager:
             self.__redis_utils.release_lock(REDIS_PREFIX_LOCK + self.__full_agent_id())
 
     async def decrement_active_jobs(self, reason=None):
+        """Decrement the active jobs counter for this agent instance"""
         try:
             acquired = self.__redis_utils.acquire_lock(
                 REDIS_PREFIX_LOCK + self.__full_agent_id()
@@ -81,7 +83,8 @@ class SignalManager:
         finally:
             self.__redis_utils.release_lock(REDIS_PREFIX_LOCK + self.__full_agent_id())
 
-    def can_accept_new_jobs(self) -> bool:
+    def is_waiting_to_shut_down(self) -> bool:
+        """Check if this agent instance is flagged as waiting to shut down"""
         try:
             acquired = self.__redis_utils.acquire_lock(
                 REDIS_PREFIX_LOCK + self.__full_agent_id()
@@ -90,11 +93,12 @@ class SignalManager:
                 logging.error(
                     f"Failed to acquire lock for agent {self.__full_agent_id()}"
                 )
-                return False
+                # If we can't acquire the lock, let's be conservative and assume we cannot take new jobs
+                return True
             waiting_to_shutdown: int = self.__redis_utils.get(
                 REDIS_PREFIX_WAITING_TO_SHUTDOWN + self.__full_agent_id()
             )
-            return not bool(waiting_to_shutdown)
+            return bool(waiting_to_shutdown)
         finally:
             self.__redis_utils.release_lock(REDIS_PREFIX_LOCK + self.__full_agent_id())
 

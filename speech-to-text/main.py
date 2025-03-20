@@ -17,7 +17,7 @@ from livekit.agents import (
 from livekit.plugins import silero
 
 from stt_impl import get_stt_impl
-from openviduagentutils.config_loader import ConfigLoader
+from openviduagentutils.openvidu_agent import OpenViduAgent
 
 
 async def _forward_transcription(
@@ -41,13 +41,11 @@ async def _forward_transcription(
 
 
 async def entrypoint(ctx: JobContext) -> None:
-    config_loader: ConfigLoader = ConfigLoader.get_instance()
-    agent_config = config_loader.get_agent_config()
-    agent_name = config_loader.get_agent_name()
-    signal_manager: SignalManager = config_loader.get_signal_manager()
+    openvidu_agent = OpenViduAgent.get_instance()
+    openvidu_agent.new_active_job(ctx)
 
-    ctx.add_shutdown_callback(signal_manager.decrement_active_jobs)
-    signal_manager.increment_active_jobs()
+    agent_config = openvidu_agent.get_agent_config()
+    agent_name = openvidu_agent.get_agent_name()
 
     print(f"Agent {agent_name} joining room {ctx.room.name}")
 
@@ -92,13 +90,12 @@ async def entrypoint(ctx: JobContext) -> None:
 
 
 async def request_fnc(req: JobRequest) -> None:
-    config_loader = ConfigLoader.get_instance()
-    agent_name = config_loader.get_agent_name()
-    signal_manager = config_loader.get_signal_manager()
+    openvidu_agent = OpenViduAgent.get_instance()
+    agent_name = openvidu_agent.get_agent_name()
 
     logging.info(f"Agent {agent_name} received job request {req.job.id}")
 
-    if not signal_manager.can_accept_new_jobs():
+    if not openvidu_agent.can_accept_new_jobs():
         logging.warning(f"Agent {agent_name} cannot accept new job requests")
         await req.reject()
         return
@@ -116,9 +113,9 @@ async def request_fnc(req: JobRequest) -> None:
 
 if __name__ == "__main__":
 
-    config_loader = ConfigLoader.get_instance(True)
-    agent_config = config_loader.get_agent_config()
-    agent_name = config_loader.get_agent_name()
+    openvidu_agent = OpenViduAgent.get_instance(True)
+    agent_config = openvidu_agent.get_agent_config()
+    agent_name = openvidu_agent.get_agent_name()
 
     worker_options = WorkerOptions(
         entrypoint_fnc=entrypoint,

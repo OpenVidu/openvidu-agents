@@ -2,6 +2,7 @@
 
 - [Introduction](#introduction)
 - [Developing an agent](#developing-an-agent)
+  - [Create a new agent](#create-a-new-agent)
   - [Build as a Docker image](#build-as-a-docker-image)
   - [Local development](#local-development)
   - [Debugging in VSCode](#debugging-in-vscode)
@@ -21,6 +22,62 @@ The list of available agents is:
 - [speech-to-text](speech-to-text/README.md): Transcribes the audio of a Room to text in real-time.
 
 ## Developing an agent
+
+### Create a new agent
+
+> Folder `minimal` contains a copy-paste template for creating a new agent with the minimum required files.
+
+All OpenVidu agents must have at least the following files:
+
+- `Dockerfile`: The Dockerfile to build the agent image. Generally this file is the same for all agents, except if extra files are needed in the image (such as AI models).
+- `requirements.txt`: The Python dependencies of the agent.
+- `main.py`: The Python entrypoint of the agent.
+- `agent-AGENT_NAME.yml`: The YAML configuration of the agent. This file defines the common and agent-specific configurations.
+
+All OpenVidu agents must:
+
+- Have the following dependency in their `requirements.txt` file:
+
+  ```
+  openviduagentutils @ git+https://github.com/OpenVidu/openvidu-agents#egg=openviduagentutils&subdirectory=openviduagentutils
+  ```
+
+- Import and properly use the `openviduagentutils` package in `main.py`. This package atuomatically loads and checks mandatory agent configuration, provides utilities to load custom configurations and allows managing the agent lifecycle.
+
+  ```python
+  from openviduagentutils.openvidu_agent import OpenViduAgent
+
+  async def entrypoint(ctx: JobContext) -> None:
+    openvidu_agent = OpenViduAgent.get_instance()
+    openvidu_agent.new_active_job(ctx)
+    # DO SOME WORK IN THE ROOM...
+
+  async def request_fnc(req: JobRequest) -> None:
+    openvidu_agent = OpenViduAgent.get_instance()
+    if not openvidu_agent.can_accept_new_jobs():
+        await req.reject()
+    else:
+        agent_name = openvidu_agent.get_agent_name()
+        await req.accept(
+            name=agent_name
+        )
+
+  if __name__ == "__main__":
+    openvidu_agent = OpenViduAgent.get_instance(True) # True only in the "main" program
+    agent_config = openvidu_agent.get_agent_config()
+    agent_name = openvidu_agent.get_agent_name()
+    worker_options = WorkerOptions(
+        entrypoint_fnc=entrypoint,
+        request_fnc=request_fnc,
+        api_key=agent_config["api_key"],
+        api_secret=agent_config["api_secret"],
+        ws_url=agent_config["ws_url"],
+        worker_type=WorkerType.ROOM,
+    )
+    if agent_config["automatic_dispatch"] == True:
+        worker_options.agent_name = agent_name
+    cli.run_app(worker_options)
+  ```
 
 ### Build as a Docker image
 
@@ -123,17 +180,17 @@ This configuration is dependant on each agent. It can be provided in three diffe
 Run specific test:
 
 ```bash
-python -m unittest test_stt_impl.py
+python3 -m unittest test_stt_impl.py
 ```
 
 Run tests in a folder:
 
 ```bash
-python -m unittest discover -s .
+python3 -m unittest discover -s .
 ```
 
 Run all tests:
 
 ```bash
-find . -maxdepth 4 -name "test_*.py" -type f -exec sh -c 'cd $(dirname {}) && python -m unittest $(basename {})' \;
+find . -maxdepth 4 -name "test_*.py" -type f -exec sh -c 'cd $(dirname {}) && python3 -m unittest $(basename {})' \;
 ```

@@ -74,7 +74,7 @@ All OpenVidu agents must:
         ws_url=agent_config["ws_url"],
         worker_type=WorkerType.ROOM,
     )
-    if agent_config["automatic_dispatch"] == True:
+    if agent_config["processing"] == "manual":
         worker_options.agent_name = agent_name
     cli.run_app(worker_options)
   ```

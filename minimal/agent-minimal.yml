@@ -5,9 +5,11 @@
 # Docker image of the agent.
 docker_image: docker.io/openvidu/agent-minimal:latest
 
-# Whether or not an instance of this agent should be automatically connected to new Rooms.
-# If false, your application will need to call the Agent Dispatch API to connect the agent to a Room.
-automatic_dispatch: true
+# Whether this agent should run or not, and how it will connect to Rooms (automatic|manual|disabled)
+# automatic: the agent will run and will automatically connect to new Rooms.
+# manual: the agent will run and will connect to new Rooms only when your application dictates it by using the Agent Dispatch API.
+# disabled: the agent will not run.
+processing: automatic
 
 ################################
 # Agent specific configuration #

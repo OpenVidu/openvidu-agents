@@ -138,11 +138,11 @@ if __name__ == "__main__":
             hidden=agent_config["speech_to_text"]["hidden"],
         ),
     )
-    if agent_config["automatic_dispatch"] == True:
+    if agent_config["processing"] == "manual":
         worker_options.agent_name = agent_name
 
     logging.info(
-        f"Starting agent {agent_name} with automatic dispatch configured to {agent_config['automatic_dispatch']}"
+        f"Starting agent {agent_name} with processing configured to {agent_config['processing']}"
     )
 
     cli.run_app(worker_options)

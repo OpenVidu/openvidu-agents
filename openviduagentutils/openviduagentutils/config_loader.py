@@ -114,21 +114,21 @@ class ConfigLoader:
                 )
                 exit(1)
 
-        if "api_key" not in agent_config:
+        if not self.__prop_exists_and_is_string_not_empty(agent_config, "api_key"):
             if not os.environ.get("LIVEKIT_API_KEY"):
                 logging.error(
                     "api_key not defined in agent configuration or LIVEKIT_API_KEY env var"
                 )
                 sys.exit(1)
             agent_config["api_key"] = os.environ["LIVEKIT_API_KEY"]
-        if "api_secret" not in agent_config:
+        if not self.__prop_exists_and_is_string_not_empty(agent_config, "api_secret"):
             if not os.environ.get("LIVEKIT_API_SECRET"):
                 logging.error(
                     "api_secret not defined in agent configuration or LIVEKIT_API_SECRET env var"
                 )
                 exit(1)
             agent_config["api_secret"] = os.environ["LIVEKIT_API_SECRET"]
-        if "ws_url" not in agent_config:
+        if not self.__prop_exists_and_is_string_not_empty(agent_config, "ws_url"):
             if not os.environ.get("LIVEKIT_URL"):
                 logging.error(
                     "ws_url not defined in agent configuration or LIVEKIT_URL env var"
@@ -230,7 +230,7 @@ class ConfigLoader:
                 )
 
             # The attribute exists and is not None or empty string
-            has_address = "address" in redis_config and (redis_config["address"] != None and redis_config["address"] != "")
+            has_address = self.__prop_exists_and_is_string_not_empty(redis_config, "address")
             has_sentinel = "sentinel_addresses" in redis_config
 
             if not (has_address or has_sentinel):
@@ -239,16 +239,22 @@ class ConfigLoader:
                 )
 
             if has_sentinel:
-                if not "sentinel_master_name" in redis_config:
+                if not self.__prop_exists_and_is_string_not_empty(
+                    redis_config, "sentinel_master_name"
+                ):
                     raise ValueError(
                         "Missing required field in agent configuration: redis.sentinel_master_name"
                     )
-                if not "sentinel_password" in redis_config:
+                if not self.__prop_exists_and_is_string_not_empty(
+                    redis_config, "sentinel_password"
+                ):
                     raise ValueError(
                         "Missing required field in agent configuration: redis.sentinel_password"
                     )
 
-            if has_address and not "password" in redis_config:
+            if has_address and not self.__prop_exists_and_is_string_not_empty(
+                redis_config, "password"
+            ):
                 raise ValueError(
                     "Missing required field in agent configuration: redis.password"
                 )
@@ -300,4 +306,12 @@ class ConfigLoader:
         return (
             os.path.isfile(os.path.join(file_folder, file_name))
             and re.match(r"agent-[a-zA-Z0-9-_]+\.ya?ml", file_name) is not None
+        )
+
+    def __prop_exists_and_is_string_not_empty(self, obj: object, prop: str) -> bool:
+        return (
+            prop in obj
+            and obj[prop] != None
+            and isinstance(obj[prop], str)
+            and obj[prop] != ""
         )

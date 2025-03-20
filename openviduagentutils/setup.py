@@ -8,7 +8,7 @@ setup(
     license="Apache-2.0",
     packages=find_packages(),
     python_requires=">=3.9.0",
-    install_requires=["redis>=5.2.1", "python-dotenv>=1.0.1"],
+    install_requires=["redis>=5.2.1", "python-dotenv>=1.0.1", "pyyaml>=6.0.2"],
     author="Pablo Fuente",
     author_email="pablofuenteperez@gmail.com",
     keywords=["openvidu", "agents", "ai"],

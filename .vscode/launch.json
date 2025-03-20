@@ -5,10 +5,10 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "speech-to-text",
+      "name": "Debug agent",
       "type": "debugpy",
       "request": "launch",
-      "program": "speech-to-text/transcriber.py",
+      "program": "${file}",
       "console": "integratedTerminal",
       "justMyCode": false,
       "args": ["dev"],
@@ -19,7 +19,7 @@
         "LIVEKIT_URL": "ws://localhost:7880",
         "REDIS_ADDRESS": "localhost:6379",
         "REDIS_PASSWORD": "redispassword",
-        // // Configuration for OpenVidu Plaground
+        // // Configuration for OpenVidu Playground
         // "LIVEKIT_API_KEY": "key1",
         // "LIVEKIT_API_SECRET": "abcdefghijklmnopqrstuvwxyz123456",
         // "LIVEKIT_URL": "wss://playground-ha.openvidu-local.dev",

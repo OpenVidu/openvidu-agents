@@ -5,7 +5,7 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "STT",
+      "name": "speech-to-text",
       "type": "debugpy",
       "request": "launch",
       "program": "speech-to-text/transcriber.py",

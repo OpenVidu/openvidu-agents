@@ -3,7 +3,7 @@ import os
 import signal
 import sys
 
-from redis_utils import (
+from .redis_utils import (
     RedisUtils,
     REDIS_PREFIX_LOCK,
     REDIS_PREFIX_ACTIVE_JOBS,

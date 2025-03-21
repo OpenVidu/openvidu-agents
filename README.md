@@ -13,6 +13,8 @@
   - [YAML configuration](#yaml-configuration)
 - [Run tests](#run-tests)
 
+> **ATTENTION**: This repository is actively being developed and is subject to change.
+
 ## Introduction
 
 This is a collection of pre-configured and ready-to-use AI Agents for OpenVidu. They are built using the [LiveKit Agents framework](https://docs.livekit.io/agents/). They are designed to easily be added to an OpenVidu deployment and provide useful AI services.

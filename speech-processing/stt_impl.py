@@ -14,15 +14,16 @@ from livekit.plugins import (
     speechmatics,
 )
 from livekit.plugins.speechmatics.types import TranscriptionConfig
+from livekit.agents import stt
 from openviduagentutils.config_manager import ConfigManager
 
 from azure.cognitiveservices.speech.enums import ProfanityOption
 
 
-def get_aws_stt_impl(agent_config):
+def get_aws_stt_impl(agent_config) -> stt.STT:
 
-    config_manager = ConfigManager(agent_config, "speech_to_text.aws")
-    wrong_credentials = "Wrong AWS credentials. speech_to_text.aws.aws_access_key_id, speech_to_text.aws.aws_secret_access_key and speech_to_text.aws.aws_default_region must be set"
+    config_manager = ConfigManager(agent_config, "speech_processing.aws")
+    wrong_credentials = "Wrong AWS credentials. speech_processing.aws.aws_access_key_id, speech_processing.aws.aws_secret_access_key and speech_processing.aws.aws_default_region must be set"
 
     try:
         api_key = config_manager.mandatory_value("aws_access_key_id", wrong_credentials)
@@ -68,9 +69,9 @@ def get_aws_stt_impl(agent_config):
     )
 
 
-def get_azure_stt_impl(agent_config):
+def get_azure_stt_impl(agent_config) -> stt.STT:
 
-    config_manager = ConfigManager(agent_config, "speech_to_text.azure")
+    config_manager = ConfigManager(agent_config, "speech_processing.azure")
     wrong_credentials = "Wrong azure credentials. One of these combinations must be set:\n    - speech_host\n    - speech_key + speech_region\n    - speech_auth_token + speech_region"
 
     speech_host = config_manager.optional_value("speech_host", None)
@@ -97,12 +98,9 @@ def get_azure_stt_impl(agent_config):
         raise ValueError(wrong_credentials)
 
 
-def get_google_stt_impl(agent_config):
-
-    config_manager = ConfigManager(agent_config, "speech_to_text.google")
-    wrong_credentials = (
-        "Wrong Google credentials. speech_to_text.google.credentials_info must be set"
-    )
+def get_google_stt_impl(agent_config) -> stt.STT:
+    config_manager = ConfigManager(agent_config, "speech_processing.google")
+    wrong_credentials = "Wrong Google credentials. speech_processing.google.credentials_info must be set"
 
     credentials_info_str = config_manager.mandatory_value(
         "credentials_info", wrong_credentials
@@ -139,11 +137,11 @@ def get_google_stt_impl(agent_config):
     )
 
 
-def get_openai_stt_impl(agent_config):
+def get_openai_stt_impl(agent_config) -> stt.STT:
 
-    config_manager = ConfigManager(agent_config, "speech_to_text.openai")
+    config_manager = ConfigManager(agent_config, "speech_processing.openai")
     wrong_credentials = (
-        "Wrong OpenAI credentials. speech_to_text.openai.api_key must be set"
+        "Wrong OpenAI credentials. speech_processing.openai.api_key must be set"
     )
 
     api_key = config_manager.mandatory_value("api_key", wrong_credentials)
@@ -155,9 +153,9 @@ def get_openai_stt_impl(agent_config):
 
 def get_groq_stt_impl(agent_config):
 
-    config_manager = ConfigManager(agent_config, "speech_to_text.groq")
+    config_manager = ConfigManager(agent_config, "speech_processing.groq")
     wrong_credentials = (
-        "Wrong Groq credentials. speech_to_text.groq.api_key must be set"
+        "Wrong Groq credentials. speech_processing.groq.api_key must be set"
     )
 
     api_key = config_manager.mandatory_value("api_key", wrong_credentials)
@@ -171,11 +169,11 @@ def get_groq_stt_impl(agent_config):
     )
 
 
-def get_deepgram_stt_impl(agent_config):
+def get_deepgram_stt_impl(agent_config) -> stt.STT:
 
-    config_manager = ConfigManager(agent_config, "speech_to_text.deepgram")
+    config_manager = ConfigManager(agent_config, "speech_processing.deepgram")
     wrong_credentials = (
-        "Wrong Deepgram credentials. speech_to_text.deepgram.api_key must be set"
+        "Wrong Deepgram credentials. speech_processing.deepgram.api_key must be set"
     )
 
     api_key = config_manager.mandatory_value("api_key", wrong_credentials)
@@ -203,11 +201,11 @@ def get_deepgram_stt_impl(agent_config):
     )
 
 
-def get_assemblyai_stt_impl(agent_config):
+def get_assemblyai_stt_impl(agent_config) -> stt.STT:
 
-    config_manager = ConfigManager(agent_config, "speech_to_text.assemblyai")
+    config_manager = ConfigManager(agent_config, "speech_processing.assemblyai")
     wrong_credentials = (
-        "Wrong AssemblyAI credentials. speech_to_text.assemblyai.api_key must be set"
+        "Wrong AssemblyAI credentials. speech_processing.assemblyai.api_key must be set"
     )
 
     api_key = config_manager.mandatory_value("api_key", wrong_credentials)
@@ -223,10 +221,12 @@ def get_assemblyai_stt_impl(agent_config):
     )
 
 
-def get_fal_stt_impl(agent_config):
+def get_fal_stt_impl(agent_config) -> stt.STT:
 
-    config_manager = ConfigManager(agent_config, "speech_to_text.fal")
-    wrong_credentials = "Wrong FAL credentials. speech_to_text.fal.api_key must be set"
+    config_manager = ConfigManager(agent_config, "speech_processing.fal")
+    wrong_credentials = (
+        "Wrong FAL credentials. speech_processing.fal.api_key must be set"
+    )
 
     api_key = config_manager.mandatory_value("api_key", wrong_credentials)
     task = config_manager.optional_value("task", "transcribe")
@@ -242,10 +242,10 @@ def get_fal_stt_impl(agent_config):
     )
 
 
-def get_clova_stt_impl(agent_config):
+def get_clova_stt_impl(agent_config) -> stt.STT:
 
-    config_manager = ConfigManager(agent_config, "speech_to_text.clova")
-    wrong_credentials = "Wrong Clova credentials. speech_to_text.clova.api_key and speech_to_text.clova.api_key must be set"
+    config_manager = ConfigManager(agent_config, "speech_processing.clova")
+    wrong_credentials = "Wrong Clova credentials. speech_processing.clova.api_key and speech_processing.clova.api_key must be set"
 
     api_key = config_manager.mandatory_value("api_key", wrong_credentials)
     invoke_url = config_manager.mandatory_value("invoke_url", wrong_credentials)
@@ -257,10 +257,10 @@ def get_clova_stt_impl(agent_config):
     )
 
 
-def get_speechmatics_stt_impl(agent_config):
+def get_speechmatics_stt_impl(agent_config) -> stt.STT:
 
-    config_manager = ConfigManager(agent_config, "speech_to_text.speechmatics")
-    wrong_credentials = "Wrong Speechmatics credentials. speech_to_text.speechmatics.api_key must be set"
+    config_manager = ConfigManager(agent_config, "speech_processing.speechmatics")
+    wrong_credentials = "Wrong Speechmatics credentials. speech_processing.speechmatics.api_key must be set"
 
     api_key = config_manager.mandatory_value("api_key", wrong_credentials)
     language = config_manager.optional_value("language", "en")
@@ -289,13 +289,15 @@ def get_speechmatics_stt_impl(agent_config):
     return speechmatics.STT(transcription_config=transcrpition_config)
 
 
-def get_stt_impl(agent_config):
+def get_stt_impl(agent_config) -> stt.STT:
     try:
-        stt_provider = agent_config["speech_to_text"]["provider"]
+        stt_provider = agent_config["speech_processing"]["provider"]
     except Exception:
         stt_provider = None
     if stt_provider is None:
-        raise ValueError("speech_to_text.provider not defined in agent configuration")
+        raise ValueError(
+            "speech_processing.provider not defined in agent configuration"
+        )
     else:
         logging.info(f"Using {stt_provider} as STT provider")
     if stt_provider == "aws":

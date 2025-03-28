@@ -1,5 +1,8 @@
 # openvidu-agents
 
+> [!WARNING]  
+> This repository is actively being developed and is subject to change.
+
 - [Introduction](#introduction)
 - [Developing an agent](#developing-an-agent)
   - [Create a new agent](#create-a-new-agent)
@@ -13,15 +16,13 @@
   - [YAML configuration](#yaml-configuration)
 - [Run tests](#run-tests)
 
-> **ATTENTION**: This repository is actively being developed and is subject to change.
-
 ## Introduction
 
 This is a collection of pre-configured and ready-to-use AI Agents for OpenVidu. They are built using the [LiveKit Agents framework](https://docs.livekit.io/agents/). They are designed to easily be added to an OpenVidu deployment and provide useful AI services.
 
 The list of available agents is:
 
-- [speech-to-text](speech-to-text/README.md): Transcribes the audio of a Room to text in real-time.
+- [speech-processing](speech-processing/README.md): AI services for transcribing, translating and summarizing video conference conversations.
 
 ## Developing an agent
 
@@ -83,25 +84,25 @@ All OpenVidu agents must:
 
 ### Build as a Docker image
 
-To build the Docker image (in this example for agent `speech-to-text`):
+To build the Docker image (in this example for agent `speech-processing`):
 
 ```bash
-cd speech-to-text
-docker build --no-cache -t openvidu/agent-speech-to-text:3.2.0 .
+cd speech-processing
+docker build --no-cache -t openvidu/agent-speech-processing:3.2.0 .
 ```
 
 > `--no-cache` is required to bring latest changes from the shared utils library hosted in the repository.
 
 ### Local development
 
-To prepare the agent for development (in this example agent `speech-to-text`), it is necessary to install its dependencies:
+To prepare the agent for development (in this example agent `speech-processing`), it is necessary to install its dependencies:
 
 ```bash
 # Create a virtual environment
 python3 -m venv .venv
 . .venv/bin/activate
 # Install agent dependencies
-cd speech-to-text
+cd speech-processing
 pip3 install -r requirements.txt
 ```
 
@@ -122,16 +123,16 @@ openviduagentutils @ git+https://github.com/OpenVidu/openvidu-agents#egg=openvid
 Agents may bring any change pushed to the common library simply by reinstalling their dependencies:
 
 ```bash
-cd speech-to-text
+cd speech-processing
 pip3 install -r requirements.txt --force-reinstall
 ```
 
 ### Developing the common library
 
-To make it easier to develop the common library, the best way is to install it as an [editable local package](https://pip.pypa.io/en/stable/topics/local-project-installs/#editable-installs) in the agent's virtual environment. For example, to develop the common library against agent `speech-to-text`:
+To make it easier to develop the common library, the best way is to install it as an [editable local package](https://pip.pypa.io/en/stable/topics/local-project-installs/#editable-installs) in the agent's virtual environment. For example, to develop the common library against agent `speech-processing`:
 
 ```bash
-cd speech-to-text
+cd speech-processing
 python3 -m pip install -e ../openviduagentutils/
 ```
 
@@ -142,7 +143,7 @@ After that, any change done to the common library will be reflected in the agent
 To remove the editable package from the agent and start using the remote package again, simply reinstall dependencies:
 
 ```bash
-cd speech-to-text
+cd speech-processing
 pip3 install -r requirements.txt
 ```
 

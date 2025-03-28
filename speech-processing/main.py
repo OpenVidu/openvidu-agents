@@ -21,7 +21,8 @@ from openviduagentutils.openvidu_agent import OpenViduAgent
 
 
 async def _forward_transcription(
-    stt_stream: stt.SpeechStream, stt_forwarder: transcription.STTSegmentsForwarder
+    stt_stream: stt.SpeechStream,
+    stt_forwarder: transcription.STTSegmentsForwarder,
 ):
     """Forward the transcription to the client and log the transcript in the console"""
     async for ev in stt_stream:
@@ -75,6 +76,8 @@ async def entrypoint(ctx: JobContext) -> None:
 
         async for ev in audio_stream:
             stt_stream.push_frame(ev.frame)
+
+        stt_stream.end_input()
 
     @ctx.room.on("track_subscribed")
     def on_track_subscribed(
@@ -135,7 +138,7 @@ if __name__ == "__main__":
             can_publish_data=True,
             # when set to true, the agent won't be visible to others in the room.
             # when hidden, it will also not be able to publish tracks to the room as it won't be visible.
-            hidden=agent_config["speech_to_text"]["hidden"],
+            hidden=agent_config["speech_processing"]["hidden"],
         ),
     )
     if agent_config["processing"] == "manual":

@@ -1,0 +1,12 @@
+openviduagentutils @ git+https://github.com/OpenVidu/openvidu-agents.git#egg=openviduagentutils&subdirectory=openviduagentutils
+livekit-agents>=0.12.18
+livekit-plugins-aws>=0.1.1
+livekit-plugins-azure>=0.5.6
+livekit-plugins-google>=0.11.2
+livekit-plugins-openai>=0.12.2
+livekit-plugins-deepgram>=0.7.2
+livekit-plugins-assemblyai>=0.2.3
+livekit-plugins-fal>=0.2.4
+livekit-plugins-silero>=0.7.5
+livekit-plugins-clova @ git+https://github.com/livekit/agents.git@main#egg=livekit-plugins-clova&subdirectory=livekit-plugins/livekit-plugins-clova
+livekit-plugins-speechmatics>=0.0.2

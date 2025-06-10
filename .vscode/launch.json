@@ -8,7 +8,7 @@
       "name": "Debug agent",
       "type": "debugpy",
       "request": "launch",
-      "program": "${file}",
+      "program": "${workspaceFolder}/speech-processing/main.py",
       "console": "integratedTerminal",
       "justMyCode": false,
       "args": ["dev"],

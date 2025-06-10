@@ -40,7 +40,7 @@ WORKDIR /home/appuser
 
 # This allows invalidating the image building cache from this point to
 # force the re-installation of depedencies and re-copying the source code
-# "docker build -t openvidu/agent-speech-processing:main --build-arg CACHEBUST=$(date +%s) ."
+# "docker build -t openvidu/agent-AGENT_NAME:main --build-arg CACHEBUST=$(date +%s) ."
 ARG CACHEBUST=1
 
 COPY requirements.txt .
@@ -49,7 +49,7 @@ RUN python -m pip install --user --no-cache-dir -r requirements.txt
 COPY ./*.py .
 
 # ensure that any dependent models are downloaded at build-time
-# RUN python main.py download-files
+RUN python main.py download-files
 
 # Run the application.
 ENTRYPOINT ["python", "main.py"]

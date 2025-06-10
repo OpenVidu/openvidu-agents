@@ -217,3 +217,13 @@ speech_processing:
       # - content: CEO
       #   sounds_like:
       #     - C.E.O.
+
+  gladia:
+    # API key for Gladia. See https://app.gladia.io/account
+    api_key:
+    # Whether to return interim (non-final) transcription results. Defaults to True
+    interim_results:
+    # List of language codes to use for recognition. Defaults to None (auto-detect). See https://docs.gladia.io/chapters/limits-and-specifications/languages
+    languages:
+    # Whether to allow switching between languages during recognition. Defaults to True
+    code_switching:

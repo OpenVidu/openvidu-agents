@@ -23,6 +23,7 @@ from stt_impl import (
     get_fal_stt_impl,
     get_clova_stt_impl,
     get_speechmatics_stt_impl,
+    get_gladia_stt_impl,
     get_stt_impl,
 )
 
@@ -272,7 +273,9 @@ class TestSTTImplementations(unittest.TestCase):
 
     def test_get_google_stt_impl_invalid_json(self):
         # Arrange
-        config = {"speech_processing": {"google": {"credentials_info": "not_valid_json"}}}
+        config = {
+            "speech_processing": {"google": {"credentials_info": "not_valid_json"}}
+        }
 
         # Act & Assert
         with self.assertRaises(ValueError) as context:
@@ -594,6 +597,44 @@ class TestSTTImplementations(unittest.TestCase):
 
         self.assertIn("Wrong Speechmatics credentials", str(context.exception))
 
+    # Gladia STT Tests
+    @patch("livekit.plugins.gladia.STT")
+    def test_get_gladia_stt_impl_success(self, mock_gladia_stt):
+        # Arrange
+        config = {
+            "speech_processing": {
+                "gladia": {
+                    "api_key": "test_gladia_key",
+                    "languages": ["en"],
+                    "interim_results": True,
+                    "code_switching": True,
+                }
+            }
+        }
+        mock_gladia_stt.return_value = "gladia_stt_instance"
+
+        # Act
+        result = get_gladia_stt_impl(config)
+
+        # Assert
+        self.assertEqual(result, "gladia_stt_instance")
+        mock_gladia_stt.assert_called_once_with(
+            api_key="test_gladia_key",
+            languages=["en"],
+            interim_results=True,
+            code_switching=True,
+        )
+
+    def test_get_gladia_stt_impl_missing_api_key(self):
+        # Arrange
+        config = {"speech_processing": {"gladia": {}}}
+
+        # Act & Assert
+        with self.assertRaises(ValueError) as context:
+            get_gladia_stt_impl(config)
+
+        self.assertIn("Wrong Gladia credentials", str(context.exception))
+
     # Master get_stt_impl Tests
     def test_get_stt_impl_missing_provider(self):
         # Arrange
@@ -744,3 +785,16 @@ class TestSTTImplementations(unittest.TestCase):
         # Assert
         self.assertEqual(result, "speechmatics_stt_instance")
         mock_get_speechmatics.assert_called_once_with(config)
+
+    @patch("stt_impl.get_gladia_stt_impl")
+    def test_get_stt_impl_gladia(self, mock_get_gladia):
+        # Arrange
+        config = {"speech_processing": {"provider": "gladia"}}
+        mock_get_gladia.return_value = "gladia_stt_instance"
+
+        # Act
+        result = get_stt_impl(config)
+
+        # Assert
+        self.assertEqual(result, "gladia_stt_instance")
+        mock_get_gladia.assert_called_once_with(config)

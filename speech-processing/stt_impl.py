@@ -12,6 +12,7 @@ from livekit.plugins import (
     fal,
     clova,
     speechmatics,
+    gladia,
 )
 from livekit.plugins.speechmatics.types import TranscriptionConfig
 from livekit.agents import stt
@@ -289,6 +290,26 @@ def get_speechmatics_stt_impl(agent_config) -> stt.STT:
     return speechmatics.STT(transcription_config=transcrpition_config)
 
 
+def get_gladia_stt_impl(agent_config) -> stt.STT:
+
+    config_manager = ConfigManager(agent_config, "speech_processing.gladia")
+    wrong_credentials = (
+        "Wrong Gladia credentials. speech_processing.gladia.api_key must be set"
+    )
+
+    api_key = config_manager.mandatory_value("api_key", wrong_credentials)
+    interim_results = config_manager.optional_value("interim_results", True)
+    languages = config_manager.optional_value("languages", None)
+    code_switching = config_manager.optional_value("code_switching", True)
+
+    return gladia.STT(
+        api_key=api_key,
+        interim_results=interim_results,
+        languages=languages,
+        code_switching=code_switching,
+    )
+
+
 def get_stt_impl(agent_config) -> stt.STT:
     try:
         stt_provider = agent_config["speech_processing"]["provider"]
@@ -320,5 +341,7 @@ def get_stt_impl(agent_config) -> stt.STT:
         return get_clova_stt_impl(agent_config)
     elif stt_provider == "speechmatics":
         return get_speechmatics_stt_impl(agent_config)
+    elif stt_provider == "gladia":
+        return get_gladia_stt_impl(agent_config)
     else:
         raise ValueError(f"unknown STT provider: {stt_provider}")

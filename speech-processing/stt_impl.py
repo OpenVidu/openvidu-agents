@@ -13,6 +13,7 @@ from livekit.plugins import (
     clova,
     speechmatics,
     gladia,
+    groq
 )
 from livekit.plugins.speechmatics.types import TranscriptionConfig
 from livekit.agents import stt
@@ -162,11 +163,13 @@ def get_groq_stt_impl(agent_config):
     api_key = config_manager.mandatory_value("api_key", wrong_credentials)
     model = config_manager.optional_value("model", "whisper-large-v3-turbo")
     language = config_manager.optional_value("language", "en")
+    prompt = config_manager.optional_value("prompt", None)
 
-    return openai.stt.STT.with_groq(
+    return groq.STT(
         api_key=api_key,
         model=model,
         language=language,
+        prompt=prompt,
     )
 
 
@@ -210,16 +213,9 @@ def get_assemblyai_stt_impl(agent_config) -> stt.STT:
     )
 
     api_key = config_manager.mandatory_value("api_key", wrong_credentials)
-    word_boost = config_manager.optional_value("word_boost", None)
-    disable_partial_transcripts = config_manager.optional_value(
-        "disable_partial_transcripts", False
-    )
+    format_turns = config_manager.optional_value("format_turns", None)
 
-    return assemblyai.STT(
-        api_key=api_key,
-        word_boost=word_boost,
-        disable_partial_transcripts=disable_partial_transcripts,
-    )
+    return assemblyai.STT(api_key=api_key, format_turns=format_turns)
 
 
 def get_fal_stt_impl(agent_config) -> stt.STT:

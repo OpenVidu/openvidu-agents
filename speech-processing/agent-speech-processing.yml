@@ -18,7 +18,7 @@ speech_processing:
   # Whether or not the agent should be hidden to the Participants of the Room.
   hidden: true
 
-  # Which Speech-To-Text provider to use: aws, azure, google, opeanai, groq, deepgram, assemblyai, fal, clova, speechmatics
+  # Which Speech-To-Text provider to use: aws, azure, google, opeanai, groq, deepgram, assemblyai, fal, clova, speechmatics, gladia
   # The custom configuration for the selected provider must be set below
   provider: aws
 
@@ -123,6 +123,8 @@ speech_processing:
     # The language of the input audio. Supplying the input language in ISO-639-1 format
     # (https://en.wikipedia.org/wiki/List_of_ISO_639-1_codes) will improve accuracy and latency.
     language:
+    # Prompt to guide the model's style or specify how to spell unfamiliar words. 224 tokens max.
+    prompt:
 
   deepgram:
     # See https://console.deepgram.com/
@@ -154,13 +156,8 @@ speech_processing:
   assemblyai:
     # API key for AssemblyAI. See https://assemblyai.com/app/
     api_key:
-    # See https://www.assemblyai.com/docs/speech-to-text/streaming#add-custom-vocabulary
-    # Commented below is an example
-    word_boost:
-      # - "OpenVidu"
-      # - "WebRTC"
-    # See https://www.assemblyai.com/docs/speech-to-text/streaming#disable-partial-transcripts
-    disable_partial_transcripts: false
+    # Whether to return formatted final transcripts. If enabled, formatted final transcripts are emitted shortly following an end-of-turn detection.
+    format_turns:
 
   fal:
     # API key for fal. See https://fal.ai/dashboard/keys

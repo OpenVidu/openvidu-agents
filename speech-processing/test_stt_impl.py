@@ -31,7 +31,7 @@ from stt_impl import (
 class TestSTTImplementations(unittest.TestCase):
     def setUp(self):
         # Set up common test data
-        self.base_config = {"speech_processing": {"provider": "test_provider"}}
+        self.base_config = {"live_captions": {"provider": "test_provider"}}
 
         # Capture logging
         self.log_capture = StringIO()
@@ -62,7 +62,7 @@ class TestSTTImplementations(unittest.TestCase):
     def test_get_aws_stt_impl_success(self, mock_aws_stt):
         # Arrange
         config = {
-            "speech_processing": {
+            "live_captions": {
                 "aws": {
                     "aws_access_key_id": "test_key_id",
                     "aws_secret_access_key": "test_secret_key",
@@ -102,7 +102,7 @@ class TestSTTImplementations(unittest.TestCase):
 
     def test_get_aws_stt_impl_missing_credentials(self):
         # Arrange
-        config = {"speech_processing": {"aws": {}}}
+        config = {"live_captions": {"aws": {}}}
 
         # Act & Assert
         with self.assertRaises(ValueError) as context:
@@ -113,7 +113,7 @@ class TestSTTImplementations(unittest.TestCase):
     def test_get_aws_stt_impl_partial_credentials(self):
         # Arrange
         config = {
-            "speech_processing": {
+            "live_captions": {
                 "aws": {
                     "aws_access_key_id": "test_key_id",
                     # Missing other required fields
@@ -132,7 +132,7 @@ class TestSTTImplementations(unittest.TestCase):
     def test_get_azure_stt_impl_with_host(self, mock_azure_stt):
         # Arrange
         config = {
-            "speech_processing": {
+            "live_captions": {
                 "azure": {
                     "speech_host": "test.host.com",
                     "languages": ["en-US", "es-ES"],
@@ -154,7 +154,7 @@ class TestSTTImplementations(unittest.TestCase):
     def test_get_azure_stt_impl_with_key_region(self, mock_azure_stt):
         # Arrange
         config = {
-            "speech_processing": {
+            "live_captions": {
                 "azure": {
                     "speech_key": "test_key",
                     "speech_region": "westus",
@@ -177,7 +177,7 @@ class TestSTTImplementations(unittest.TestCase):
     def test_get_azure_stt_impl_with_token_region(self, mock_azure_stt):
         # Arrange
         config = {
-            "speech_processing": {
+            "live_captions": {
                 "azure": {
                     "speech_auth_token": "test_token",
                     "speech_region": "westus",
@@ -203,7 +203,7 @@ class TestSTTImplementations(unittest.TestCase):
     def test_get_azure_stt_impl_invalid_credentials(self):
         # Arrange
         config = {
-            "speech_processing": {
+            "live_captions": {
                 "azure": {
                     # Missing required credentials
                 }
@@ -222,7 +222,7 @@ class TestSTTImplementations(unittest.TestCase):
     def test_get_google_stt_impl_success(self, mock_google_stt, mock_temp_file):
         # Arrange
         config = {
-            "speech_processing": {
+            "live_captions": {
                 "google": {
                     "credentials_info": '{"type": "service_account", "project_id": "test_project"}',
                     "model": "latest_short",
@@ -263,7 +263,7 @@ class TestSTTImplementations(unittest.TestCase):
 
     def test_get_google_stt_impl_missing_credentials(self):
         # Arrange
-        config = {"speech_processing": {"google": {}}}
+        config = {"live_captions": {"google": {}}}
 
         # Act & Assert
         with self.assertRaises(ValueError) as context:
@@ -273,9 +273,7 @@ class TestSTTImplementations(unittest.TestCase):
 
     def test_get_google_stt_impl_invalid_json(self):
         # Arrange
-        config = {
-            "speech_processing": {"google": {"credentials_info": "not_valid_json"}}
-        }
+        config = {"live_captions": {"google": {"credentials_info": "not_valid_json"}}}
 
         # Act & Assert
         with self.assertRaises(ValueError) as context:
@@ -287,7 +285,7 @@ class TestSTTImplementations(unittest.TestCase):
     def test_get_google_stt_impl_file_write_error(self, mock_temp_file):
         # Arrange
         config = {
-            "speech_processing": {
+            "live_captions": {
                 "google": {"credentials_info": '{"type": "service_account"}'}
             }
         }
@@ -308,7 +306,7 @@ class TestSTTImplementations(unittest.TestCase):
     def test_get_openai_stt_impl_success(self, mock_openai_stt):
         # Arrange
         config = {
-            "speech_processing": {
+            "live_captions": {
                 "openai": {
                     "api_key": "test_openai_key",
                     "model": "whisper-2",
@@ -329,7 +327,7 @@ class TestSTTImplementations(unittest.TestCase):
 
     def test_get_openai_stt_impl_missing_api_key(self):
         # Arrange
-        config = {"speech_processing": {"openai": {}}}
+        config = {"live_captions": {"openai": {}}}
 
         # Act & Assert
         with self.assertRaises(ValueError) as context:
@@ -338,15 +336,16 @@ class TestSTTImplementations(unittest.TestCase):
         self.assertIn("Wrong OpenAI credentials", str(context.exception))
 
     # Groq STT Tests
-    @patch("livekit.plugins.openai.stt.STT.with_groq")
+    @patch("livekit.plugins.groq.STT")
     def test_get_groq_stt_impl_success(self, mock_groq_stt):
         # Arrange
         config = {
-            "speech_processing": {
+            "live_captions": {
                 "groq": {
                     "api_key": "test_groq_key",
                     "model": "whisper-large-v3",
                     "language": "es",
+                    "prompt": "You are a helpful assistant.",
                 }
             }
         }
@@ -358,12 +357,15 @@ class TestSTTImplementations(unittest.TestCase):
         # Assert
         self.assertEqual(result, "groq_stt_instance")
         mock_groq_stt.assert_called_once_with(
-            api_key="test_groq_key", model="whisper-large-v3", language="es"
+            api_key="test_groq_key",
+            model="whisper-large-v3",
+            language="es",
+            prompt="You are a helpful assistant.",
         )
 
     def test_get_groq_stt_impl_missing_api_key(self):
         # Arrange
-        config = {"speech_processing": {"groq": {}}}
+        config = {"live_captions": {"groq": {}}}
 
         # Act & Assert
         with self.assertRaises(ValueError) as context:
@@ -376,7 +378,7 @@ class TestSTTImplementations(unittest.TestCase):
     def test_get_deepgram_stt_impl_success(self, mock_deepgram_stt):
         # Arrange
         config = {
-            "speech_processing": {
+            "live_captions": {
                 "deepgram": {
                     "api_key": "test_deepgram_key",
                     "model": "nova-2-meeting",
@@ -413,7 +415,7 @@ class TestSTTImplementations(unittest.TestCase):
 
     def test_get_deepgram_stt_impl_missing_api_key(self):
         # Arrange
-        config = {"speech_processing": {"deepgram": {}}}
+        config = {"live_captions": {"deepgram": {}}}
 
         # Act & Assert
         with self.assertRaises(ValueError) as context:
@@ -426,11 +428,10 @@ class TestSTTImplementations(unittest.TestCase):
     def test_get_assemblyai_stt_impl_success(self, mock_assemblyai_stt):
         # Arrange
         config = {
-            "speech_processing": {
+            "live_captions": {
                 "assemblyai": {
                     "api_key": "test_assemblyai_key",
-                    "word_boost": ["boost", "these", "words"],
-                    "disable_partial_transcripts": True,
+                    "format_turns": True,
                 }
             }
         }
@@ -443,13 +444,12 @@ class TestSTTImplementations(unittest.TestCase):
         self.assertEqual(result, "assemblyai_stt_instance")
         mock_assemblyai_stt.assert_called_once_with(
             api_key="test_assemblyai_key",
-            word_boost=["boost", "these", "words"],
-            disable_partial_transcripts=True,
+            format_turns=True,
         )
 
     def test_get_assemblyai_stt_impl_missing_api_key(self):
         # Arrange
-        config = {"speech_processing": {"assemblyai": {}}}
+        config = {"live_captions": {"assemblyai": {}}}
 
         # Act & Assert
         with self.assertRaises(ValueError) as context:
@@ -462,7 +462,7 @@ class TestSTTImplementations(unittest.TestCase):
     def test_get_fal_stt_impl_success(self, mock_fal_stt):
         # Arrange
         config = {
-            "speech_processing": {
+            "live_captions": {
                 "fal": {
                     "api_key": "test_fal_key",
                     "task": "translate",
@@ -486,7 +486,7 @@ class TestSTTImplementations(unittest.TestCase):
 
     def test_get_fal_stt_impl_missing_api_key(self):
         # Arrange
-        config = {"speech_processing": {"fal": {}}}
+        config = {"live_captions": {"fal": {}}}
 
         # Act & Assert
         with self.assertRaises(ValueError) as context:
@@ -499,7 +499,7 @@ class TestSTTImplementations(unittest.TestCase):
     def test_get_clova_stt_impl_success(self, mock_clova_stt):
         # Arrange
         config = {
-            "speech_processing": {
+            "live_captions": {
                 "clova": {
                     "api_key": "test_clova_key",
                     "invoke_url": "https://test.api.clova.ai",
@@ -525,7 +525,7 @@ class TestSTTImplementations(unittest.TestCase):
     def test_get_clova_stt_impl_missing_api_key(self):
         # Arrange
         config = {
-            "speech_processing": {"clova": {"invoke_url": "https://test.api.clova.ai"}}
+            "live_captions": {"clova": {"invoke_url": "https://test.api.clova.ai"}}
         }
 
         # Act & Assert
@@ -536,7 +536,7 @@ class TestSTTImplementations(unittest.TestCase):
 
     def test_get_clova_stt_impl_missing_invoke_url(self):
         # Arrange
-        config = {"speech_processing": {"clova": {"api_key": "test_clova_key"}}}
+        config = {"live_captions": {"clova": {"api_key": "test_clova_key"}}}
 
         # Act & Assert
         with self.assertRaises(ValueError) as context:
@@ -549,7 +549,7 @@ class TestSTTImplementations(unittest.TestCase):
     def test_get_speechmatics_stt_impl_success(self, mock_speechmatics_stt):
         # Arrange
         config = {
-            "speech_processing": {
+            "live_captions": {
                 "speechmatics": {
                     "api_key": "test_speechmatics_key",
                     "language": "fr",
@@ -589,7 +589,7 @@ class TestSTTImplementations(unittest.TestCase):
 
     def test_get_speechmatics_stt_impl_missing_api_key(self):
         # Arrange
-        config = {"speech_processing": {"speechmatics": {}}}
+        config = {"live_captions": {"speechmatics": {}}}
 
         # Act & Assert
         with self.assertRaises(ValueError) as context:
@@ -602,7 +602,7 @@ class TestSTTImplementations(unittest.TestCase):
     def test_get_gladia_stt_impl_success(self, mock_gladia_stt):
         # Arrange
         config = {
-            "speech_processing": {
+            "live_captions": {
                 "gladia": {
                     "api_key": "test_gladia_key",
                     "languages": ["en"],
@@ -627,7 +627,7 @@ class TestSTTImplementations(unittest.TestCase):
 
     def test_get_gladia_stt_impl_missing_api_key(self):
         # Arrange
-        config = {"speech_processing": {"gladia": {}}}
+        config = {"live_captions": {"gladia": {}}}
 
         # Act & Assert
         with self.assertRaises(ValueError) as context:
@@ -638,13 +638,13 @@ class TestSTTImplementations(unittest.TestCase):
     # Master get_stt_impl Tests
     def test_get_stt_impl_missing_provider(self):
         # Arrange
-        config = {"speech_processing": {}}
+        config = {"live_captions": {}}
 
         # Act & Assert
         with self.assertRaises(ValueError) as context:
             get_stt_impl(config)
 
-        self.assertIn("speech_processing.provider not defined", str(context.exception))
+        self.assertIn("live_captions.provider not defined", str(context.exception))
 
     def test_get_stt_impl_no_speech_processing_section(self):
         # Arrange
@@ -654,12 +654,12 @@ class TestSTTImplementations(unittest.TestCase):
         with self.assertRaises(ValueError) as context:
             get_stt_impl(config)
 
-        self.assertIn("speech_processing.provider not defined", str(context.exception))
+        self.assertIn("live_captions.provider not defined", str(context.exception))
 
     @patch("stt_impl.get_aws_stt_impl")
     def test_get_stt_impl_aws(self, mock_get_aws):
         # Arrange
-        config = {"speech_processing": {"provider": "aws"}}
+        config = {"live_captions": {"provider": "aws"}}
         mock_get_aws.return_value = "aws_stt_instance"
 
         # Act
@@ -672,7 +672,7 @@ class TestSTTImplementations(unittest.TestCase):
     @patch("stt_impl.get_azure_stt_impl")
     def test_get_stt_impl_azure(self, mock_get_azure):
         # Arrange
-        config = {"speech_processing": {"provider": "azure"}}
+        config = {"live_captions": {"provider": "azure"}}
         mock_get_azure.return_value = "azure_stt_instance"
 
         # Act
@@ -685,7 +685,7 @@ class TestSTTImplementations(unittest.TestCase):
     @patch("stt_impl.get_google_stt_impl")
     def test_get_stt_impl_google(self, mock_get_google):
         # Arrange
-        config = {"speech_processing": {"provider": "google"}}
+        config = {"live_captions": {"provider": "google"}}
         mock_get_google.return_value = "google_stt_instance"
 
         # Act
@@ -698,7 +698,7 @@ class TestSTTImplementations(unittest.TestCase):
     @patch("stt_impl.get_openai_stt_impl")
     def test_get_stt_impl_openai(self, mock_get_openai):
         # Arrange
-        config = {"speech_processing": {"provider": "openai"}}
+        config = {"live_captions": {"provider": "openai"}}
         mock_get_openai.return_value = "openai_stt_instance"
 
         # Act
@@ -711,7 +711,7 @@ class TestSTTImplementations(unittest.TestCase):
     @patch("stt_impl.get_groq_stt_impl")
     def test_get_stt_impl_groq(self, mock_get_groq):
         # Arrange
-        config = {"speech_processing": {"provider": "groq"}}
+        config = {"live_captions": {"provider": "groq"}}
         mock_get_groq.return_value = "groq_stt_instance"
 
         # Act
@@ -724,7 +724,7 @@ class TestSTTImplementations(unittest.TestCase):
     @patch("stt_impl.get_deepgram_stt_impl")
     def test_get_stt_impl_deepgram(self, mock_get_deepgram):
         # Arrange
-        config = {"speech_processing": {"provider": "deepgram"}}
+        config = {"live_captions": {"provider": "deepgram"}}
         mock_get_deepgram.return_value = "deepgram_stt_instance"
 
         # Act
@@ -737,7 +737,7 @@ class TestSTTImplementations(unittest.TestCase):
     @patch("stt_impl.get_assemblyai_stt_impl")
     def test_get_stt_impl_assemblyai(self, mock_get_assemblyai):
         # Arrange
-        config = {"speech_processing": {"provider": "assemblyai"}}
+        config = {"live_captions": {"provider": "assemblyai"}}
         mock_get_assemblyai.return_value = "assemblyai_stt_instance"
 
         # Act
@@ -750,7 +750,7 @@ class TestSTTImplementations(unittest.TestCase):
     @patch("stt_impl.get_fal_stt_impl")
     def test_get_stt_impl_fal(self, mock_get_fal):
         # Arrange
-        config = {"speech_processing": {"provider": "fal"}}
+        config = {"live_captions": {"provider": "fal"}}
         mock_get_fal.return_value = "fal_stt_instance"
 
         # Act
@@ -763,7 +763,7 @@ class TestSTTImplementations(unittest.TestCase):
     @patch("stt_impl.get_clova_stt_impl")
     def test_get_stt_impl_clova(self, mock_get_clova):
         # Arrange
-        config = {"speech_processing": {"provider": "clova"}}
+        config = {"live_captions": {"provider": "clova"}}
         mock_get_clova.return_value = "clova_stt_instance"
 
         # Act
@@ -776,7 +776,7 @@ class TestSTTImplementations(unittest.TestCase):
     @patch("stt_impl.get_speechmatics_stt_impl")
     def test_get_stt_impl_speechmatics(self, mock_get_speechmatics):
         # Arrange
-        config = {"speech_processing": {"provider": "speechmatics"}}
+        config = {"live_captions": {"provider": "speechmatics"}}
         mock_get_speechmatics.return_value = "speechmatics_stt_instance"
 
         # Act
@@ -789,7 +789,7 @@ class TestSTTImplementations(unittest.TestCase):
     @patch("stt_impl.get_gladia_stt_impl")
     def test_get_stt_impl_gladia(self, mock_get_gladia):
         # Arrange
-        config = {"speech_processing": {"provider": "gladia"}}
+        config = {"live_captions": {"provider": "gladia"}}
         mock_get_gladia.return_value = "gladia_stt_instance"
 
         # Act

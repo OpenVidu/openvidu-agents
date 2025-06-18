@@ -198,7 +198,7 @@ async def request_fnc(req: JobRequest) -> None:
 
 
 def prewarm(proc: JobProcess):
-    proc.userdata["vad"] = silero.VAD.load(min_silence_duration=0.3)
+    proc.userdata["vad"] = silero.VAD.load()
 
 
 if __name__ == "__main__":
@@ -233,7 +233,7 @@ if __name__ == "__main__":
             can_publish_data=True,
             # when set to true, the agent won't be visible to others in the room.
             # when hidden, it will also not be able to publish tracks to the room as it won't be visible.
-            hidden=agent_config["speech_processing"]["hidden"],
+            hidden=True,
         ),
     )
     if agent_config["processing"] == "manual":

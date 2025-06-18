@@ -24,6 +24,7 @@ from stt_impl import (
     get_clova_stt_impl,
     get_speechmatics_stt_impl,
     get_gladia_stt_impl,
+    get_sarvam_stt_impl,
     get_stt_impl,
 )
 
@@ -634,6 +635,42 @@ class TestSTTImplementations(unittest.TestCase):
             get_gladia_stt_impl(config)
 
         self.assertIn("Wrong Gladia credentials", str(context.exception))
+        
+    # Sarvam STT Tests
+    @patch("livekit.plugins.sarvam.STT")
+    def test_get_sarvam_stt_impl_success(self, mock_sarvam_stt):
+        # Arrange
+        config = {
+            "live_captions": {
+                "sarvam": {
+                    "api_key": "test_sarvam_key",
+                    "language": "hi-IN",
+                    "model": "saaras:v1",
+                }
+            }
+        }
+        mock_sarvam_stt.return_value = "sarvam_stt_instance"
+
+        # Act
+        result = get_sarvam_stt_impl(config)
+
+        # Assert
+        self.assertEqual(result, "sarvam_stt_instance")
+        mock_sarvam_stt.assert_called_once_with(
+            api_key="test_sarvam_key",
+            language="hi-IN",
+            model="saaras:v1",
+        )
+        
+    def test_get_sarvam_stt_impl_missing_api_key(self):
+        # Arrange
+        config = {"live_captions": {"sarvam": {}}}
+
+        # Act & Assert
+        with self.assertRaises(ValueError) as context:
+            get_sarvam_stt_impl(config)
+
+        self.assertIn("Wrong Sarvam credentials", str(context.exception))
 
     # Master get_stt_impl Tests
     def test_get_stt_impl_missing_provider(self):
@@ -798,3 +835,16 @@ class TestSTTImplementations(unittest.TestCase):
         # Assert
         self.assertEqual(result, "gladia_stt_instance")
         mock_get_gladia.assert_called_once_with(config)
+
+    @patch("stt_impl.get_sarvam_stt_impl")
+    def test_get_stt_impl_sarvam(self, mock_get_sarvam):
+        # Arrange
+        config = {"live_captions": {"provider": "sarvam"}}
+        mock_get_sarvam.return_value = "sarvam_stt_instance"
+
+        # Act
+        result = get_stt_impl(config)
+
+        # Assert
+        self.assertEqual(result, "sarvam_stt_instance")
+        mock_get_sarvam.assert_called_once_with(config)

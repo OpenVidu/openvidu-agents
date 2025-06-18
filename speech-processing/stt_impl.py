@@ -13,7 +13,8 @@ from livekit.plugins import (
     clova,
     speechmatics,
     gladia,
-    groq
+    groq,
+    sarvam,
 )
 from livekit.plugins.speechmatics.types import TranscriptionConfig
 from livekit.agents import stt
@@ -102,7 +103,9 @@ def get_azure_stt_impl(agent_config) -> stt.STT:
 
 def get_google_stt_impl(agent_config) -> stt.STT:
     config_manager = ConfigManager(agent_config, "live_captions.google")
-    wrong_credentials = "Wrong Google credentials. live_captions.google.credentials_info must be set"
+    wrong_credentials = (
+        "Wrong Google credentials. live_captions.google.credentials_info must be set"
+    )
 
     credentials_info_str = config_manager.mandatory_value(
         "credentials_info", wrong_credentials
@@ -156,9 +159,7 @@ def get_openai_stt_impl(agent_config) -> stt.STT:
 def get_groq_stt_impl(agent_config):
 
     config_manager = ConfigManager(agent_config, "live_captions.groq")
-    wrong_credentials = (
-        "Wrong Groq credentials. live_captions.groq.api_key must be set"
-    )
+    wrong_credentials = "Wrong Groq credentials. live_captions.groq.api_key must be set"
 
     api_key = config_manager.mandatory_value("api_key", wrong_credentials)
     model = config_manager.optional_value("model", "whisper-large-v3-turbo")
@@ -221,9 +222,7 @@ def get_assemblyai_stt_impl(agent_config) -> stt.STT:
 def get_fal_stt_impl(agent_config) -> stt.STT:
 
     config_manager = ConfigManager(agent_config, "live_captions.fal")
-    wrong_credentials = (
-        "Wrong FAL credentials. live_captions.fal.api_key must be set"
-    )
+    wrong_credentials = "Wrong FAL credentials. live_captions.fal.api_key must be set"
 
     api_key = config_manager.mandatory_value("api_key", wrong_credentials)
     task = config_manager.optional_value("task", "transcribe")
@@ -257,7 +256,9 @@ def get_clova_stt_impl(agent_config) -> stt.STT:
 def get_speechmatics_stt_impl(agent_config) -> stt.STT:
 
     config_manager = ConfigManager(agent_config, "live_captions.speechmatics")
-    wrong_credentials = "Wrong Speechmatics credentials. live_captions.speechmatics.api_key must be set"
+    wrong_credentials = (
+        "Wrong Speechmatics credentials. live_captions.speechmatics.api_key must be set"
+    )
 
     api_key = config_manager.mandatory_value("api_key", wrong_credentials)
     language = config_manager.optional_value("language", "en")
@@ -306,15 +307,31 @@ def get_gladia_stt_impl(agent_config) -> stt.STT:
     )
 
 
+def get_sarvam_stt_impl(agent_config) -> stt.STT:
+
+    config_manager = ConfigManager(agent_config, "live_captions.sarvam")
+    wrong_credentials = (
+        "Wrong Sarvam credentials. live_captions.sarvam.api_key must be set"
+    )
+
+    api_key = config_manager.mandatory_value("api_key", wrong_credentials)
+    language = config_manager.optional_value("language", "unknown")
+    model = config_manager.optional_value("model", None)
+
+    return sarvam.STT(
+        api_key=api_key,
+        language=language,
+        model=model,
+    )
+
+
 def get_stt_impl(agent_config) -> stt.STT:
     try:
         stt_provider = agent_config["live_captions"]["provider"]
     except Exception:
         stt_provider = None
     if stt_provider is None:
-        raise ValueError(
-            "live_captions.provider not defined in agent configuration"
-        )
+        raise ValueError("live_captions.provider not defined in agent configuration")
     else:
         logging.info(f"Using {stt_provider} as STT provider")
     if stt_provider == "aws":
@@ -339,5 +356,7 @@ def get_stt_impl(agent_config) -> stt.STT:
         return get_speechmatics_stt_impl(agent_config)
     elif stt_provider == "gladia":
         return get_gladia_stt_impl(agent_config)
+    elif stt_provider == "sarvam":
+        return get_sarvam_stt_impl(agent_config)
     else:
         raise ValueError(f"unknown STT provider: {stt_provider}")

@@ -1,5 +1,6 @@
 from typing import Any, Dict, TypeVar, Type, Optional
 from enum import Enum
+from numbers import Number
 
 T = TypeVar("T", bound=Enum)
 
@@ -113,6 +114,68 @@ class ConfigManager:
         if not isinstance(value, str):
             raise TypeError(
                 f"Value for property {self.__full_key(key)} must be a string, got {type(value).__name__}"
+            )
+        return value
+
+    def optional_boolean_value(
+        self, key: str, default: Optional[bool] = None
+    ) -> Optional[bool]:
+        """
+        Retrieve an optional boolean value with validation.
+
+        This method retrieves a value and validates that it is a boolean.
+        If the value exists but is not a boolean, a TypeError is raised.
+        If the value is None or the key is not found, the default value is returned.
+
+        Args:
+            key (str): The key to look up in the configuration.
+            default (Optional[bool], optional): The default value to return if the key is not found
+                                               or the value is None. Defaults to None.
+
+        Returns:
+            Optional[bool]: The boolean value associated with the key if it exists and is valid,
+                           otherwise the default value.
+
+        Raises:
+            TypeError: If the value exists but it is not a boolean.
+        """
+        value = self.optional_value(key, None)
+        if value is None:
+            return default
+        if not isinstance(value, bool):
+            raise TypeError(
+                f"Value for property {self.__full_key(key)} must be a boolean, got {type(value).__name__}"
+            )
+        return value
+
+    def optional_numeric_value(
+        self, key: str, default: Optional[Number] = None
+    ) -> Optional[Number]:
+        """
+        Retrieve an optional numeric value with validation.
+
+        This method retrieves a value and validates that it is a number.
+        If the value exists but is not a number, a TypeError is raised.
+        If the value is None or the key is not found, the default value is returned.
+
+        Args:
+            key (str): The key to look up in the configuration.
+            default (Optional[Number], optional): The default value to return if the key is not found
+                                                 or the value is None. Defaults to None.
+
+        Returns:
+            Optional[Number]: The numeric value associated with the key if it exists and is valid,
+                             otherwise the default value.
+
+        Raises:
+            TypeError: If the value exists but it is not a number.
+        """
+        value = self.optional_value(key, None)
+        if value is None:
+            return default
+        if not isinstance(value, Number):
+            raise TypeError(
+                f"Value for property {self.__full_key(key)} must be a number, got {type(value).__name__}"
             )
         return value
 

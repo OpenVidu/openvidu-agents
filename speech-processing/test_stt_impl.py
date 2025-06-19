@@ -15,6 +15,7 @@ from livekit.plugins.speechmatics.types import TranscriptionConfig
 from stt_impl import (
     get_aws_stt_impl,
     get_azure_stt_impl,
+    get_azure_openai_stt_impl,
     get_google_stt_impl,
     get_openai_stt_impl,
     get_groq_stt_impl,
@@ -216,6 +217,56 @@ class TestSTTImplementations(unittest.TestCase):
             get_azure_stt_impl(config)
 
         self.assertIn("Wrong azure credentials", str(context.exception))
+
+    # Azure OpenAI STT Tests
+    @patch("livekit.plugins.openai.STT.with_azure")
+    def test_get_azure_openai_stt_impl_success(self, mock_azure_openai_stt):
+        # Arrange
+        config = {
+            "live_captions": {
+                "azure_openai": {
+                    "azure_api_key": "test_azure_api_key",
+                    "azure_ad_token": "test_azure_ad_token",
+                    "azure_endpoint": "https://test.openai.azure.com/",
+                    "api_version": "2024-02-01",
+                    "azure_deployment": "test_deployment",
+                    "organization": "test_org",
+                    "project": "test_project",
+                    "language": "es",
+                    "model": "gpt-4o-transcribe",
+                    "prompt": "Transcribe the following audio.",
+                }
+            }
+        }
+        mock_azure_openai_stt.return_value = "azure_openai_stt_instance"
+
+        # Act
+        result = get_azure_openai_stt_impl(config)
+
+        # Assert
+        self.assertEqual(result, "azure_openai_stt_instance")
+        mock_azure_openai_stt.assert_called_once_with(
+            api_key="test_azure_api_key",
+            azure_ad_token="test_azure_ad_token",
+            azure_endpoint="https://test.openai.azure.com/",
+            api_version="2024-02-01",
+            azure_deployment="test_deployment",
+            organization="test_org",
+            project="test_project",
+            language="es",
+            model="gpt-4o-transcribe",
+            prompt="Transcribe the following audio.",
+        )
+
+    def test_get_azure_openai_stt_impl_missing_credentials(self):
+        # Arrange
+        config = {"live_captions": {"azure_openai": {}}}
+
+        # Act & Assert
+        with self.assertRaises(ValueError) as context:
+            get_azure_openai_stt_impl(config)
+
+        self.assertIn("Wrong Azure OpenAI credentials", str(context.exception))
 
     # Google STT Tests
     @patch("tempfile.NamedTemporaryFile")
@@ -463,15 +514,7 @@ class TestSTTImplementations(unittest.TestCase):
     def test_get_fal_stt_impl_success(self, mock_fal_stt):
         # Arrange
         config = {
-            "live_captions": {
-                "fal": {
-                    "api_key": "test_fal_key",
-                    "task": "translate",
-                    "language": "de",
-                    "chunk_level": "word",
-                    "version": "2",
-                }
-            }
+            "live_captions": {"fal": {"api_key": "test_fal_key", "language": "de"}}
         }
         mock_fal_stt.return_value = "fal_stt_instance"
 
@@ -480,10 +523,7 @@ class TestSTTImplementations(unittest.TestCase):
 
         # Assert
         self.assertEqual(result, "fal_stt_instance")
-        mock_fal_stt.assert_called_once_with(
-            task="translate", language="de", chunk_level="word", version="2"
-        )
-        self.assertEqual(os.environ["FAL_KEY"], "test_fal_key")
+        mock_fal_stt.assert_called_once_with(api_key="test_fal_key", language="de")
 
     def test_get_fal_stt_impl_missing_api_key(self):
         # Arrange
@@ -559,7 +599,19 @@ class TestSTTImplementations(unittest.TestCase):
                     "max_delay": 1.0,
                     "max_delay_mode": "fixed",
                     "punctuation_overrides": {"period": "full stop"},
-                    "additional_vocab": ["vocabulary", "additions"],
+                    "additional_vocab": [
+                        {"content": "financial crisis"},
+                        {
+                            "content": "gnocchi",
+                            "sounds_like": ["nyohki", "nokey", "nochi"],
+                        },
+                        {"content": "CEO", "sounds_like": ["C.E.O."]},
+                    ],
+                    "speaker_diarization_config": {
+                        "max_speakers": 2,
+                        "speaker_sensitivity": 0.5,
+                        "prefer_current_speakers": True,
+                    },
                 }
             }
         }
@@ -580,10 +632,24 @@ class TestSTTImplementations(unittest.TestCase):
         self.assertEqual(config_obj.language, "fr")
         self.assertEqual(config_obj.output_locale, "fr-FR")
         self.assertEqual(config_obj.punctuation_overrides, {"period": "full stop"})
-        self.assertEqual(config_obj.additional_vocab, ["vocabulary", "additions"])
+        self.assertEqual(
+            config_obj.additional_vocab,
+            [
+                {"content": "financial crisis"},
+                {"content": "gnocchi", "sounds_like": ["nyohki", "nokey", "nochi"]},
+                {"content": "CEO", "sounds_like": ["C.E.O."]},
+            ],
+        )
         self.assertEqual(config_obj.enable_partials, False)
         self.assertEqual(config_obj.max_delay, 1.0)
         self.assertEqual(config_obj.max_delay_mode, "fixed")
+        self.assertEqual(config_obj.speaker_diarization_config["max_speakers"], 2)
+        self.assertEqual(
+            config_obj.speaker_diarization_config["speaker_sensitivity"], 0.5
+        )
+        self.assertEqual(
+            config_obj.speaker_diarization_config["prefer_current_speakers"], True
+        )
 
         # Check environment variable
         self.assertEqual(os.environ["SPEECHMATICS_API_KEY"], "test_speechmatics_key")
@@ -635,7 +701,7 @@ class TestSTTImplementations(unittest.TestCase):
             get_gladia_stt_impl(config)
 
         self.assertIn("Wrong Gladia credentials", str(context.exception))
-        
+
     # Sarvam STT Tests
     @patch("livekit.plugins.sarvam.STT")
     def test_get_sarvam_stt_impl_success(self, mock_sarvam_stt):
@@ -661,7 +727,7 @@ class TestSTTImplementations(unittest.TestCase):
             language="hi-IN",
             model="saaras:v1",
         )
-        
+
     def test_get_sarvam_stt_impl_missing_api_key(self):
         # Arrange
         config = {"live_captions": {"sarvam": {}}}
@@ -718,6 +784,19 @@ class TestSTTImplementations(unittest.TestCase):
         # Assert
         self.assertEqual(result, "azure_stt_instance")
         mock_get_azure.assert_called_once_with(config)
+
+    @patch("stt_impl.get_azure_openai_stt_impl")
+    def test_get_stt_impl_azure_openai(self, mock_get_azure_openai):
+        # Arrange
+        config = {"live_captions": {"provider": "azure_openai"}}
+        mock_get_azure_openai.return_value = "azure_openai_stt_instance"
+
+        # Act
+        result = get_stt_impl(config)
+
+        # Assert
+        self.assertEqual(result, "azure_openai_stt_instance")
+        mock_get_azure_openai.assert_called_once_with(config)
 
     @patch("stt_impl.get_google_stt_impl")
     def test_get_stt_impl_google(self, mock_get_google):

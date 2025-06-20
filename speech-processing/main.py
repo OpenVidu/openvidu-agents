@@ -236,11 +236,11 @@ if __name__ == "__main__":
             hidden=True,
         ),
     )
-    if agent_config["processing"] == "manual":
+    if agent_config["live_captions"]["processing"] == "manual":
         worker_options.agent_name = agent_name
 
     logging.info(
-        f"Starting agent {agent_name} with processing configured to {agent_config['processing']}"
+        f"Starting agent {agent_name} with processing configured to {agent_config["live_captions"]["processing"]}"
     )
 
     cli.run_app(worker_options)

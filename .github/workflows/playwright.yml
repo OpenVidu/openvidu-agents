@@ -1,32 +1,99 @@
 name: Playwright Tests
 on:
   push:
-    branches: [main, master]
+    branches: [main]
   pull_request:
-    branches: [main, master]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      ref-openvidu-agents:
+        description: 'Branch, tag or commit SHA to checkout in repository OpenVidu/openvidu-agents'
+        required: false
+        default: ""
+      ref-openvidu-local-deployment:
+        description: "Branch, tag or commit SHA to checkout in repository OpenVidu/openvidu-local-deployment"
+        type: string
+        default: "development"
+      docker-tag-agent-speech-processing:
+        description: "Docker tag for agent-speech-processing contanier. If not provided, the container will be built from the repository sources"
+        type: string
+        required: false
 jobs:
   test:
     timeout-minutes: 60
     runs-on: ubuntu-latest
     steps:
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Checkout OpenVidu/openvidu-agents
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref-openvidu-agents || github.sha }}
+
+      - name: Checkout OpenVidu/openvidu
+        uses: actions/checkout@v4
+        with:
+          path: openvidu
+
+      - name: Build agent-speech-processing Docker container
+        if: inputs.docker-tag-agent-speech-processing == ''
+        run: |
+          cd openvidu-agents/speech-processing
+          docker build --no-cache -t openvidu/agent-speech-processing:main .
+
+      - name: Install openvidu-testapp dependencies
+        working-directory: ./openvidu/openvidu-testapp
+        run: npm ci
+
+      - name: Run openvidu-testapp
+        working-directory: ./openvidu/openvidu-testapp
+        run: npm start 2>&1 >> ./openvidu-testapp.log &
+
+      - name: Setup OpenVidu Local Deployment
+        uses: OpenVidu/actions/start-openvidu-local-deployment@main
+        with:
+          ref-openvidu-local-deployment: ${{ inputs.ref-openvidu-local-deployment }}
+          pre_startup_commands: "sed -i 's|docker_image: docker.io/openvidu/agent-speech-processing:main|docker_image: docker.io/openvidu/agent-speech-processing:${{ inputs.docker-tag-agent-speech-processing || 'main' }}|g' agent-speech-processing.yaml"
+
       - name: Run tests
         run: |
-          cd frontend/webcomponent
+          cd openvidu-agents/test
           # Install Playwright browsers
           mkdir -p /tmp/ms-playwright
           PLAYWRIGHT_BROWSERS_PATH=/tmp/ms-playwright npx playwright install --with-deps chromium
-          npm run test:e2e-core-room
+          npm run test:e2e
         env:
           RUN_MODE: CI
           PLAYWRIGHT_BROWSERS_PATH: /tmp/ms-playwright
+          AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
+          AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+          GOOGLE_CREDENTIALS_INFO: ${{ secrets.GOOGLE_CREDENTIALS_INFO }}
+          SARVAM_API_KEY: ${{ secrets.SARVAM_API_KEY }}
+          AZURE_SPEECH_KEY: ${{ secrets.AZURE_SPEECH_KEY }}
+          AZURE_SPEECH_REGION: ${{ secrets.AZURE_SPEECH_REGION }}
+          ASSEMBLYAI_API_KEY: ${{ secrets.ASSEMBLYAI_API_KEY }}
+          GLADIA_API_KEY: ${{ secrets.GLADIA_API_KEY }}
+          DEEPGRAM_API_KEY: ${{ secrets.DEEPGRAM_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          # FAL_API_KEY: ${{ secrets.FAL_API_KEY }}
+          # SPEECHMATICS_API_KEY: ${{ secrets.SPEECHMATICS_API_KEY }}
+          # CLOVA_API_KEY: ${{ secrets.CLOVA_API_KEY }}
+
       - name: Upload failed test videos
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: test-videos
-          path: |
-            frontend/webcomponent/test-results/*/*.webm
+          path: openvidu-agents/test/test-results/*/*.webm
           retention-days: 2
+
       - name: Clean up
         if: always()
         uses: OpenVidu/actions/cleanup@main

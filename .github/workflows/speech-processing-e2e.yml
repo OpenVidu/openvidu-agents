@@ -66,15 +66,6 @@ jobs:
           ref-openvidu-local-deployment: ${{ inputs.ref-openvidu-local-deployment || 'development' }}
           pre_startup_commands: "sed -i 's|docker_image: docker.io/openvidu/agent-speech-processing:main|docker_image: docker.io/openvidu/agent-speech-processing:${{ inputs.docker-tag-agent-speech-processing || 'main' }}|g' agent-speech-processing.yaml"
 
-      - name: Print workspace folder structure
-        run: |
-          echo "Workspace folder structure:"
-          ls -R
-          cd ..
-          ls -R
-          cd ..
-          ls -R
-
       - name: Run tests
         run: |
           cd test
@@ -105,12 +96,18 @@ jobs:
           # SPEECHMATICS_API_KEY: ${{ secrets.SPEECHMATICS_API_KEY }}
           # CLOVA_API_KEY: ${{ secrets.CLOVA_API_KEY }}
 
+      - name: Publish Test Report
+        uses: ctrf-io/github-test-reporter@v1
+        with:
+          report-path: './test-results.json'
+        if: always()
+
       - name: Upload failed test videos
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: test-videos
-          path: openvidu-agents/test/test-results/*/*.webm
+          path: test/test-results/*/*.webm
           retention-days: 2
 
       - name: Clean up

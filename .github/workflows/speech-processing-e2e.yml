@@ -1,4 +1,4 @@
-name: Playwright Tests
+name: Speech Processing agent E2E tests
 on:
   push:
     branches: [main]
@@ -11,9 +11,15 @@ on:
         required: false
         default: ""
       ref-openvidu-local-deployment:
-        description: "Branch, tag or commit SHA to checkout in repository OpenVidu/openvidu-local-deployment"
+        description: "Branch, tag or commit SHA to checkout in repository OpenVidu/openvidu-local-deployment. Defaults to 'development'"
         type: string
+        required: false
         default: "development"
+      ref-openvidu:
+        description: "Branch, tag or commit SHA to checkout in repository OpenVidu/openvidu. Defaults to 'master'"
+        type: string
+        required: false
+        default: "master"
       docker-tag-agent-speech-processing:
         description: "Docker tag for agent-speech-processing contanier. If not provided, the container will be built from the repository sources"
         type: string
@@ -36,6 +42,8 @@ jobs:
       - name: Checkout OpenVidu/openvidu
         uses: actions/checkout@v4
         with:
+          repository: OpenVidu/openvidu
+          ref: ${{ inputs.ref-openvidu || 'master' }}
           path: openvidu
 
       - name: Build agent-speech-processing Docker container
@@ -55,7 +63,7 @@ jobs:
       - name: Setup OpenVidu Local Deployment
         uses: OpenVidu/actions/start-openvidu-local-deployment@main
         with:
-          ref-openvidu-local-deployment: ${{ inputs.ref-openvidu-local-deployment }}
+          ref-openvidu-local-deployment: ${{ inputs.ref-openvidu-local-deployment || 'development' }}
           pre_startup_commands: "sed -i 's|docker_image: docker.io/openvidu/agent-speech-processing:main|docker_image: docker.io/openvidu/agent-speech-processing:${{ inputs.docker-tag-agent-speech-processing || 'main' }}|g' agent-speech-processing.yaml"
 
       - name: Run tests

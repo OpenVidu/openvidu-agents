@@ -123,7 +123,7 @@ STT_AI_PROVIDERS.forEach((provider) => {
       await page.goto(TESTAPP_URL);
       await page.click("#add-user-btn");
       await page.click(".connect-btn");
-      await waitForEvent(page, "transcriptionReceived", 1, 0, 45000);
+      await waitForEvent(page, "transcriptionReceived", 1, 0, 60000);
       console.log(`Transcription received from provider ${providerName}`);
     });
   });

@@ -24,7 +24,7 @@ const STT_AI_PROVIDERS = [
   },
   {
     sarvam: {
-      api_key: process.env.SPEECHMATICS_API_KEY,
+      api_key: process.env.SARVAM_API_KEY,
     },
   },
   {
@@ -76,7 +76,7 @@ const STT_AI_PROVIDERS = [
   // {
   //   clova: {
   //     api_key:
-  //       process.env.SPEECHMATICS_API_KEY,
+  //       process.env.CLOVA_API_KEY,
   //   },
   // },
 ] as const;

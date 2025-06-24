@@ -24,4 +24,8 @@ export default defineConfig({
       ],
     },
   },
+  reporter:
+    RUN_MODE == "CI"
+      ? [["list"], ["json", { outputFile: "test-results.json" }]]
+      : [["list"]],
 });

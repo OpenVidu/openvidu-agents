@@ -69,6 +69,7 @@ jobs:
       - name: Run tests
         run: |
           cd test
+          npm ci
           # Install Playwright browsers
           mkdir -p /tmp/ms-playwright
           PLAYWRIGHT_BROWSERS_PATH=/tmp/ms-playwright npx playwright install --with-deps chromium

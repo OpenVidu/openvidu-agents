@@ -1,9 +1,5 @@
 name: Speech Processing agent E2E tests
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
   workflow_dispatch:
     inputs:
       ref-openvidu-agents:

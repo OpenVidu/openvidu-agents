@@ -18,6 +18,8 @@ from livekit.plugins import (
 )
 from livekit.plugins.speechmatics.types import TranscriptionConfig
 from livekit.agents import stt
+from livekit.agents.types import NOT_GIVEN
+
 from openviduagentutils.config_manager import ConfigManager
 
 from azure.cognitiveservices.speech.enums import ProfanityOption
@@ -47,25 +49,25 @@ def get_aws_stt_impl(agent_config) -> stt.STT:
         raise ValueError(wrong_credentials)
 
     language = config_manager.optional_string_value("language", "en-US")
-    vocabulary_name = config_manager.optional_string_value("vocabulary_name", None)
+    vocabulary_name = config_manager.optional_string_value("vocabulary_name", NOT_GIVEN)
     language_model_name = config_manager.optional_string_value(
-        "language_model_name", None
+        "language_model_name", NOT_GIVEN
     )
     enable_partial_results_stabilization = config_manager.optional_boolean_value(
-        "enable_partial_results_stabilization", None
+        "enable_partial_results_stabilization", NOT_GIVEN
     )
     partial_results_stability = config_manager.optional_string_value(
-        "partial_results_stability", None
+        "partial_results_stability", NOT_GIVEN
     )
-    vocab_filter_name = config_manager.optional_string_value("vocab_filter_name", None)
+    vocab_filter_name = config_manager.optional_string_value(
+        "vocab_filter_name", NOT_GIVEN
+    )
     vocab_filter_method = config_manager.optional_string_value(
-        "vocab_filter_method", None
+        "vocab_filter_method", NOT_GIVEN
     )
 
     return aws.STT(
-        api_key=api_key,
-        api_secret=api_secret,
-        speech_region=default_region,
+        region=default_region,
         language=language,
         vocabulary_name=vocabulary_name,
         language_model_name=language_model_name,
@@ -81,28 +83,32 @@ def get_azure_stt_impl(agent_config) -> stt.STT:
     config_manager = ConfigManager(agent_config, "live_captions.azure")
     wrong_credentials = "Wrong azure credentials. One of these combinations must be set:\n    - speech_host\n    - speech_key + speech_region\n    - speech_auth_token + speech_region"
 
-    speech_host = config_manager.optional_string_value("speech_host", None)
-    speech_region = config_manager.optional_string_value("speech_region", None)
-    speech_key = config_manager.optional_string_value("speech_key", None)
-    speech_auth_token = config_manager.optional_string_value("speech_auth_token", None)
-    languages = config_manager.optional_value("languages", ["en-US"])
-    profanity = config_manager.optional_enum_value("profanity", ProfanityOption, None)
+    speech_host = config_manager.optional_string_value("speech_host", NOT_GIVEN)
+    speech_region = config_manager.optional_string_value("speech_region", NOT_GIVEN)
+    speech_key = config_manager.optional_string_value("speech_key", NOT_GIVEN)
+    speech_auth_token = config_manager.optional_string_value(
+        "speech_auth_token", NOT_GIVEN
+    )
+    language = config_manager.optional_value("language", NOT_GIVEN)
+    profanity = config_manager.optional_enum_value(
+        "profanity", ProfanityOption, NOT_GIVEN
+    )
 
-    if speech_host is not None:
-        return azure.STT(speech_host=speech_host, languages=languages)
-    elif speech_key is not None and speech_region is not None:
-        return azure.STT(
-            speech_key=speech_key, speech_region=speech_region, languages=languages
-        )
-    elif speech_auth_token is not None and speech_region is not None:
-        return azure.STT(
-            speech_auth_token=speech_auth_token,
-            speech_region=speech_region,
-            languages=languages,
-            profanity=profanity,
-        )
-    else:
+    if (
+        (speech_host is None)
+        and (speech_key is None or speech_region is None)
+        and (speech_auth_token is None or speech_region is None)
+    ):
         raise ValueError(wrong_credentials)
+
+    return azure.STT(
+        speech_host=speech_host,
+        speech_region=speech_region,
+        speech_key=speech_key,
+        speech_auth_token=speech_auth_token,
+        language=language,
+        profanity=profanity,
+    )
 
 
 def get_azure_openai_stt_impl(agent_config) -> stt.STT:
@@ -112,24 +118,18 @@ def get_azure_openai_stt_impl(agent_config) -> stt.STT:
         "azure_api_key",
         "Wrong Azure OpenAI credentials. live_captions.azure_openai.azure_api_key must be set",
     )
-    azure_ad_token = config_manager.mandatory_value(
-        "azure_ad_token",
-        "Wrong Azure OpenAI credentials. live_captions.azure_openai.azure_ad_token must be set",
-    )
     azure_endpoint = config_manager.mandatory_value(
         "azure_endpoint",
         "Wrong Azure OpenAI configuration. live_captions.azure_openai.azure_endpoint must be set",
     )
-    api_version = config_manager.mandatory_value(
-        "api_version",
-        "Wrong Azure OpenAI configuration. live_captions.azure_openai.api_version must be set",
-    )
+    azure_ad_token = config_manager.optional_string_value("azure_ad_token", None)
+    api_version = config_manager.optional_string_value("api_version", None)
     azure_deployment = config_manager.optional_string_value("azure_deployment", None)
     organization = config_manager.optional_string_value("organization", None)
     project = config_manager.optional_string_value("project", None)
     language = config_manager.optional_string_value("language", "en")
     model = config_manager.optional_string_value("model", "gpt-4o-mini-transcribe")
-    prompt = config_manager.optional_string_value("prompt", None)
+    prompt = config_manager.optional_string_value("prompt", NOT_GIVEN)
 
     return openai.STT.with_azure(
         api_key=azure_api_key,
@@ -196,10 +196,11 @@ def get_openai_stt_impl(agent_config) -> stt.STT:
     )
 
     api_key = config_manager.mandatory_value("api_key", wrong_credentials)
-    model = config_manager.optional_string_value("model", "whisper-1")
+    model = config_manager.optional_string_value("model", "gpt-4o-mini-transcribe")
     language = config_manager.optional_string_value("language", "en")
+    prompt = config_manager.optional_string_value("prompt", NOT_GIVEN)
 
-    return openai.STT(api_key=api_key, model=model, language=language)
+    return openai.STT(api_key=api_key, model=model, language=language, prompt=prompt)
 
 
 def get_groq_stt_impl(agent_config):
@@ -210,7 +211,7 @@ def get_groq_stt_impl(agent_config):
     api_key = config_manager.mandatory_value("api_key", wrong_credentials)
     model = config_manager.optional_string_value("model", "whisper-large-v3-turbo")
     language = config_manager.optional_string_value("language", "en")
-    prompt = config_manager.optional_string_value("prompt", None)
+    prompt = config_manager.optional_string_value("prompt", NOT_GIVEN)
 
     return groq.STT(
         api_key=api_key,
@@ -228,22 +229,26 @@ def get_deepgram_stt_impl(agent_config) -> stt.STT:
     )
 
     api_key = config_manager.mandatory_value("api_key", wrong_credentials)
-    model = config_manager.optional_string_value("model", "nova-2-general")
+    model = config_manager.optional_string_value("model", "nova-3")
     language = config_manager.optional_string_value("language", "en-US")
+    detect_language = config_manager.optional_boolean_value("detect_language", False)
     interim_results = config_manager.optional_boolean_value("interim_results", True)
     smart_format = config_manager.optional_boolean_value("smart_format", True)
+    no_delay = config_manager.optional_boolean_value("no_delay", True)
     punctuate = config_manager.optional_boolean_value("punctuate", True)
     filler_words = config_manager.optional_boolean_value("filler_words", True)
     profanity_filter = config_manager.optional_boolean_value("profanity_filter", False)
-    keywords = config_manager.optional_value("keywords", None)
-    keyterms = config_manager.optional_value("keyterms", None)
+    keywords = config_manager.optional_value("keywords", NOT_GIVEN)
+    keyterms = config_manager.optional_value("keyterms", NOT_GIVEN)
 
     return deepgram.stt.STT(
         api_key=api_key,
         model=model,
         language=language,
+        detect_language=detect_language,
         interim_results=interim_results,
         smart_format=smart_format,
+        no_delay=no_delay,
         punctuate=punctuate,
         filler_words=filler_words,
         profanity_filter=profanity_filter,
@@ -260,7 +265,7 @@ def get_assemblyai_stt_impl(agent_config) -> stt.STT:
     )
 
     api_key = config_manager.mandatory_value("api_key", wrong_credentials)
-    format_turns = config_manager.optional_boolean_value("format_turns", None)
+    format_turns = config_manager.optional_boolean_value("format_turns", NOT_GIVEN)
 
     return assemblyai.STT(api_key=api_key, format_turns=format_turns)
 
@@ -271,7 +276,7 @@ def get_fal_stt_impl(agent_config) -> stt.STT:
     wrong_credentials = "Wrong FAL credentials. live_captions.fal.api_key must be set"
 
     api_key = config_manager.mandatory_value("api_key", wrong_credentials)
-    language = config_manager.optional_string_value("language", "en")
+    language = config_manager.optional_string_value("language", NOT_GIVEN)
 
     return fal.WizperSTT(api_key=api_key, language=language)
 
@@ -306,30 +311,36 @@ def get_speechmatics_stt_impl(agent_config) -> stt.STT:
     enable_partials = config_manager.optional_boolean_value("enable_partials", True)
     output_locale = config_manager.optional_string_value("output_locale", None)
     max_delay = config_manager.optional_numeric_value("max_delay", 0.7)
-    max_delay_mode = config_manager.optional_string_value("max_delay_mode", "flexible")
+    max_delay_mode = config_manager.optional_string_value("max_delay_mode", None)
     punctuation_overrides = config_manager.optional_dict_value(
         "punctuation_overrides", None
     )
     additional_vocab = config_manager.optional_value("additional_vocab", None)
     speaker_diarization_config = config_manager.optional_dict_value(
-        "speaker_diarization_config", None
+        "speaker_diarization_config",
+        {
+            "max_speakers": 2,
+            "speaker_sensitivity": 0.5,
+            "prefer_current_speaker": False,
+        },
     )
 
     # livekit-plugins-speechmatics require the SPEECHMATICS_API_KEY env var to be set
     os.environ["SPEECHMATICS_API_KEY"] = api_key
 
-    transcrpition_config = TranscriptionConfig(
-        operating_point=operating_point,
-        language=language,
-        output_locale=output_locale,
-        punctuation_overrides=punctuation_overrides,
-        additional_vocab=additional_vocab,
-        enable_partials=enable_partials,
-        max_delay=max_delay,
-        max_delay_mode=max_delay_mode,
-        speaker_diarization_config=speaker_diarization_config,
+    return speechmatics.STT(
+        transcription_config=TranscriptionConfig(
+            operating_point=operating_point,
+            language=language,
+            output_locale=output_locale,
+            punctuation_overrides=punctuation_overrides,
+            additional_vocab=additional_vocab,
+            enable_partials=enable_partials,
+            max_delay=max_delay,
+            max_delay_mode=max_delay_mode,
+            speaker_diarization_config=speaker_diarization_config,
+        )
     )
-    return speechmatics.STT(transcription_config=transcrpition_config)
 
 
 def get_gladia_stt_impl(agent_config) -> stt.STT:
@@ -361,7 +372,7 @@ def get_sarvam_stt_impl(agent_config) -> stt.STT:
 
     api_key = config_manager.mandatory_value("api_key", wrong_credentials)
     language = config_manager.optional_string_value("language", "unknown")
-    model = config_manager.optional_string_value("model", None)
+    model = config_manager.optional_string_value("model", "saarika:v2")
 
     return sarvam.STT(
         api_key=api_key,

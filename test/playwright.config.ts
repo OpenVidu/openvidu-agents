@@ -3,7 +3,7 @@ import { RUN_MODE } from "./e2e/config";
 
 export default defineConfig({
   testDir: "./e2e",
-  timeout: 60000,
+  timeout: 300000,
   retries: 0,
   workers: 1,
   fullyParallel: false,

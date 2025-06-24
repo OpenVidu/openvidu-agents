@@ -101,39 +101,55 @@ STT_AI_PROVIDERS.forEach((provider) => {
   test.describe(() => {
     test.beforeEach(async ({ page }) => {
       await LocalDeployment.start(provider);
-      await page.goto(TESTAPP_URL);
     });
 
-    test.afterEach(async () => {
+    test.afterEach(async ({}, testInfo) => {
+      // Capture logs before stopping if test failed
+      if (testInfo.status === "failed") {
+        try {
+          console.log("\n=== Docker logs for failed test ===\n");
+          console.log(execCommand("docker logs agent-speech-processing"));
+          console.log("\n=== End of Docker logs ===\n");
+        } catch (error: any) {
+          console.log("Failed to get docker logs:", error.message);
+        }
+      }
       LocalDeployment.stop();
     });
 
     test(`testing with ${providerName}`, async ({ page }) => {
+      console.log(`Running test with provider: ${providerName}`);
+      await page.goto(TESTAPP_URL);
       await page.click("#add-user-btn");
       await page.click(".connect-btn");
-      try {
-        await waitForEvent(page, "transcriptionReceived", 1, 0, 45000);
-      } catch (error) {
-        console.log(execCommand("docker logs agent-speech-processing"));
-        throw error;
-      }
+      await waitForEvent(page, "transcriptionReceived", 1, 0, 45000);
+      console.log(`Transcription received from provider ${providerName}`);
     });
   });
 });
 
-function waitForEvent(
+async function waitForEvent(
   page: any,
   eventName: string,
   numEvents: number,
   user: number,
   timeout = 5000
 ): Promise<any> {
-  return new Promise((resolve, reject) => {
+  return new Promise(async (resolve, reject) => {
     const selector = `#openvidu-instance-${user} mat-accordion mat-expansion-panel mat-expansion-panel-header span.mat-content:has-text("${eventName}")`;
     let eventsCount = 0;
 
     const checkEvents = async () => {
-      const elements = await page.$$(selector);
+      let elements;
+      try {
+        elements = await page.$$(selector);
+      } catch (error: any) {
+        console.error(
+          `Error selecting elements for event ${eventName}:`,
+          error.message
+        );
+        return reject(error);
+      }
       eventsCount = elements.length;
 
       if (eventsCount >= numEvents) {
@@ -143,7 +159,7 @@ function waitForEvent(
       }
     };
 
-    checkEvents();
+    await checkEvents();
 
     // Reject if timeout is reached
     setTimeout(() => {

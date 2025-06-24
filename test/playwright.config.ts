@@ -26,6 +26,15 @@ export default defineConfig({
   },
   reporter:
     RUN_MODE == "CI"
-      ? [["list"], ["json", { outputFile: "test-results/test-results.json" }]]
+      ? [
+          ["list"],
+          [
+            "playwright-ctrf-json-reporter",
+            {
+              outputFile: "ctrf-report.json", // Optional: Output file name. Defaults to 'ctrf-report.json'.
+              outputDir: "test-results", // Optional: Output directory path. Defaults to '.' (project root).
+            },
+          ],
+        ]
       : [["list"]],
 });

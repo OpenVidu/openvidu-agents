@@ -64,8 +64,16 @@ jobs:
         uses: OpenVidu/actions/start-openvidu-local-deployment@main
         with:
           ref-openvidu-local-deployment: ${{ inputs.ref-openvidu-local-deployment || 'development' }}
-          path-to-clone: ../openvidu-local-deployment
           pre_startup_commands: "sed -i 's|docker_image: docker.io/openvidu/agent-speech-processing:main|docker_image: docker.io/openvidu/agent-speech-processing:${{ inputs.docker-tag-agent-speech-processing || 'main' }}|g' agent-speech-processing.yaml"
+
+      - name: Print workspace folder structure
+        run: |
+          echo "Workspace folder structure:"
+          ls -R
+          cd ..
+          ls -R
+          cd ..
+          ls -R
 
       - name: Run tests
         run: |
@@ -77,6 +85,7 @@ jobs:
           npm run test:e2e
         env:
           RUN_MODE: CI
+          LOCAL_DEPLOYMENT_PATH: ../openvidu-local-deployment/community
           PLAYWRIGHT_BROWSERS_PATH: /tmp/ms-playwright
           AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
           AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}

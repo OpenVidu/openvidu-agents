@@ -3,7 +3,7 @@ import { execCommand, sleep } from "./helper";
 import fs from "fs";
 import yaml from "yaml";
 
-const LOCAL_DEPLOYMENT_PATH = "../../openvidu-local-deployment/community";
+const LOCAL_DEPLOYMENT_PATH = process.env.LOCAL_DEPLOYMENT_PATH || "../../openvidu-local-deployment/community";
 const DOCKER_COMPOSE_FILE = `${LOCAL_DEPLOYMENT_PATH}/docker-compose.yaml`;
 const AGENT_SPEECH_PROCESSING_FILE = `${LOCAL_DEPLOYMENT_PATH}/agent-speech-processing.yaml`;
 

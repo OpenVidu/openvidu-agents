@@ -41,7 +41,7 @@ jobs:
       - name: Build agent-speech-processing Docker container
         if: inputs.docker-tag-agent-speech-processing == ''
         run: |
-          cd openvidu-agents/speech-processing
+          cd speech-processing
           docker build --no-cache -t openvidu/agent-speech-processing:main .
 
       - name: Install openvidu-testapp dependencies
@@ -60,7 +60,7 @@ jobs:
 
       - name: Run tests
         run: |
-          cd openvidu-agents/test
+          cd test
           # Install Playwright browsers
           mkdir -p /tmp/ms-playwright
           PLAYWRIGHT_BROWSERS_PATH=/tmp/ms-playwright npx playwright install --with-deps chromium

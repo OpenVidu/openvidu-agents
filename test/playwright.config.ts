@@ -26,6 +26,6 @@ export default defineConfig({
   },
   reporter:
     RUN_MODE == "CI"
-      ? [["list"], ["json", { outputFile: "test-results.json" }]]
+      ? [["list"], ["json", { outputFile: "test-results/test-results.json" }]]
       : [["list"]],
 });

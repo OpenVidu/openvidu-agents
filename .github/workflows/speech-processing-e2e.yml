@@ -64,6 +64,7 @@ jobs:
         uses: OpenVidu/actions/start-openvidu-local-deployment@main
         with:
           ref-openvidu-local-deployment: ${{ inputs.ref-openvidu-local-deployment || 'development' }}
+          path-to-clone: ../openvidu-local-deployment
           pre_startup_commands: "sed -i 's|docker_image: docker.io/openvidu/agent-speech-processing:main|docker_image: docker.io/openvidu/agent-speech-processing:${{ inputs.docker-tag-agent-speech-processing || 'main' }}|g' agent-speech-processing.yaml"
 
       - name: Run tests

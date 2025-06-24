@@ -8,6 +8,7 @@ const STT_AI_PROVIDERS = [
     azure_openai: {
       azure_api_key: process.env.AZURE_OPENAI_API_KEY,
       azure_endpoint: process.env.AZURE_OPENAI_ENDPOINT,
+      api_version: "2025-04-01-preview",
     },
   },
   {

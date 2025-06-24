@@ -57,14 +57,9 @@ async def entrypoint(ctx: JobContext):
 
     agent_config = openvidu_agent.get_agent_config()
     agent_name = openvidu_agent.get_agent_name()
-
-    print(f"Agent {agent_name} joining room {ctx.room.name}")
-
     stt_impl = get_stt_impl(agent_config)
 
-    logging.info(
-        f"starting transcriber (speech to text) example, room: {ctx.room.name}"
-    )
+    print(f"Agent {agent_name} joining room {ctx.room.name}")
     await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
 
     session = AgentSession(

@@ -99,7 +99,7 @@ jobs:
       - name: Publish Test Report
         uses: ctrf-io/github-test-reporter@v1
         with:
-          report-path: './test-results.json'
+          report-path: 'test/test-results/test-results.json'
         if: always()
 
       - name: Upload failed test videos

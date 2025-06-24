@@ -9,6 +9,7 @@
     "@types/jest": "30.0.0",
     "@types/node": "24.0.3",
     "@types/yaml": "^1.9.7",
+    "playwright-ctrf-json-reporter": "^0.0.21",
     "ts-node": "10.9.2",
     "typescript": "5.8.3"
   },

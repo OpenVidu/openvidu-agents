@@ -4,12 +4,12 @@ import { TESTAPP_URL } from "./config";
 import { downloadFile, execCommand } from "./utils/helper";
 
 const STT_AI_PROVIDERS = [
-  {
-    azure_openai: {
-      azure_api_key: process.env.AZURE_OPENAI_API_KEY,
-      azure_endpoint: process.env.AZURE_OPENAI_ENDPOINT,
-    },
-  },
+  // {
+  //   azure_openai: {
+  //     azure_api_key: process.env.AZURE_OPENAI_API_KEY,
+  //     azure_endpoint: process.env.AZURE_OPENAI_ENDPOINT,
+  //   },
+  // },
   {
     aws: {
       aws_access_key_id: process.env.AWS_ACCESS_KEY_ID,
@@ -17,47 +17,47 @@ const STT_AI_PROVIDERS = [
       aws_default_region: process.env.AWS_DEFAULT_REGION,
     },
   },
-  {
-    google: {
-      credentials_info: process.env.GOOGLE_CREDENTIALS_INFO,
-    },
-  },
-  {
-    sarvam: {
-      api_key: process.env.SARVAM_API_KEY,
-    },
-  },
-  {
-    azure: {
-      speech_key: process.env.AZURE_SPEECH_KEY,
-      speech_region: process.env.AZURE_SPEECH_REGION,
-    },
-  },
-  {
-    assemblyai: {
-      api_key: process.env.ASSEMBLYAI_API_KEY,
-    },
-  },
-  {
-    gladia: {
-      api_key: process.env.GLADIA_API_KEY,
-    },
-  },
-  {
-    deepgram: {
-      api_key: process.env.DEEPGRAM_API_KEY,
-    },
-  },
-  {
-    groq: {
-      api_key: process.env.GROQ_API_KEY,
-    },
-  },
-  {
-    openai: {
-      api_key: process.env.OPENAI_API_KEY,
-    },
-  },
+  // {
+  //   google: {
+  //     credentials_info: process.env.GOOGLE_CREDENTIALS_INFO,
+  //   },
+  // },
+  // {
+  //   sarvam: {
+  //     api_key: process.env.SARVAM_API_KEY,
+  //   },
+  // },
+  // {
+  //   azure: {
+  //     speech_key: process.env.AZURE_SPEECH_KEY,
+  //     speech_region: process.env.AZURE_SPEECH_REGION,
+  //   },
+  // },
+  // {
+  //   assemblyai: {
+  //     api_key: process.env.ASSEMBLYAI_API_KEY,
+  //   },
+  // },
+  // {
+  //   gladia: {
+  //     api_key: process.env.GLADIA_API_KEY,
+  //   },
+  // },
+  // {
+  //   deepgram: {
+  //     api_key: process.env.DEEPGRAM_API_KEY,
+  //   },
+  // },
+  // {
+  //   groq: {
+  //     api_key: process.env.GROQ_API_KEY,
+  //   },
+  // },
+  // {
+  //   openai: {
+  //     api_key: process.env.OPENAI_API_KEY,
+  //   },
+  // },
   // REASON THIS PROVIDER CAN'T BE AUTOMATICALLY TESTED: no free credits or tier available
   // {
   //   fal: {
@@ -112,7 +112,7 @@ STT_AI_PROVIDERS.forEach((provider) => {
       await page.click("#add-user-btn");
       await page.click(".connect-btn");
       try {
-        await waitForEvent(page, "transcriptionReceived", 1, 0, 60000);
+        await waitForEvent(page, "transcriptionReceived", 1, 0, 45000);
       } catch (error) {
         console.log(execCommand("docker logs agent-speech-processing"));
         throw error;

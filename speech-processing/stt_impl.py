@@ -241,7 +241,7 @@ def get_deepgram_stt_impl(agent_config) -> stt.STT:
     keywords = config_manager.optional_value("keywords", NOT_GIVEN)
     keyterms = config_manager.optional_value("keyterms", NOT_GIVEN)
 
-    return deepgram.stt.STT(
+    return deepgram.STT(
         api_key=api_key,
         model=model,
         language=language,

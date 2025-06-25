@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, Page } from "@playwright/test";
 import { LocalDeployment } from "./utils/local-deployment";
 import { TESTAPP_URL } from "./config";
 import { downloadFile, execCommand } from "./utils/helper";
@@ -123,14 +123,33 @@ STT_AI_PROVIDERS.forEach((provider) => {
       await page.goto(TESTAPP_URL);
       await page.click("#add-user-btn");
       await page.click(".connect-btn");
-      await waitForEvent(page, "transcriptionReceived", 1, 0, 60000);
-      console.log(`Transcription received from provider ${providerName}`);
+      await waitForEvent(page, "interimTranscription", 1, 0, 60000);
+      console.log(
+        `Interim transcription received from provider ${providerName}`
+      );
+      await waitForEvent(page, "finalTranscription", 1, 0, 10000);
+      console.log(`Final transcription received from provider ${providerName}`);
+      const totalInterimEvents = await countTotalEvents(
+        page,
+        "interimTranscription",
+        0
+      );
+      const totalFinalEvents = await countTotalEvents(
+        page,
+        "finalTranscription",
+        0
+      );
+      if (totalInterimEvents === totalFinalEvents) {
+        console.warn(
+          `ATTENTION! No real interim transcriptions supported by provider ${providerName}`
+        );
+      }
     });
   });
 });
 
 async function waitForEvent(
-  page: any,
+  page: Page,
   eventName: string,
   numEvents: number,
   user: number,
@@ -169,4 +188,19 @@ async function waitForEvent(
       }
     }, timeout);
   });
+}
+
+async function countTotalEvents(
+  page: Page,
+  eventName: string,
+  user: number
+): Promise<number> {
+  const selector = `#openvidu-instance-${user} mat-accordion mat-expansion-panel mat-expansion-panel-header span.mat-content:has-text("${eventName}")`;
+  try {
+    const elements = await page.$$(selector);
+    return elements.length;
+  } catch (error: any) {
+    console.error(`Error counting events for ${eventName}:`, error.message);
+    return 0;
+  }
 }

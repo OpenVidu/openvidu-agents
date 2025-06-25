@@ -154,8 +154,8 @@ live_captions:
     detect_language: false
     # Whether to return interim (non-final) transcription results. Defaults to true. See https://developers.deepgram.com/docs/interim-results
     interim_results: true
-    # Whether to apply smart formatting to numbers, dates, etc. Defaults to true. See https://developers.deepgram.com/docs/smart-format
-    smart_format: true
+    # Whether to apply smart formatting to numbers, dates, etc. Defaults to false. See https://developers.deepgram.com/docs/smart-format
+    smart_format: false
     # When smart_format is used, ensures it does not wait for sequence to be complete before returning results. Defaults to true. See https://developers.deepgram.com/docs/smart-format#using-no-delay
     no_delay: true
     # Whether to add punctuations to the transcription. Defaults to true. Turn detector will work better with punctuations. See https://developers.deepgram.com/docs/punctuation

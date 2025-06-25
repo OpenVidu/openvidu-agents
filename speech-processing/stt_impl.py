@@ -233,7 +233,7 @@ def get_deepgram_stt_impl(agent_config) -> stt.STT:
     language = config_manager.optional_string_value("language", "en-US")
     detect_language = config_manager.optional_boolean_value("detect_language", False)
     interim_results = config_manager.optional_boolean_value("interim_results", True)
-    smart_format = config_manager.optional_boolean_value("smart_format", True)
+    smart_format = config_manager.optional_boolean_value("smart_format", False)
     no_delay = config_manager.optional_boolean_value("no_delay", True)
     punctuate = config_manager.optional_boolean_value("punctuate", True)
     filler_words = config_manager.optional_boolean_value("filler_words", True)

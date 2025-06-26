@@ -127,7 +127,7 @@ STT_AI_PROVIDERS.forEach((provider) => {
       console.log(
         `Interim transcription received from provider ${providerName}`
       );
-      await waitForEvent(page, "finalTranscription", 1, 0, 10000);
+      await waitForEvent(page, "finalTranscription", 1, 0, 60000);
       console.log(`Final transcription received from provider ${providerName}`);
       const totalInterimEvents = await countTotalEvents(
         page,

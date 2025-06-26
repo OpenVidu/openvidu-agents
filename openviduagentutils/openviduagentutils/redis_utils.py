@@ -10,12 +10,13 @@ from redis.backoff import ExponentialBackoff
 REDIS_PREFIX_LOCK: str = "ov_agent_lock:"
 REDIS_PREFIX_ACTIVE_JOBS: str = "ov_agent_active_jobs:"
 REDIS_PREFIX_WAITING_TO_SHUTDOWN: str = "ov_agent_waiting_to_shutdown:"
+REDIS_PREFIX_SHUTDOWN_FLAG: str = "ov_agent_shutdown_flag:"
 
 
 class RedisUtils:
     """Utility class for managing Redis interactions."""
 
-    __TTL_MS: int = 10000
+    __TTL_SECONDS: int = 10
     __locks = {}
 
     def __init__(self, agent_config):
@@ -94,13 +95,15 @@ class RedisUtils:
 
     def acquire_lock(self, key: str, ttl: int = 0) -> bool:
         if ttl == 0:
-            ttl = self.__TTL_MS
+            ttl = self.__TTL_SECONDS
         lock: redis.lock.Lock = self.__redis_client.lock(
             name=key,
             timeout=ttl,  # The time-to-live (TTL) for the lock in milliseconds
             sleep=0.1,  # Time between retries to acquire the lock
             blocking=True,  # Block the operation until the lock is acquired
-            blocking_timeout=None,  # Infinite retries until the lock is acquired
+            blocking_timeout=(
+                ttl + 1
+            ),  # Maximum time to block while trying to acquire the lock
             lock_class=redis.lock.Lock,
         )
         acquired: bool = lock.acquire()

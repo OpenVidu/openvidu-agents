@@ -37,7 +37,12 @@ async def entrypoint(ctx: JobContext):
 
     agent_config = openvidu_agent.get_agent_config()
     agent_name = openvidu_agent.get_agent_name()
-    stt_impl = get_stt_impl(agent_config)
+
+    try:
+        stt_impl = get_stt_impl(agent_config)
+    except ValueError as e:
+        logging.error(f"Failed to initialize provider: {e}")
+        sys.exit(3)
 
     print(f"Agent {agent_name} joining room {ctx.room.name}")
     await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)

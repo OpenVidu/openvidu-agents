@@ -2,13 +2,10 @@ import logging
 import os
 import re
 import sys
-import uuid
 import yaml
 from typing import TypeVar
 from enum import Enum
 from dotenv import load_dotenv
-
-from .signal_utils import SignalManager
 
 T = TypeVar("T", bound=Enum)
 
@@ -19,34 +16,16 @@ openvidu_agent = None
 class OpenViduAgent:
     """Utility class to load agent configuration from environment variables or a YAML file."""
 
-    def __init__(self, main_process: bool):
-        global signal_manager
+    def __init__(self):
         agent_config, agent_name = self.__load_agent_config()
-
-        agent_main_pid = os.environ["AGENT_MAIN_PID"]
-        agent_process_uuid = os.environ["AGENT_UUID"]
-        signal_manager = SignalManager(
-            agent_config,
-            agent_name,
-            agent_process_uuid,
-            agent_main_pid,
-            main_process,
-        )
-
         self.__agent_config = agent_config
         self.__agent_name = agent_name
-        self.__signal_manager = signal_manager
 
-    def get_instance(main_process: bool = False) -> "OpenViduAgent":
+    def get_instance() -> "OpenViduAgent":
         """Get the singleton instance of OpenViduAgent"""
         global openvidu_agent
         if openvidu_agent is None:
-            if main_process:
-                if not os.environ.get("AGENT_MAIN_PID"):
-                    os.environ["AGENT_MAIN_PID"] = str(os.getpid())
-                if not os.environ.get("AGENT_UUID"):
-                    os.environ["AGENT_UUID"] = uuid.uuid4().hex
-            openvidu_agent = OpenViduAgent(main_process)
+            openvidu_agent = OpenViduAgent()
         return openvidu_agent
 
     def get_agent_config(self) -> object:
@@ -56,14 +35,6 @@ class OpenViduAgent:
     def get_agent_name(self) -> str:
         """Get the agent name"""
         return self.__agent_name
-
-    def new_active_job(self, ctx):
-        """Call this method in the entrypoint function"""
-        ctx.add_shutdown_callback(self.__signal_manager.decrement_active_jobs)
-        self.__signal_manager.increment_active_jobs()
-
-    def can_accept_new_jobs(self):
-        return not self.__signal_manager.is_waiting_to_shut_down()
 
     def __load_agent_config(self) -> tuple[object, str]:
         agent_config: object = None
@@ -188,8 +159,6 @@ class OpenViduAgent:
                 exit(1)
             agent_config["ws_url"] = os.environ["LIVEKIT_URL"]
 
-        agent_config = self.__load_redis_config(agent_config)
-
         return agent_config, agent_name
 
     def __load_env_vars_from_file(self) -> None:
@@ -212,149 +181,6 @@ class OpenViduAgent:
         logging.info("Loading environment variables from file: " + env_vars_file_path)
         if not load_dotenv(env_vars_file_path):
             logging.warning("No env vars available at file: " + env_vars_file_path)
-
-    # Redis configuration must be:
-    #
-    # For standalone Redis using YAML configuration:
-    # redis:
-    #     address: 127.0.0.1:6379
-    #     db: 0
-    #     username: user
-    #     password: pass
-    #
-    # For standalone Redis using environment variables:
-    # REDIS_ADDRESS=127.0.0.1:6379
-    # REDIS_USERNAME=user
-    # REDIS_PASSWORD=pass
-    # REDIS_DB=0
-    #
-    # For Redis Sentinel using YAML configuration:
-    # redis:
-    #     sentinel_master_name: openvidu
-    #     sentinel_addresses:
-    #         - sentinel.address.1:26379
-    #         - sentinel.address.2:26379
-    #     sentinel_username: user
-    #     sentinel_password: pass
-    #
-    # For Redis Sentinel using environment variables:
-    # REDIS_SENTINEL_MASTER_NAME=openvidu
-    # REDIS_SENTINEL_ADDRESSES=sentinel.address.1:26379,sentinel.address.2:26379
-    # REDIS_SENTINEL_USERNAME=user
-    # REDIS_SENTINEL_PASSWORD=pass
-    #
-    def __load_redis_config(self, agent_config: object) -> tuple[object, str]:
-        if "redis" not in agent_config:
-            # Try to load directly from the agent configuration
-            self.__load_redis_config_from_env(agent_config)
-
-        try:
-            self.__check_redis_config(agent_config)
-        except ValueError as e:
-            logging.error(e)
-            exit(1)
-
-        return agent_config
-
-    def __check_redis_config(self, agent_config: object) -> None:
-        """
-        Validates Redis configuration either from agent_config or environment variables.
-
-        Requirements if agent_config.redis exists:
-        - redis.db must be defined
-        - Either redis.address OR redis.sentinel_addresses must be defined
-        - If using sentinel_addresses, must have sentinel_master_name and sentinel_password
-        - If using address, must have password
-
-        Requirements if agent_config.redis doesn't exist:
-        - Environment variables must be set appropriately for either standalone Redis connection
-        or Redis Sentinel connection
-
-        Raises:
-            ValueError: If configuration requirements are not met
-        """
-        if "redis" in agent_config:
-            redis_config = agent_config["redis"]
-
-            if not "db" in redis_config:
-                raise ValueError(
-                    "Missing required field in agent configuration: redis.db"
-                )
-
-            # The attribute exists and is not None or empty string
-            has_address = self.__prop_exists_and_is_string_not_empty(
-                redis_config, "address"
-            )
-            has_sentinel = "sentinel_addresses" in redis_config
-
-            if not (has_address or has_sentinel):
-                raise ValueError(
-                    "Missing required field in agent configuration: either redis.address or redis.sentinel_addresses must be defined"
-                )
-
-            if has_sentinel:
-                if not self.__prop_exists_and_is_string_not_empty(
-                    redis_config, "sentinel_master_name"
-                ):
-                    raise ValueError(
-                        "Missing required field in agent configuration: redis.sentinel_master_name"
-                    )
-                if not self.__prop_exists_and_is_string_not_empty(
-                    redis_config, "sentinel_password"
-                ):
-                    raise ValueError(
-                        "Missing required field in agent configuration: redis.sentinel_password"
-                    )
-
-            if has_address and not self.__prop_exists_and_is_string_not_empty(
-                redis_config, "password"
-            ):
-                raise ValueError(
-                    "Missing required field in agent configuration: redis.password"
-                )
-
-        # If no redis config in agent_config, check environment variables
-        else:
-            # Check for standalone Redis connection env vars
-            has_direct_env = os.getenv("REDIS_ADDRESS") and os.getenv("REDIS_PASSWORD")
-            # Check for Sentinel connection env vars
-            has_sentinel_env = (
-                os.getenv("REDIS_SENTINEL_ADDRESSES")
-                and os.getenv("REDIS_SENTINEL_MASTER_NAME")
-                and os.getenv("REDIS_SENTINEL_PASSWORD")
-            )
-            if not (has_direct_env or has_sentinel_env):
-                raise ValueError(
-                    "Required environment variables not set. Need either:\n"
-                    "- REDIS_ADDRESS and REDIS_PASSWORD for standalone connection\n"
-                    "- REDIS_SENTINEL_ADDRESSES and REDIS_SENTINEL_MASTER_NAME and "
-                    "REDIS_SENTINEL_PASSWORD for sentinel connection"
-                )
-
-    def __load_redis_config_from_env(self, agent_config: object) -> object:
-        agent_config["redis"] = {}
-        agent_config["redis"]["db"] = os.environ.get("REDIS_DB") or 0
-        if os.environ.get("REDIS_SENTINEL_ADDRESSES"):
-            agent_config["redis"]["sentinel_addresses"] = os.environ.get(
-                "REDIS_SENTINEL_ADDRESSES"
-            ).split(",")
-            agent_config["redis"]["sentinel_master_name"] = os.environ.get(
-                "REDIS_SENTINEL_MASTER_NAME"
-            )
-            agent_config["redis"]["sentinel_password"] = os.environ.get(
-                "REDIS_SENTINEL_PASSWORD"
-            )
-            agent_config["redis"]["sentinel_username"] = (
-                os.environ.get("REDIS_SENTINEL_USERNAME") or None
-            )
-        else:
-            agent_config["redis"]["address"] = os.environ.get("REDIS_ADDRESS")
-            agent_config["redis"]["password"] = os.environ.get("REDIS_PASSWORD")
-            agent_config["redis"]["username"] = os.environ.get("REDIS_USERNAME") or None
-
-        self.__check_redis_config(agent_config)
-
-        return agent_config
 
     def __is_agent_config_file(self, file_folder: str, file_name: str) -> bool:
         return (

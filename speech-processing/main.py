@@ -1,25 +1,19 @@
-import asyncio
 import logging
+import os
+import signal
 import sys
 
-from livekit import rtc
 from livekit.agents import (
     AutoSubscribe,
     JobContext,
     WorkerOptions,
     cli,
     stt,
-    llm,
-    metrics,
     WorkerType,
     WorkerPermissions,
-    JobRequest,
     JobProcess,
     Agent,
     AgentSession,
-    StopResponse,
-    MetricsCollectedEvent,
-    UserInputTranscribedEvent,
     RoomOutputOptions,
     RoomInputOptions,
 )
@@ -37,23 +31,9 @@ class Transcriber(Agent):
             stt=stt,
         )
 
-    # async def on_user_turn_completed(
-    #     self, chat_ctx: llm.ChatContext, new_message: llm.ChatMessage
-    # ):
-    #     user_transcript = new_message.text_content
-    #     logging.info(f" -> {user_transcript}")
-    #     raise StopResponse()
-
-    # async def on_enter(self) -> None:
-    #     logging.info("Transcriber agent has entered the room")
-
-    # async def on_exit(self) -> None:
-    #     logging.info("Transcriber agent has exited the room")
-
 
 async def entrypoint(ctx: JobContext):
     openvidu_agent = OpenViduAgent.get_instance()
-    openvidu_agent.new_active_job(ctx)
 
     agent_config = openvidu_agent.get_agent_config()
     agent_name = openvidu_agent.get_agent_name()
@@ -67,16 +47,6 @@ async def entrypoint(ctx: JobContext):
         vad=ctx.proc.userdata["vad"],
         turn_detection=MultilingualModel(),
     )
-
-    # @session.on("metrics_collected")
-    # def on_metrics_collected(event: MetricsCollectedEvent):
-    #     metrics.log_metrics(event.metrics)
-
-    # @session.on("user_input_transcribed")
-    # def on_user_input_transcribed(event: UserInputTranscribedEvent):
-    #     logging.info(
-    #         f"User input transcribed: {event.transcript}, final: {event.is_final}"
-    #     )
 
     await session.start(
         agent=Transcriber(stt_impl),
@@ -170,28 +140,6 @@ async def entrypoint(ctx: JobContext):
 #     await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
 
 
-async def request_fnc(req: JobRequest) -> None:
-    openvidu_agent = OpenViduAgent.get_instance()
-    agent_name = openvidu_agent.get_agent_name()
-
-    logging.info(f"Agent {agent_name} received job request {req.job.id}")
-
-    if not openvidu_agent.can_accept_new_jobs():
-        logging.warning(f"Agent {agent_name} cannot accept new job requests")
-        await req.reject()
-        return
-    else:
-        logging.info(f"Agent {agent_name} can accept job request {req.job.id}")
-        await req.accept(
-            # the agent's name (Participant.name), defaults to ""
-            name=agent_name,
-            # the agent's identity (Participant.identity), defaults to "agent-<jobid>"
-            identity="agent-" + agent_name + "-" + req.job.id,
-            # attributes to set on the agent participant upon join
-            # attributes={"myagent": "rocks"},
-        )
-
-
 def prewarm(proc: JobProcess):
     proc.userdata["vad"] = silero.VAD.load()
 
@@ -204,14 +152,13 @@ if __name__ == "__main__":
         logging.info("Files downloaded for all plugins")
         sys.exit(0)
 
-    openvidu_agent = OpenViduAgent.get_instance(True)
+    openvidu_agent = OpenViduAgent.get_instance()
     agent_config = openvidu_agent.get_agent_config()
     agent_name = openvidu_agent.get_agent_name()
 
     worker_options = WorkerOptions(
         prewarm_fnc=prewarm,
         entrypoint_fnc=entrypoint,
-        request_fnc=request_fnc,
         api_key=agent_config["api_key"],
         api_secret=agent_config["api_secret"],
         ws_url=agent_config["ws_url"],
@@ -236,6 +183,11 @@ if __name__ == "__main__":
 
     logging.info(
         f"Starting agent {agent_name} with processing configured to {agent_config['live_captions']['processing']}"
+    )
+
+    # Redirect signal SIGQUIT as SIGTERM to allow graceful shutdown using livekit/agents mechanism
+    signal.signal(
+        signal.SIGQUIT, lambda signum, frame: os.kill(int(os.getpid()), signal.SIGTERM)
     )
 
     cli.run_app(worker_options)

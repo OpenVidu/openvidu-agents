@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       ref-openvidu-agents:
-        description: 'Branch, tag or commit SHA to checkout in repository OpenVidu/openvidu-agents'
+        description: "Branch, tag or commit SHA to checkout in repository OpenVidu/openvidu-agents"
         required: false
         default: ""
       ref-openvidu-local-deployment:
@@ -20,6 +20,19 @@ on:
         description: "Docker tag for agent-speech-processing contanier. If not provided, the container will be built from the repository sources"
         type: string
         required: false
+      rtc-engine:
+        description: "RTC engine to use"
+        type: choice
+        default: "mediasoup"
+        required: true
+        options:
+          - mediasoup
+          - pion
+      ref-openvidu-pro-mediasoup:
+        description: 'Branch, tag or commit SHA to checkout in repository OpenVidu/openvidu-pro-mediasoup. If "default" mediasoup-worker binary will not be compiled: artifact from latest release of OpenVidu/openvidu-pro-mediasoup will be used'
+        type: string
+        default: "default"
+        required: true
 jobs:
   test:
     timeout-minutes: 60
@@ -56,11 +69,23 @@ jobs:
         working-directory: ./openvidu/openvidu-testapp
         run: npm start 2>&1 >> ./openvidu-testapp.log &
 
+      - name: Setup mediasoup-worker
+        if: ${{ inputs.rtc-engine == 'mediasoup' }}
+        id: setup-mediasoup-worker
+        uses: OpenVidu/actions/setup-mediasoup-worker@main
+        with:
+          ref-openvidu-pro-mediasoup: ${{ inputs.ref-openvidu-pro-mediasoup }}
+          github-token: ${{ secrets.OPENVIDU_GITHUB_TOKEN }}
+
       - name: Setup OpenVidu Local Deployment
         uses: OpenVidu/actions/start-openvidu-local-deployment@main
         with:
           ref-openvidu-local-deployment: ${{ inputs.ref-openvidu-local-deployment || 'development' }}
           pre_startup_commands: "sed -i 's|docker_image: docker.io/openvidu/agent-speech-processing:main|docker_image: docker.io/openvidu/agent-speech-processing:${{ inputs.docker-tag-agent-speech-processing || 'main' }}|g' agent-speech-processing.yaml"
+          mediasoup-worker-bin: ${{ steps.setup-mediasoup-worker.outputs.MEDIASOUP_WORKER_BIN }}
+          openvidu-edition: "pro"
+          rtc-engine: ${{ inputs.rtc-engine }}
+          github-token: ${{ secrets.OPENVIDU_GITHUB_TOKEN }}
 
       - name: Run tests
         run: |
@@ -95,7 +120,7 @@ jobs:
       - name: Publish Test Report
         uses: ctrf-io/github-test-reporter@v1
         with:
-          report-path: 'test/test-results/ctrf-report.json'
+          report-path: "test/test-results/ctrf-report.json"
         if: always()
 
       - name: Upload failed test videos

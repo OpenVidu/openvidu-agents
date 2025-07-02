@@ -10,7 +10,7 @@ live_captions:
   # - manual: the agent will connect to new Rooms only when your application dictates it by using the Agent Dispatch API.
   processing: automatic
 
-  # Which speech-to-text AI provider to use [aws, azure, google, opeanai, groq, deepgram, assemblyai, fal, clova, speechmatics, gladia, sarvam]
+  # Which speech-to-text AI provider to use [aws, azure, google, openai, groq, deepgram, assemblyai, fal, clova, speechmatics, gladia, sarvam]
   # The custom configuration for the selected provider must be set below
   provider:
 
@@ -222,7 +222,7 @@ live_captions:
       speaker_sensitivity:
       # See https://docs.speechmatics.com/features/diarization#prefer-current-speaker
       prefer_current_speaker:
-    # Permitted puctuation marks for advanced punctuation. See https://docs.speechmatics.com/features/punctuation-settings
+    # Permitted punctuation marks for advanced punctuation. See https://docs.speechmatics.com/features/punctuation-settings
     # Commented is an example of punctuation settings
     punctuation_overrides:
       # permitted_marks: [ ".", "," ]

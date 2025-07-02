@@ -23,7 +23,7 @@ on:
       rtc-engine:
         description: "RTC engine to use"
         type: choice
-        default: "mediasoup"
+        default: "pion"
         required: true
         options:
           - mediasoup

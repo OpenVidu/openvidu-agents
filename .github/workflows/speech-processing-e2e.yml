@@ -97,7 +97,7 @@ jobs:
           npm run test:e2e
         env:
           RUN_MODE: CI
-          LOCAL_DEPLOYMENT_PATH: ../openvidu-local-deployment/community
+          LOCAL_DEPLOYMENT_PATH: ../openvidu-local-deployment/pro
           PLAYWRIGHT_BROWSERS_PATH: /tmp/ms-playwright
           AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
           AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}

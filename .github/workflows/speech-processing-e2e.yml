@@ -113,6 +113,7 @@ jobs:
           DEEPGRAM_API_KEY: ${{ secrets.DEEPGRAM_API_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          SPITCH_API_KEY: ${{ secrets.SPITCH_API_KEY }}
           # FAL_API_KEY: ${{ secrets.FAL_API_KEY }}
           # SPEECHMATICS_API_KEY: ${{ secrets.SPEECHMATICS_API_KEY }}
           # CLOVA_API_KEY: ${{ secrets.CLOVA_API_KEY }}

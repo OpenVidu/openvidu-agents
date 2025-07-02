@@ -101,6 +101,7 @@ STT_AI_PROVIDERS.forEach((provider) => {
 
   test.describe(() => {
     test.beforeEach(async ({ page }) => {
+      LocalDeployment.stop();
       await LocalDeployment.start(provider);
     });
 

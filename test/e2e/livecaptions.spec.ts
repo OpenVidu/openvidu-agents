@@ -59,6 +59,11 @@ const STT_AI_PROVIDERS = [
       api_key: process.env.OPENAI_API_KEY,
     },
   },
+  {
+    spitch: {
+      api_key: process.env.SPITCH_API_KEY,
+    },
+  },
   // REASON THIS PROVIDER CAN'T BE AUTOMATICALLY TESTED: no free credits or tier available
   // {
   //   fal: {

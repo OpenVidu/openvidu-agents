@@ -15,6 +15,7 @@ from livekit.plugins import (
     gladia,
     groq,
     sarvam,
+    spitch,
 )
 from livekit.plugins.speechmatics.types import TranscriptionConfig
 from livekit.agents import stt
@@ -381,6 +382,24 @@ def get_sarvam_stt_impl(agent_config) -> stt.STT:
     )
 
 
+def get_spitch_stt_impl(agent_config) -> stt.STT:
+
+    config_manager = ConfigManager(agent_config, "live_captions.spitch")
+    wrong_credentials = (
+        "Wrong Spitch credentials. live_captions.spitch.api_key must be set"
+    )
+
+    api_key = config_manager.mandatory_value("api_key", wrong_credentials)
+    language = config_manager.optional_string_value("language", "en")
+
+    # livekit-plugins-spitch require the SPITCH_API_KEY env var to be set
+    os.environ["SPITCH_API_KEY"] = api_key
+
+    return spitch.STT(
+        language=language,
+    )
+
+
 def get_stt_impl(agent_config) -> stt.STT:
     try:
         stt_provider = agent_config["live_captions"]["provider"]
@@ -416,5 +435,7 @@ def get_stt_impl(agent_config) -> stt.STT:
         return get_gladia_stt_impl(agent_config)
     elif stt_provider == "sarvam":
         return get_sarvam_stt_impl(agent_config)
+    elif stt_provider == "spitch":
+        return get_spitch_stt_impl(agent_config)
     else:
         raise ValueError(f"unknown STT provider: {stt_provider}")

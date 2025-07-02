@@ -10,6 +10,7 @@ import sys
 sys.path.append(".")  # Adjust as needed for your project structure
 from azure.cognitiveservices.speech.enums import ProfanityOption
 from livekit.plugins.speechmatics.types import TranscriptionConfig
+from livekit.agents.types import NOT_GIVEN
 
 # Import the module containing the functions we want to test
 from stt_impl import (
@@ -26,6 +27,7 @@ from stt_impl import (
     get_speechmatics_stt_impl,
     get_gladia_stt_impl,
     get_sarvam_stt_impl,
+    get_spitch_stt_impl,
     get_stt_impl,
 )
 
@@ -54,6 +56,7 @@ class TestSTTImplementations(unittest.TestCase):
             "AWS_DEFAULT_REGION",
             "FAL_KEY",
             "SPEECHMATICS_API_KEY",
+            "SPITCH_API_KEY",
         ]
         for var in env_vars:
             if var in os.environ:
@@ -87,9 +90,7 @@ class TestSTTImplementations(unittest.TestCase):
         # Assert
         self.assertEqual(result, "aws_stt_instance")
         mock_aws_stt.assert_called_once_with(
-            api_key="test_key_id",
-            api_secret="test_secret_key",
-            speech_region="us-west-2",
+            region="us-west-2",
             language="en-US",
             vocabulary_name="test_vocab",
             language_model_name="test_model",
@@ -137,7 +138,7 @@ class TestSTTImplementations(unittest.TestCase):
             "live_captions": {
                 "azure": {
                     "speech_host": "test.host.com",
-                    "languages": ["en-US", "es-ES"],
+                    "language": ["en-US", "es-ES"],
                 }
             }
         }
@@ -149,7 +150,12 @@ class TestSTTImplementations(unittest.TestCase):
         # Assert
         self.assertEqual(result, "azure_stt_instance")
         mock_azure_stt.assert_called_once_with(
-            speech_host="test.host.com", languages=["en-US", "es-ES"]
+            speech_host="test.host.com",
+            language=["en-US", "es-ES"],
+            speech_region=NOT_GIVEN,
+            speech_key=NOT_GIVEN,
+            speech_auth_token=NOT_GIVEN,
+            profanity=NOT_GIVEN,
         )
 
     @patch("livekit.plugins.azure.STT")
@@ -160,7 +166,7 @@ class TestSTTImplementations(unittest.TestCase):
                 "azure": {
                     "speech_key": "test_key",
                     "speech_region": "westus",
-                    "languages": ["en-US"],
+                    "language": ["en-US"],
                 }
             }
         }
@@ -172,7 +178,12 @@ class TestSTTImplementations(unittest.TestCase):
         # Assert
         self.assertEqual(result, "azure_stt_instance")
         mock_azure_stt.assert_called_once_with(
-            speech_key="test_key", speech_region="westus", languages=["en-US"]
+            speech_key="test_key",
+            speech_region="westus",
+            speech_host=NOT_GIVEN,
+            speech_auth_token=NOT_GIVEN,
+            language=["en-US"],
+            profanity=NOT_GIVEN,
         )
 
     @patch("livekit.plugins.azure.STT")
@@ -183,7 +194,7 @@ class TestSTTImplementations(unittest.TestCase):
                 "azure": {
                     "speech_auth_token": "test_token",
                     "speech_region": "westus",
-                    "languages": ["en-US"],
+                    "language": ["en-US"],
                     "profanity": "Masked",
                 }
             }
@@ -198,8 +209,10 @@ class TestSTTImplementations(unittest.TestCase):
         mock_azure_stt.assert_called_once_with(
             speech_auth_token="test_token",
             speech_region="westus",
-            languages=["en-US"],
+            language=["en-US"],
             profanity=ProfanityOption.Masked,
+            speech_host=NOT_GIVEN,
+            speech_key=NOT_GIVEN,
         )
 
     def test_get_azure_stt_impl_invalid_credentials(self):
@@ -216,7 +229,10 @@ class TestSTTImplementations(unittest.TestCase):
         with self.assertRaises(ValueError) as context:
             get_azure_stt_impl(config)
 
-        self.assertIn("Wrong azure credentials", str(context.exception))
+        self.assertIn(
+            "AZURE_SPEECH_HOST or AZURE_SPEECH_KEY and AZURE_SPEECH_REGION or speech_auth_token and AZURE_SPEECH_REGION or AZURE_SPEECH_KEY and speech_endpoint must be set",
+            str(context.exception),
+        )
 
     # Azure OpenAI STT Tests
     @patch("livekit.plugins.openai.STT.with_azure")
@@ -374,7 +390,10 @@ class TestSTTImplementations(unittest.TestCase):
         # Assert
         self.assertEqual(result, "openai_stt_instance")
         mock_openai_stt.assert_called_once_with(
-            api_key="test_openai_key", model="whisper-2", language="fr"
+            api_key="test_openai_key",
+            model="whisper-2",
+            language="fr",
+            prompt=NOT_GIVEN,
         )
 
     def test_get_openai_stt_impl_missing_api_key(self):
@@ -425,22 +444,21 @@ class TestSTTImplementations(unittest.TestCase):
 
         self.assertIn("Wrong Groq credentials", str(context.exception))
 
-    # Deepgram STT Tests
-    @patch("livekit.plugins.deepgram.stt.STT")
+    @patch("livekit.plugins.deepgram.STT")  # Change this line
     def test_get_deepgram_stt_impl_success(self, mock_deepgram_stt):
         # Arrange
         config = {
             "live_captions": {
                 "deepgram": {
                     "api_key": "test_deepgram_key",
-                    "model": "nova-2-meeting",
-                    "language": "en-GB",
+                    "model": "nova-3",
+                    "language": "en-US",
                     "interim_results": False,
                     "smart_format": False,
                     "punctuate": False,
                     "filler_words": False,
                     "profanity_filter": True,
-                    "keywords": ["test", "keywords"],
+                    # "keywords": ["test", "keywords"],
                     "keyterms": ["term1", "term2"],
                 }
             }
@@ -454,14 +472,16 @@ class TestSTTImplementations(unittest.TestCase):
         self.assertEqual(result, "deepgram_stt_instance")
         mock_deepgram_stt.assert_called_once_with(
             api_key="test_deepgram_key",
-            model="nova-2-meeting",
-            language="en-GB",
+            model="nova-3",
+            language="en-US",
+            detect_language=False,
             interim_results=False,
             smart_format=False,
+            no_delay=True,
             punctuate=False,
             filler_words=False,
             profanity_filter=True,
-            keywords=["test", "keywords"],
+            keywords=NOT_GIVEN,
             keyterms=["term1", "term2"],
         )
 
@@ -738,6 +758,73 @@ class TestSTTImplementations(unittest.TestCase):
 
         self.assertIn("Wrong Sarvam credentials", str(context.exception))
 
+    @patch("livekit.plugins.spitch.STT")
+    def test_get_spitch_stt_impl_success(self, mock_spitch_stt):
+        # Arrange
+        config = {
+            "live_captions": {
+                "spitch": {
+                    "api_key": "test_spitch_key",
+                    "language": "de-DE",
+                }
+            }
+        }
+        mock_spitch_stt.return_value = "spitch_stt_instance"
+
+        # Act
+        result = get_spitch_stt_impl(config)
+
+        # Assert
+        self.assertEqual(result, "spitch_stt_instance")
+        mock_spitch_stt.assert_called_once_with(
+            language="de-DE",
+        )
+        # Check environment variable
+        self.assertEqual(os.environ["SPITCH_API_KEY"], "test_spitch_key")
+
+    @patch("livekit.plugins.spitch.STT")
+    def test_get_spitch_stt_impl_default_language(self, mock_spitch_stt):
+        # Arrange
+        config = {
+            "live_captions": {
+                "spitch": {
+                    "api_key": "test_spitch_key",
+                    # No language specified - should use default
+                }
+            }
+        }
+        mock_spitch_stt.return_value = "spitch_stt_instance"
+
+        # Act
+        result = get_spitch_stt_impl(config)
+
+        # Assert
+        self.assertEqual(result, "spitch_stt_instance")
+        mock_spitch_stt.assert_called_once_with(
+            language="en",  # Default language
+        )
+        self.assertEqual(os.environ["SPITCH_API_KEY"], "test_spitch_key")
+
+    def test_get_spitch_stt_impl_missing_api_key(self):
+        # Arrange
+        config = {"live_captions": {"spitch": {}}}
+
+        # Act & Assert
+        with self.assertRaises(ValueError) as context:
+            get_spitch_stt_impl(config)
+
+        self.assertIn("Wrong Spitch credentials", str(context.exception))
+
+    def test_get_spitch_stt_impl_none_api_key(self):
+        # Arrange
+        config = {"live_captions": {"spitch": {"api_key": None}}}
+
+        # Act & Assert
+        with self.assertRaises(ValueError) as context:
+            get_spitch_stt_impl(config)
+
+        self.assertIn("Wrong Spitch credentials", str(context.exception))
+
     # Master get_stt_impl Tests
     def test_get_stt_impl_missing_provider(self):
         # Arrange
@@ -927,3 +1014,16 @@ class TestSTTImplementations(unittest.TestCase):
         # Assert
         self.assertEqual(result, "sarvam_stt_instance")
         mock_get_sarvam.assert_called_once_with(config)
+
+    @patch("stt_impl.get_spitch_stt_impl")
+    def test_get_stt_impl_spitch(self, mock_get_spitch):
+        # Arrange
+        config = {"live_captions": {"provider": "spitch"}}
+        mock_get_spitch.return_value = "spitch_stt_instance"
+
+        # Act
+        result = get_stt_impl(config)
+
+        # Assert
+        self.assertEqual(result, "spitch_stt_instance")
+        mock_get_spitch.assert_called_once_with(config)

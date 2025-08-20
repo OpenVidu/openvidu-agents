@@ -59,13 +59,19 @@ const STT_AI_PROVIDERS = [
       api_key: process.env.OPENAI_API_KEY,
     },
   },
-  // REASON THIS PROVIDER CAN'T BE AUTOMATICALLY TESTED: it is broken as it needs library httpx, 
-  // which the google plugin also requires with a different version
   {
-    spitch: {
-      api_key: process.env.SPITCH_API_KEY,
+    speechmatics: {
+      api_key:
+        process.env.SPEECHMATICS_API_KEY,
     },
   },
+  // REASON THIS PROVIDER CAN'T BE AUTOMATICALLY TESTED: it is broken as it needs library httpx, 
+  // which the google plugin also requires with a different version
+  // {
+  //   spitch: {
+  //     api_key: process.env.SPITCH_API_KEY,
+  //   },
+  // },
   // REASON THIS PROVIDER CAN'T BE AUTOMATICALLY TESTED: no free credits or tier available
   // {
   //   fal: {
@@ -73,13 +79,6 @@ const STT_AI_PROVIDERS = [
   //       process.env.FAL_API_KEY,
   //   },
   // },
-  // REASON THIS PROVIDER CAN'T BE AUTOMATICALLY TESTED: it fails with error message "Speechmatics connection closed unexpectedly"
-  {
-    speechmatics: {
-      api_key:
-        process.env.SPEECHMATICS_API_KEY,
-    },
-  },
   // REASON THIS PROVIDER CAN'T BE AUTOMATICALLY TESTED: : Clova platform has a very difficult signup process, requiring a phone number based in only a handful of countries
   // {
   //   clova: {

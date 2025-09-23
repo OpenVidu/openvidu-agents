@@ -22,6 +22,7 @@ from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
 from stt_impl import get_stt_impl
 from openviduagentutils.openvidu_agent import OpenViduAgent
+from openviduagentutils.config_manager import ConfigManager
 
 
 class Transcriber(Agent):
@@ -161,12 +162,19 @@ if __name__ == "__main__":
     agent_config = openvidu_agent.get_agent_config()
     agent_name = openvidu_agent.get_agent_name()
 
+    config_manager = ConfigManager(agent_config, "")
+    load_threshold = config_manager.optional_numeric_value("load_threshold", 0.7)
+    if load_threshold < 0 or load_threshold > 1:
+        logging.error("load_threshold must be a number between 0 and 1")
+        sys.exit(1)
+
     worker_options = WorkerOptions(
         prewarm_fnc=prewarm,
         entrypoint_fnc=entrypoint,
         api_key=agent_config["api_key"],
         api_secret=agent_config["api_secret"],
         ws_url=agent_config["ws_url"],
+        load_threshold=load_threshold,
         max_retry=sys.maxsize,
         drain_timeout=sys.maxsize,
         # For speech transcription, we want to initiate a new instance of the agent for each room

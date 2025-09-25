@@ -159,7 +159,35 @@ class OpenViduAgent:
                 exit(1)
             agent_config["ws_url"] = os.environ["LIVEKIT_URL"]
 
+        # Apply log level flag if configured in YAML (root key: log_level)
+        try:
+            self.__apply_log_level_flag(agent_config)
+        except Exception as e:
+            logging.warning(f"Failed to apply log_level from configuration: {e}")
         return agent_config, agent_name
+
+    def __apply_log_level_flag(self, agent_config: object) -> None:
+        """Append --log-level flag to sys.argv based solely on YAML config.
+
+        The user can specify at the root of the YAML:
+        log_level: DEBUG|INFO|WARNING|ERROR|CRITICAL
+
+        If a --log-level flag already exists, leave it untouched.
+        """
+        if any(arg.startswith("--log-level") for arg in sys.argv):
+            return
+        raw_level = agent_config.get("log_level")
+        if not isinstance(raw_level, str) or not raw_level.strip():
+            return
+        level = raw_level.strip().upper()
+        valid = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
+        if level not in valid:
+            logging.warning(
+                f"Invalid log_level '{raw_level}' in agent config. Expected one of {sorted(valid)}"
+            )
+            return
+        sys.argv.append(f"--log-level={level}")
+        logging.info(f"Applied log level from config: {level}")
 
     def __load_env_vars_from_file(self) -> None:
         ENV_VARS_FILE = "ENV_VARS_FILE"

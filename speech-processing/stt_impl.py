@@ -2,21 +2,6 @@ import logging
 import os
 import json
 import tempfile
-from livekit.plugins import (
-    aws,
-    azure,
-    google,
-    openai,
-    deepgram,
-    assemblyai,
-    fal,
-    clova,
-    speechmatics,
-    gladia,
-    groq,
-    sarvam,
-    spitch,
-)
 from livekit.plugins.speechmatics.types import TranscriptionConfig
 from livekit.agents import stt
 from livekit.agents.types import NOT_GIVEN
@@ -27,6 +12,7 @@ from azure.cognitiveservices.speech.enums import ProfanityOption
 
 
 def get_aws_stt_impl(agent_config) -> stt.STT:
+    from livekit.plugins import aws
 
     config_manager = ConfigManager(agent_config, "live_captions.aws")
     wrong_credentials = "Wrong AWS credentials. live_captions.aws.aws_access_key_id, live_captions.aws.aws_secret_access_key and live_captions.aws.aws_default_region must be set"
@@ -80,6 +66,7 @@ def get_aws_stt_impl(agent_config) -> stt.STT:
 
 
 def get_azure_stt_impl(agent_config) -> stt.STT:
+    from livekit.plugins import azure
 
     config_manager = ConfigManager(agent_config, "live_captions.azure")
     wrong_credentials = "Wrong azure credentials. One of these combinations must be set:\n    - speech_host\n    - speech_key + speech_region\n    - speech_auth_token + speech_region"
@@ -113,6 +100,8 @@ def get_azure_stt_impl(agent_config) -> stt.STT:
 
 
 def get_azure_openai_stt_impl(agent_config) -> stt.STT:
+    from livekit.plugins import openai
+
     config_manager = ConfigManager(agent_config, "live_captions.azure_openai")
 
     azure_api_key = config_manager.mandatory_value(
@@ -147,6 +136,8 @@ def get_azure_openai_stt_impl(agent_config) -> stt.STT:
 
 
 def get_google_stt_impl(agent_config) -> stt.STT:
+    from livekit.plugins import google
+
     config_manager = ConfigManager(agent_config, "live_captions.google")
     wrong_credentials = (
         "Wrong Google credentials. live_captions.google.credentials_info must be set"
@@ -190,6 +181,7 @@ def get_google_stt_impl(agent_config) -> stt.STT:
 
 
 def get_openai_stt_impl(agent_config) -> stt.STT:
+    from livekit.plugins import openai
 
     config_manager = ConfigManager(agent_config, "live_captions.openai")
     wrong_credentials = (
@@ -205,6 +197,7 @@ def get_openai_stt_impl(agent_config) -> stt.STT:
 
 
 def get_groq_stt_impl(agent_config):
+    from livekit.plugins import groq
 
     config_manager = ConfigManager(agent_config, "live_captions.groq")
     wrong_credentials = "Wrong Groq credentials. live_captions.groq.api_key must be set"
@@ -223,6 +216,7 @@ def get_groq_stt_impl(agent_config):
 
 
 def get_deepgram_stt_impl(agent_config) -> stt.STT:
+    from livekit.plugins import deepgram
 
     config_manager = ConfigManager(agent_config, "live_captions.deepgram")
     wrong_credentials = (
@@ -259,6 +253,7 @@ def get_deepgram_stt_impl(agent_config) -> stt.STT:
 
 
 def get_assemblyai_stt_impl(agent_config) -> stt.STT:
+    from livekit.plugins import assemblyai
 
     config_manager = ConfigManager(agent_config, "live_captions.assemblyai")
     wrong_credentials = (
@@ -272,6 +267,7 @@ def get_assemblyai_stt_impl(agent_config) -> stt.STT:
 
 
 def get_fal_stt_impl(agent_config) -> stt.STT:
+    from livekit.plugins import fal
 
     config_manager = ConfigManager(agent_config, "live_captions.fal")
     wrong_credentials = "Wrong FAL credentials. live_captions.fal.api_key must be set"
@@ -283,6 +279,7 @@ def get_fal_stt_impl(agent_config) -> stt.STT:
 
 
 def get_clova_stt_impl(agent_config) -> stt.STT:
+    from livekit.plugins import clova
 
     config_manager = ConfigManager(agent_config, "live_captions.clova")
     wrong_credentials = "Wrong Clova credentials. live_captions.clova.api_key and live_captions.clova.api_key must be set"
@@ -298,6 +295,7 @@ def get_clova_stt_impl(agent_config) -> stt.STT:
 
 
 def get_speechmatics_stt_impl(agent_config) -> stt.STT:
+    from livekit.plugins import speechmatics
 
     config_manager = ConfigManager(agent_config, "live_captions.speechmatics")
     wrong_credentials = (
@@ -345,6 +343,7 @@ def get_speechmatics_stt_impl(agent_config) -> stt.STT:
 
 
 def get_gladia_stt_impl(agent_config) -> stt.STT:
+    from livekit.plugins import gladia
 
     config_manager = ConfigManager(agent_config, "live_captions.gladia")
     wrong_credentials = (
@@ -365,6 +364,7 @@ def get_gladia_stt_impl(agent_config) -> stt.STT:
 
 
 def get_sarvam_stt_impl(agent_config) -> stt.STT:
+    from livekit.plugins import sarvam
 
     config_manager = ConfigManager(agent_config, "live_captions.sarvam")
     wrong_credentials = (
@@ -383,6 +383,7 @@ def get_sarvam_stt_impl(agent_config) -> stt.STT:
 
 
 def get_spitch_stt_impl(agent_config) -> stt.STT:
+    from livekit.plugins import spitch
 
     config_manager = ConfigManager(agent_config, "live_captions.spitch")
     wrong_credentials = (

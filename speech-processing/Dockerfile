@@ -1,14 +1,16 @@
-# This is an example Dockerfile that builds a minimal container for running LK Agents
 # syntax=docker/dockerfile:1
-ARG PYTHON_VERSION=3.11.11
-FROM python:${PYTHON_VERSION}-slim
-
-# Prevents Python from writing pyc files.
-ENV PYTHONDONTWRITEBYTECODE=1
+ARG PYTHON_VERSION=3.11
+FROM python:${PYTHON_VERSION}-slim AS base
 
 # Keeps Python from buffering stdout and stderr to avoid situations where
 # the application crashes without emitting any logs due to buffering.
 ENV PYTHONUNBUFFERED=1
+
+# Disable pip version check to speed up builds
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# Disable pip version check to speed up builds
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1
 
 # Create a non-privileged user that the app will run under.
 # See https://docs.docker.com/develop/develop-images/dockerfile_best-practices/#user
@@ -16,41 +18,52 @@ ARG UID=10001
 RUN adduser \
     --disabled-password \
     --gecos "" \
-    --home "/home/appuser" \
+    --home "/app" \
     --shell "/sbin/nologin" \
     --uid "${UID}" \
     appuser
 
-# Install gcc, g++ and other build dependencies.
-RUN apt-get update && \
-    apt-get install -y \
+# Install build dependencies required for Python packages with native extensions
+# gcc: C compiler needed for building Python packages with C extensions
+# g++: C++ compiler needed for building Python packages with C++ extensions
+# python3-dev: Python development headers needed for compilation
+# We clean up the apt cache after installation to keep the image size down
+RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
     python3-dev \
-    # As long as there are pip dependencies in requirements.txt file declared as git repositories the below package is needed
     git \
-    && rm -rf /var/lib/apt/lists/*
+  && rm -rf /var/lib/apt/lists/*
 
-USER appuser
+# Create a new directory for our application code
+# And set it as the working directory
+WORKDIR /app
 
-RUN mkdir -p /home/appuser/.cache
-RUN chown -R appuser /home/appuser/.cache
+# Copy just the dependency files first, for more efficient layer caching
+COPY requirements.txt ./
 
-WORKDIR /home/appuser
+# Install Python dependencies using pip
+# --no-cache-dir ensures we don't use the system cache
+RUN pip install --no-cache-dir -r requirements.txt
 
-# This allows invalidating the image building cache from this point to
-# force the re-installation of depedencies and re-copying the source code
-# "docker build -t openvidu/agent-speech-processing:main --build-arg CACHEBUST=$(date +%s) ."
-ARG CACHEBUST=1
-
-COPY requirements.txt .
-RUN python -m pip install --user --no-cache-dir -r requirements.txt
-
+# Copy all remaining application files into the container
+# This includes source code, configuration files, and dependency specifications
+# (Excludes files specified in .dockerignore)
 COPY ./*.py .
 
-# ensure that any dependent models are downloaded at build-time
+# Change ownership of all app files to the non-privileged user
+# This ensures the application can read/write files as needed
+RUN chown -R appuser:appuser /app
+
+# Switch to the non-privileged user for all subsequent operations
+# This improves security by not running as root
+USER appuser
+
+# Pre-download any ML models or files the agent needs
+# This ensures the container is ready to run immediately without downloading
+# dependencies at runtime, which improves startup time and reliability
 RUN python main.py download-files
 
-# Run the application.
-ENTRYPOINT ["python", "main.py"]
-CMD ["start"]
+# Run the application
+# The "start" command tells the worker to connect to LiveKit and begin waiting for jobs.
+CMD ["python", "main.py", "start"]

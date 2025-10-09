@@ -1,7 +1,7 @@
 import unittest
 from enum import Enum
 import copy
-from config_manager import ConfigManager
+from .config_manager import ConfigManager
 
 # Mock the __main__ module to avoid import issues
 # sys.modules["__main__"] = sys.modules[__name__]
@@ -333,6 +333,70 @@ class TestConfigManager(unittest.TestCase):
             config_manager.optional_string_value("string_value.invalid", "default"),
             "default",
         )
+
+    def test_configured_string_value(self):
+        """Test configured_string_value returns sentinel when absent and real value when present."""
+        sentinel = object()
+        config_manager = ConfigManager(self.basic_config, "")
+        # Present key
+        self.assertEqual(config_manager.configured_string_value("string_value", sentinel), "test")
+        # Missing key
+        self.assertIs(config_manager.configured_string_value("missing_key", sentinel), sentinel)
+        # Null key returns sentinel
+        self.assertIs(config_manager.configured_string_value("null_value", sentinel), sentinel)
+        # Type error for non-string existing value
+        with self.assertRaises(TypeError):
+            config_manager.configured_string_value("int_value", sentinel)
+
+    def test_configured_boolean_value(self):
+        sentinel = object()
+        config_manager = ConfigManager(self.basic_config, "")
+        self.assertTrue(config_manager.configured_boolean_value("bool_value", sentinel))
+        self.assertIs(config_manager.configured_boolean_value("missing_bool", sentinel), sentinel)
+        self.assertIs(config_manager.configured_boolean_value("null_value", sentinel), sentinel)
+        with self.assertRaises(TypeError):
+            config_manager.configured_boolean_value("int_value", sentinel)
+
+    def test_configured_numeric_value(self):
+        sentinel = object()
+        config_manager = ConfigManager(self.basic_config, "")
+        self.assertEqual(config_manager.configured_numeric_value("int_value", sentinel), 42)
+        self.assertIs(config_manager.configured_numeric_value("missing_num", sentinel), sentinel)
+        self.assertIs(config_manager.configured_numeric_value("null_value", sentinel), sentinel)
+        with self.assertRaises(TypeError):
+            config_manager.configured_numeric_value("string_value", sentinel)
+
+    def test_configured_enum_value(self):
+        sentinel = object()
+        config_manager = ConfigManager(self.basic_config, "")
+        self.assertEqual(
+            config_manager.configured_enum_value("logging.level", self.LogLevel, sentinel),
+            self.LogLevel.INFO,
+        )
+        self.assertIs(
+            config_manager.configured_enum_value("missing_enum", self.LogLevel, sentinel), sentinel
+        )
+        self.assertIs(
+            config_manager.configured_enum_value("null_value", self.LogLevel, sentinel), sentinel
+        )
+        with self.assertRaises(ValueError):
+            config_manager.configured_enum_value("string_value", self.LogLevel, sentinel)
+
+    def test_configured_dict_value(self):
+        sentinel = object()
+        config_manager = ConfigManager(self.basic_config, "")
+        self.assertEqual(
+            config_manager.configured_dict_value("database.settings", sentinel),
+            {"timeout": 30, "retry": 3},
+        )
+        self.assertIs(
+            config_manager.configured_dict_value("missing_dict", sentinel), sentinel
+        )
+        self.assertIs(
+            config_manager.configured_dict_value("null_value", sentinel), sentinel
+        )
+        with self.assertRaises(TypeError):
+            config_manager.configured_dict_value("string_value", sentinel)
 
     def test_optional_enum_value_valid_cases(self):
         """Test the optional_enum_value method with valid paths."""

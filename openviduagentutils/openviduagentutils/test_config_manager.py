@@ -1,6 +1,8 @@
 import unittest
 from enum import Enum
 import copy
+from numbers import Number
+from openviduagentutils import NOT_PROVIDED
 from .config_manager import ConfigManager
 
 # Mock the __main__ module to avoid import issues
@@ -45,6 +47,8 @@ class TestConfigManager(unittest.TestCase):
             },
             "empty_dict": {},
             "list_value": [1, 2, 3],
+            "list_strings": ["a", "b"],
+            "list_mixed": [1, "two", 3],
             "string_value": "test",
             "int_value": 42,
             "bool_value": True,
@@ -335,68 +339,138 @@ class TestConfigManager(unittest.TestCase):
         )
 
     def test_configured_string_value(self):
-        """Test configured_string_value returns sentinel when absent and real value when present."""
-        sentinel = object()
+        """Test configured_string_value returns NOT_PROVIDED when absent and real value when present."""
         config_manager = ConfigManager(self.basic_config, "")
         # Present key
-        self.assertEqual(config_manager.configured_string_value("string_value", sentinel), "test")
+        self.assertEqual(
+            config_manager.configured_string_value("string_value"), "test"
+        )
         # Missing key
-        self.assertIs(config_manager.configured_string_value("missing_key", sentinel), sentinel)
-        # Null key returns sentinel
-        self.assertIs(config_manager.configured_string_value("null_value", sentinel), sentinel)
+        self.assertIs(
+            config_manager.configured_string_value("missing_key"), NOT_PROVIDED
+        )
+        # Null key returns NOT_PROVIDED
+        self.assertIs(
+            config_manager.configured_string_value("null_value"), NOT_PROVIDED
+        )
         # Type error for non-string existing value
         with self.assertRaises(TypeError):
-            config_manager.configured_string_value("int_value", sentinel)
+            config_manager.configured_string_value("int_value")
 
     def test_configured_boolean_value(self):
-        sentinel = object()
         config_manager = ConfigManager(self.basic_config, "")
-        self.assertTrue(config_manager.configured_boolean_value("bool_value", sentinel))
-        self.assertIs(config_manager.configured_boolean_value("missing_bool", sentinel), sentinel)
-        self.assertIs(config_manager.configured_boolean_value("null_value", sentinel), sentinel)
+        # Present key
+        self.assertTrue(config_manager.configured_boolean_value("bool_value"))
+        # Missing key
+        self.assertIs(
+            config_manager.configured_boolean_value("missing_bool"), NOT_PROVIDED
+        )
+        # Null key returns NOT_PROVIDED
+        self.assertIs(
+            config_manager.configured_boolean_value("null_value"), NOT_PROVIDED
+        )
+        # Type error for non-boolean existing value
         with self.assertRaises(TypeError):
-            config_manager.configured_boolean_value("int_value", sentinel)
+            config_manager.configured_boolean_value("int_value")
 
     def test_configured_numeric_value(self):
-        sentinel = object()
         config_manager = ConfigManager(self.basic_config, "")
-        self.assertEqual(config_manager.configured_numeric_value("int_value", sentinel), 42)
-        self.assertIs(config_manager.configured_numeric_value("missing_num", sentinel), sentinel)
-        self.assertIs(config_manager.configured_numeric_value("null_value", sentinel), sentinel)
+        # Present key
+        self.assertEqual(
+            config_manager.configured_numeric_value("int_value"), 42
+        )
+        # Missing key
+        self.assertIs(
+            config_manager.configured_numeric_value("missing_num"), NOT_PROVIDED
+        )
+        # Null key returns NOT_PROVIDED
+        self.assertIs(
+            config_manager.configured_numeric_value("null_value"), NOT_PROVIDED
+        )
+        # Type error for non-numeric existing value
         with self.assertRaises(TypeError):
-            config_manager.configured_numeric_value("string_value", sentinel)
+            config_manager.configured_numeric_value("string_value")
 
     def test_configured_enum_value(self):
-        sentinel = object()
         config_manager = ConfigManager(self.basic_config, "")
+        # Present key
         self.assertEqual(
-            config_manager.configured_enum_value("logging.level", self.LogLevel, sentinel),
+            config_manager.configured_enum_value(
+                "logging.level", self.LogLevel
+            ),
             self.LogLevel.INFO,
         )
+        # Missing key
         self.assertIs(
-            config_manager.configured_enum_value("missing_enum", self.LogLevel, sentinel), sentinel
+            config_manager.configured_enum_value(
+                "missing_enum", self.LogLevel
+            ),
+            NOT_PROVIDED,
         )
+        # Null key returns NOT_PROVIDED
         self.assertIs(
-            config_manager.configured_enum_value("null_value", self.LogLevel, sentinel), sentinel
+            config_manager.configured_enum_value("null_value", self.LogLevel),
+            NOT_PROVIDED,
         )
+        # Value error for invalid enum value
         with self.assertRaises(ValueError):
-            config_manager.configured_enum_value("string_value", self.LogLevel, sentinel)
+            config_manager.configured_enum_value(
+                "string_value", self.LogLevel
+            )
 
     def test_configured_dict_value(self):
-        sentinel = object()
         config_manager = ConfigManager(self.basic_config, "")
+        # Present key
         self.assertEqual(
-            config_manager.configured_dict_value("database.settings", sentinel),
+            config_manager.configured_dict_value("database.settings"),
             {"timeout": 30, "retry": 3},
         )
+        # Missing key
         self.assertIs(
-            config_manager.configured_dict_value("missing_dict", sentinel), sentinel
+            config_manager.configured_dict_value("missing_dict"), NOT_PROVIDED
         )
+        # Null key returns NOT_PROVIDED
         self.assertIs(
-            config_manager.configured_dict_value("null_value", sentinel), sentinel
+            config_manager.configured_dict_value("null_value"), NOT_PROVIDED
+        )
+        # Type error for non-dict existing value
+        with self.assertRaises(TypeError):
+            config_manager.configured_dict_value("string_value")
+
+    def test_configured_list_value(self):
+        config_manager = ConfigManager(self.basic_config, "")
+
+        # Missing or None -> NOT_PROVIDED
+        self.assertIs(config_manager.configured_list_value("missing"), NOT_PROVIDED)
+        self.assertIs(
+            config_manager.configured_list_value("null_value"), NOT_PROVIDED
+        )
+
+        # Non-list -> TypeError
+        with self.assertRaises(TypeError):
+            config_manager.configured_list_value("string_value")
+
+        # List with no item type validation
+        self.assertEqual(
+            config_manager.configured_list_value("list_value"), [1, 2, 3]
+        )
+        self.assertEqual(
+            config_manager.configured_list_value("list_strings"), ["a", "b"]
+        )
+
+        # Enforce item type: numbers
+        self.assertEqual(
+            config_manager.configured_list_value("list_value", Number), [1, 2, 3]
         )
         with self.assertRaises(TypeError):
-            config_manager.configured_dict_value("string_value", sentinel)
+            config_manager.configured_list_value("list_mixed", Number)
+
+        # Enforce item type: strings
+        self.assertEqual(
+            config_manager.configured_list_value("list_strings", str), ["a", "b"]
+        )
+        with self.assertRaises(TypeError):
+            config_manager.configured_list_value("list_mixed", str)
 
     def test_optional_enum_value_valid_cases(self):
         """Test the optional_enum_value method with valid paths."""

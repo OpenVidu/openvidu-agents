@@ -10,6 +10,7 @@ import sys
 sys.path.append(".")  # Adjust as needed for your project structure
 from azure.cognitiveservices.speech.enums import ProfanityOption
 from livekit.plugins.speechmatics.types import TranscriptionConfig
+from openviduagentutils import NOT_PROVIDED
 from livekit.agents.types import NOT_GIVEN
 
 # Import the module containing the functions we want to test
@@ -54,8 +55,6 @@ class TestSTTImplementations(unittest.TestCase):
             "AWS_ACCESS_KEY_ID",
             "AWS_SECRET_ACCESS_KEY",
             "AWS_DEFAULT_REGION",
-            "FAL_KEY",
-            "SPEECHMATICS_API_KEY",
             "SPITCH_API_KEY",
         ]
         for var in env_vars:
@@ -150,12 +149,7 @@ class TestSTTImplementations(unittest.TestCase):
         # Assert
         self.assertEqual(result, "azure_stt_instance")
         mock_azure_stt.assert_called_once_with(
-            speech_host="test.host.com",
-            language=["en-US", "es-ES"],
-            speech_region=NOT_GIVEN,
-            speech_key=NOT_GIVEN,
-            speech_auth_token=NOT_GIVEN,
-            profanity=NOT_GIVEN,
+            speech_host="test.host.com", language=["en-US", "es-ES"]
         )
 
     @patch("livekit.plugins.azure.STT")
@@ -180,10 +174,7 @@ class TestSTTImplementations(unittest.TestCase):
         mock_azure_stt.assert_called_once_with(
             speech_key="test_key",
             speech_region="westus",
-            speech_host=NOT_GIVEN,
-            speech_auth_token=NOT_GIVEN,
             language=["en-US"],
-            profanity=NOT_GIVEN,
         )
 
     @patch("livekit.plugins.azure.STT")
@@ -211,8 +202,6 @@ class TestSTTImplementations(unittest.TestCase):
             speech_region="westus",
             language=["en-US"],
             profanity=ProfanityOption.Masked,
-            speech_host=NOT_GIVEN,
-            speech_key=NOT_GIVEN,
         )
 
     def test_get_azure_stt_impl_invalid_credentials(self):
@@ -230,7 +219,7 @@ class TestSTTImplementations(unittest.TestCase):
             get_azure_stt_impl(config)
 
         self.assertIn(
-            "AZURE_SPEECH_HOST or AZURE_SPEECH_KEY and AZURE_SPEECH_REGION or speech_auth_token and AZURE_SPEECH_REGION or AZURE_SPEECH_KEY and speech_endpoint must be set",
+            "Wrong azure credentials. One of these combinations must be set:\n    - speech_host\n    - speech_key + speech_region\n    - speech_auth_token + speech_region",
             str(context.exception),
         )
 
@@ -249,6 +238,7 @@ class TestSTTImplementations(unittest.TestCase):
                     "organization": "test_org",
                     "project": "test_project",
                     "language": "es",
+                    "detect_language": True,
                     "model": "gpt-4o-transcribe",
                     "prompt": "Transcribe the following audio.",
                 }
@@ -270,6 +260,7 @@ class TestSTTImplementations(unittest.TestCase):
             organization="test_org",
             project="test_project",
             language="es",
+            detect_language=True,
             model="gpt-4o-transcribe",
             prompt="Transcribe the following audio.",
         )
@@ -379,6 +370,8 @@ class TestSTTImplementations(unittest.TestCase):
                     "api_key": "test_openai_key",
                     "model": "whisper-2",
                     "language": "fr",
+                    "prompt": "<prompt>",
+                    "detect_language": False,
                 }
             }
         }
@@ -393,7 +386,8 @@ class TestSTTImplementations(unittest.TestCase):
             api_key="test_openai_key",
             model="whisper-2",
             language="fr",
-            prompt=NOT_GIVEN,
+            prompt="<prompt>",
+            detect_language=False,
         )
 
     def test_get_openai_stt_impl_missing_api_key(self):
@@ -453,12 +447,15 @@ class TestSTTImplementations(unittest.TestCase):
                     "api_key": "test_deepgram_key",
                     "model": "nova-3",
                     "language": "en-US",
+                    "detect_language": False,
                     "interim_results": False,
                     "smart_format": False,
+                    "no_delay": True,
                     "punctuate": False,
                     "filler_words": False,
                     "profanity_filter": True,
-                    # "keywords": ["test", "keywords"],
+                    "numerals": True,
+                    "keywords": [["test1", 0.5], ["test2", 1.0]],
                     "keyterms": ["term1", "term2"],
                 }
             }
@@ -481,7 +478,8 @@ class TestSTTImplementations(unittest.TestCase):
             punctuate=False,
             filler_words=False,
             profanity_filter=True,
-            keywords=NOT_GIVEN,
+            numerals=True,
+            keywords=[["test1", 0.5], ["test2", 1.0]],
             keyterms=["term1", "term2"],
         )
 
@@ -503,7 +501,11 @@ class TestSTTImplementations(unittest.TestCase):
             "live_captions": {
                 "assemblyai": {
                     "api_key": "test_assemblyai_key",
-                    "format_turns": True,
+                    "end_of_turn_confidence_threshold": 0.1,
+                    "min_end_of_turn_silence_when_confident": 120,
+                    "max_turn_silence": 3000,
+                    "format_turns": False,
+                    "keyterms_prompt": ["term1", "term2"],
                 }
             }
         }
@@ -516,7 +518,11 @@ class TestSTTImplementations(unittest.TestCase):
         self.assertEqual(result, "assemblyai_stt_instance")
         mock_assemblyai_stt.assert_called_once_with(
             api_key="test_assemblyai_key",
-            format_turns=True,
+            end_of_turn_confidence_threshold=0.1,
+            min_end_of_turn_silence_when_confident=120,
+            max_turn_silence=3000,
+            format_turns=False,
+            keyterms_prompt=["term1", "term2"],
         )
 
     def test_get_assemblyai_stt_impl_missing_api_key(self):
@@ -614,6 +620,7 @@ class TestSTTImplementations(unittest.TestCase):
                 "speechmatics": {
                     "api_key": "test_speechmatics_key",
                     "language": "fr",
+                    "operating_point": "enhanced",
                     "output_locale": "fr-FR",
                     "enable_partials": False,
                     "max_delay": 1.0,
@@ -670,9 +677,6 @@ class TestSTTImplementations(unittest.TestCase):
         self.assertEqual(
             config_obj.speaker_diarization_config["prefer_current_speakers"], True
         )
-
-        # Check environment variable
-        self.assertEqual(os.environ["SPEECHMATICS_API_KEY"], "test_speechmatics_key")
 
     def test_get_speechmatics_stt_impl_missing_api_key(self):
         # Arrange

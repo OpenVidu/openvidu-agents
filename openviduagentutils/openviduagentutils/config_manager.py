@@ -1,6 +1,7 @@
 from typing import Any, Dict, TypeVar, Type, Optional
 from enum import Enum
 from numbers import Number
+from .not_provided import NOT_PROVIDED
 
 T = TypeVar("T", bound=Enum)
 
@@ -244,6 +245,178 @@ class ConfigManager:
                 f"Value for property {self.__full_key(key)} must be a dictionary, got {type(value).__name__}"
             )
 
+        return value
+    
+    def configured_value(self, key: str) -> Any:
+        """
+        Return a user-configured value or an absence sentinel.
+
+        This differs from optional_value in that it does NOT accept a default
+        that would mask whether the user set a value. If the key is missing or the
+        value is None, the provided 'absent_sentinel' is returned so that callers
+        can decide to omit the argument entirely (e.g. to preserve library defaults).
+
+        Args:
+            key (str): Configuration key (without any prefix already applied).
+            absent_sentinel (Any): Value to return when the key is not present or is None.
+
+        Returns:
+            Any: The value if present, otherwise the absence sentinel.
+        """
+        try:
+            value = self.__get_value(self.__full_key(key))
+        except Exception:
+            return NOT_PROVIDED
+        if value is None:
+            return NOT_PROVIDED
+        return value
+
+    def configured_string_value(self, key: str) -> Any:
+        """Return a user-configured string value or an absence sentinel.
+
+        This differs from optional_string_value in that it does NOT accept a default
+        that would mask whether the user set a value. If the key is missing or the
+        value is None, the provided 'absent_sentinel' is returned so that callers
+        can decide to omit the argument entirely (e.g. to preserve library defaults).
+
+        Args:
+            key (str): Configuration key (without any prefix already applied).
+            absent_sentinel (Any): Value to return when the key is not present or is None.
+
+        Returns:
+            Any: The string value if present, otherwise the absence sentinel.
+
+        Raises:
+            TypeError: If the value exists but is not a string.
+        """
+        try:
+            value = self.__get_value(self.__full_key(key))
+        except Exception:
+            return NOT_PROVIDED
+        if value is None:
+            return NOT_PROVIDED
+        if not isinstance(value, str):
+            raise TypeError(
+                f"Value for property {self.__full_key(key)} must be a string, got {type(value).__name__}"
+            )
+        return value
+
+    def configured_boolean_value(self, key: str) -> Any:
+        """Return a user-configured boolean or an absence sentinel.
+
+        If key is missing or None -> absent_sentinel.
+        If present but not a bool -> TypeError.
+        """
+        try:
+            value = self.__get_value(self.__full_key(key))
+        except Exception:
+            return NOT_PROVIDED
+        if value is None:
+            return NOT_PROVIDED
+        if not isinstance(value, bool):
+            raise TypeError(
+                f"Value for property {self.__full_key(key)} must be a boolean, got {type(value).__name__}"
+            )
+        return value
+
+    def configured_numeric_value(self, key: str) -> Any:
+        """Return a user-configured numeric value or an absence sentinel.
+
+        If key is missing or None -> absent_sentinel.
+        If present but not a Number -> TypeError.
+        """
+        try:
+            value = self.__get_value(self.__full_key(key))
+        except Exception:
+            return NOT_PROVIDED
+        if value is None:
+            return NOT_PROVIDED
+        if not isinstance(value, Number):
+            raise TypeError(
+                f"Value for property {self.__full_key(key)} must be a number, got {type(value).__name__}"
+            )
+        return value
+
+    def configured_enum_value(
+        self, key: str, enum_class: Type[T]
+    ) -> Any:
+        """Return a user-configured enum member or an absence sentinel.
+
+        Accepts the enum member name as string. If key missing / None -> sentinel.
+        If present but not a valid member -> ValueError.
+        """
+        try:
+            value = self.__get_value(self.__full_key(key))
+        except Exception:
+            return NOT_PROVIDED
+        if value is None:
+            return NOT_PROVIDED
+        try:
+            return enum_class[value]
+        except KeyError:
+            valid_values = ", ".join(enum_class.__members__.keys())
+            raise ValueError(
+                f"Invalid value '{value}' for property {self.__full_key(key)}. Valid values are: {valid_values}"
+            )
+
+    def configured_dict_value(self, key: str) -> Any:
+        """Return a user-configured dict value or an absence sentinel.
+
+        If key missing or None -> sentinel.
+        If present but not a dict -> TypeError.
+        """
+        try:
+            value = self.__get_value(self.__full_key(key))
+        except Exception:
+            return NOT_PROVIDED
+        if value is None:
+            return NOT_PROVIDED
+        if not isinstance(value, dict):
+            raise TypeError(
+                f"Value for property {self.__full_key(key)} must be a dictionary, got {type(value).__name__}"
+            )
+        return value
+
+    def configured_list_value(
+        self, key: str, item_type: Optional[Type] = None
+    ) -> Any:
+        """Return a user-configured list value or an absence sentinel.
+
+        If key is missing or None -> absent_sentinel.
+        If present but not a list -> TypeError.
+        If item_type is provided, validate each element with isinstance(elem, item_type)
+        and raise TypeError when an element fails validation.
+
+        Args:
+            key: Configuration key to read (without prefix applied).
+            absent_sentinel: Value to return if key is missing or None.
+            item_type: Optional type (e.g., str, Number) to validate list items.
+
+        Returns:
+            The list value if present and valid, otherwise the absence sentinel.
+        """
+        try:
+            value = self.__get_value(self.__full_key(key))
+        except Exception:
+            return NOT_PROVIDED
+        if value is None:
+            return NOT_PROVIDED
+        if not isinstance(value, list):
+            raise TypeError(
+                f"Value for property {self.__full_key(key)} must be a list, got {type(value).__name__}"
+            )
+        if item_type is not None:
+            for idx, elem in enumerate(value):
+                if not isinstance(elem, item_type):
+                    expected = (
+                        ", ".join(t.__name__ for t in item_type)
+                        if isinstance(item_type, tuple)
+                        else item_type.__name__
+                    )
+                    raise TypeError(
+                        f"All items in property {self.__full_key(key)} must be of type {expected}, "
+                        f"but item at index {idx} is {type(elem).__name__}"
+                    )
         return value
 
     def __full_key(self, key: str) -> str:

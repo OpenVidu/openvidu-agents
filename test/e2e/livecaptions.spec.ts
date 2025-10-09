@@ -61,11 +61,15 @@ const STT_AI_PROVIDERS = [
   },
   {
     speechmatics: {
-      api_key:
-        process.env.SPEECHMATICS_API_KEY,
+      api_key: process.env.SPEECHMATICS_API_KEY,
     },
   },
-  // REASON THIS PROVIDER CAN'T BE AUTOMATICALLY TESTED: it is broken as it needs library httpx, 
+  {
+    mistralai: {
+      api_key: process.env.MISTRALAI_API_KEY,
+    },
+  },
+  // REASON THIS PROVIDER CAN'T BE AUTOMATICALLY TESTED: it is broken as it needs library httpx,
   // which the google plugin also requires with a different version
   // {
   //   spitch: {

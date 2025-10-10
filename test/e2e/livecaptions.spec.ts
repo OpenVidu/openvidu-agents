@@ -69,6 +69,11 @@ const STT_AI_PROVIDERS = [
       api_key: process.env.MISTRALAI_API_KEY,
     },
   },
+  {
+    cartesia: {
+      api_key: process.env.CARTESIA_API_KEY,
+    },
+  },
   // REASON THIS PROVIDER CAN'T BE AUTOMATICALLY TESTED: it is broken as it needs library httpx,
   // which the google plugin also requires with a different version
   // {

@@ -522,6 +522,28 @@ def get_mistral_stt_impl(agent_config) -> stt.STT:
     return mistralai.STT(api_key=api_key, **kwargs)
 
 
+def get_cartesia_stt_impl(agent_config) -> stt.STT:
+    from livekit.plugins import cartesia
+
+    config_manager = ConfigManager(agent_config, "live_captions.cartesia")
+    wrong_credentials = (
+        "Wrong Cartesia credentials. live_captions.cartesia.api_key must be set"
+    )
+
+    api_key = config_manager.mandatory_value("api_key", wrong_credentials)
+
+    language = config_manager.configured_string_value("language")
+    model = config_manager.configured_string_value("model")
+
+    kwargs = {
+        k: v
+        for k, v in {"language": language, "model": model}.items()
+        if v is not NOT_PROVIDED
+    }
+
+    return cartesia.STT(api_key=api_key, **kwargs)
+
+
 def get_stt_impl(agent_config) -> stt.STT:
     try:
         stt_provider = agent_config["live_captions"]["provider"]
@@ -561,5 +583,7 @@ def get_stt_impl(agent_config) -> stt.STT:
         return get_spitch_stt_impl(agent_config)
     elif stt_provider == "mistralai":
         return get_mistral_stt_impl(agent_config)
+    elif stt_provider == "cartesia":
+        return get_cartesia_stt_impl(agent_config)
     else:
         raise ValueError(f"unknown STT provider: {stt_provider}")

@@ -27,6 +27,7 @@ from stt_impl import (
     get_gladia_stt_impl,
     get_sarvam_stt_impl,
     get_spitch_stt_impl,
+    get_cartesia_stt_impl,
     get_stt_impl,
 )
 
@@ -827,6 +828,42 @@ class TestSTTImplementations(unittest.TestCase):
 
         self.assertIn("Wrong Spitch credentials", str(context.exception))
 
+    # Cartesia STT Tests
+    @patch("livekit.plugins.cartesia.STT")
+    def test_get_cartesia_stt_impl_success(self, mock_cartesia_stt):
+        # Arrange
+        config = {
+            "live_captions": {
+                "cartesia": {
+                    "api_key": "test_cartesia_key",
+                    "language": "en",
+                    "model": "sonic-english",
+                }
+            }
+        }
+        mock_cartesia_stt.return_value = "cartesia_stt_instance"
+
+        # Act
+        result = get_cartesia_stt_impl(config)
+
+        # Assert
+        self.assertEqual(result, "cartesia_stt_instance")
+        mock_cartesia_stt.assert_called_once_with(
+            api_key="test_cartesia_key",
+            language="en",
+            model="sonic-english",
+        )
+
+    def test_get_cartesia_stt_impl_missing_api_key(self):
+        # Arrange
+        config = {"live_captions": {"cartesia": {}}}
+
+        # Act & Assert
+        with self.assertRaises(ValueError) as context:
+            get_cartesia_stt_impl(config)
+
+        self.assertIn("Wrong Cartesia credentials", str(context.exception))
+
     # Master get_stt_impl Tests
     def test_get_stt_impl_missing_provider(self):
         # Arrange
@@ -1029,3 +1066,17 @@ class TestSTTImplementations(unittest.TestCase):
         # Assert
         self.assertEqual(result, "spitch_stt_instance")
         mock_get_spitch.assert_called_once_with(config)
+
+    @patch("stt_impl.get_cartesia_stt_impl")
+    def test_get_stt_impl_cartesia(self, mock_get_cartesia):
+        # Arrange
+        config = {"live_captions": {"provider": "cartesia"}}
+        mock_get_cartesia.return_value = "cartesia_stt_instance"
+
+        # Act
+        result = get_stt_impl(config)
+
+        # Assert
+        self.assertEqual(result, "cartesia_stt_instance")
+        mock_get_cartesia.assert_called_once_with(config)
+

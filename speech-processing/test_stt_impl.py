@@ -10,8 +10,6 @@ import sys
 sys.path.append(".")  # Adjust as needed for your project structure
 from azure.cognitiveservices.speech.enums import ProfanityOption
 from livekit.plugins.speechmatics.types import TranscriptionConfig
-from openviduagentutils import NOT_PROVIDED
-from livekit.agents.types import NOT_GIVEN
 
 # Import the module containing the functions we want to test
 from stt_impl import (

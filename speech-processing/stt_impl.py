@@ -4,9 +4,9 @@ import json
 import tempfile
 from livekit.plugins.speechmatics.types import TranscriptionConfig
 from livekit.agents import stt
-from openviduagentutils import NOT_PROVIDED
 
-from openviduagentutils.openviduagentutils.config_manager import ConfigManager
+from openviduagentutils.config_manager import ConfigManager
+from openviduagentutils.not_provided import NOT_PROVIDED
 
 from azure.cognitiveservices.speech.enums import ProfanityOption
 

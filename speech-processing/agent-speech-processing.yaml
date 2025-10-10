@@ -16,7 +16,7 @@ live_captions:
   # - manual: the agent will connect to new Rooms only when your application dictates it by using the Agent Dispatch API.
   processing: automatic
 
-  # Which speech-to-text AI provider to use [aws, azure, google, openai, groq, deepgram, assemblyai, fal, clova, speechmatics, gladia, sarvam, spitch]
+  # Which speech-to-text AI provider to use [aws, azure, google, openai, azure_openai, groq, deepgram, assemblyai, fal, clova, speechmatics, gladia, sarvam, mistralai, cartesia, soniox]
   # The custom configuration for the selected provider must be set below
   provider:
 
@@ -309,3 +309,13 @@ live_captions:
     model:
     # The language code to use for transcription (e.g., "en" for English)
     language:
+
+  soniox:
+    # API key for Soniox. See https://console.soniox.com/
+    api_key:
+    # Set language hints when possible to significantly improve accuracy. See: https://soniox.com/docs/stt/concepts/language-hints
+    language_hints:
+      # - "en"
+      # - "es"
+    # Set context to improve recognition of difficult and rare words. Context is a string and can include words, phrases, sentences, or summaries (limit: 10K chars). See https://soniox.com/docs/stt/concepts/context
+    context:

@@ -10,6 +10,7 @@ import sys
 sys.path.append(".")  # Adjust as needed for your project structure
 from azure.cognitiveservices.speech.enums import ProfanityOption
 from livekit.plugins.speechmatics.types import TranscriptionConfig
+from livekit.plugins.soniox import STTOptions as sonioxSTTOptions
 
 # Import the module containing the functions we want to test
 from stt_impl import (
@@ -886,12 +887,21 @@ class TestSTTImplementations(unittest.TestCase):
 
         # Assert
         self.assertEqual(result, "soniox_stt_instance")
+        mock_soniox_stt.assert_called_once()
+
+        # Check the TranscriptionConfig
+        call_args = mock_soniox_stt.call_args[1]
+        config_obj = call_args["params"]
+        
         mock_soniox_stt.assert_called_once_with(
             api_key="test_soniox_key",
-            model="premium",
-            language_hints=["en", "es"],
-            context="This is the context",
+            params=config_obj,
         )
+        
+        self.assertIsInstance(config_obj, sonioxSTTOptions)
+        self.assertEqual(config_obj.model, "premium")
+        self.assertEqual(config_obj.language_hints, ["en", "es"])
+        self.assertEqual(config_obj.context, "This is the context")
 
     def test_get_soniox_stt_impl_missing_api_key(self):
         # Arrange

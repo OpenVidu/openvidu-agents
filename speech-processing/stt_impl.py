@@ -59,7 +59,7 @@ def get_aws_stt_impl(agent_config) -> stt.STT:
             "vocab_filter_name": vocab_filter_name,
             "vocab_filter_method": vocab_filter_method,
         }.items()
-        if v is not None
+        if v is not NOT_PROVIDED
     }
 
     return aws.STT(**kwargs)

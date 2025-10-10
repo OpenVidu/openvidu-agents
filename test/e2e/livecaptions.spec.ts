@@ -205,6 +205,13 @@ async function waitForEvent(
     // Reject if timeout is reached
     setTimeout(() => {
       if (eventsCount < numEvents) {
+        // Perform a screenshot and log it as base64 image for debugging
+        page.screenshot().then((screenshot) => {
+          const base64Image = screenshot.toString("base64");
+          console.log(
+            `Screenshot at timeout for event ${eventName}: data:image/png;base64,${base64Image}`
+          );
+        });
         reject(new Error(`Timeout waiting for ${eventName} events`));
       }
     }, timeout);

@@ -892,12 +892,12 @@ class TestSTTImplementations(unittest.TestCase):
         # Check the TranscriptionConfig
         call_args = mock_soniox_stt.call_args[1]
         config_obj = call_args["params"]
-        
+
         mock_soniox_stt.assert_called_once_with(
             api_key="test_soniox_key",
             params=config_obj,
         )
-        
+
         self.assertIsInstance(config_obj, sonioxSTTOptions)
         self.assertEqual(config_obj.model, "premium")
         self.assertEqual(config_obj.language_hints, ["en", "es"])

@@ -117,6 +117,7 @@ jobs:
           SPEECHMATICS_API_KEY: ${{ secrets.SPEECHMATICS_API_KEY }}
           MISTRALAI_API_KEY: ${{ secrets.MISTRALAI_API_KEY }}
           CARTESIA_API_KEY: ${{ secrets.CARTESIA_API_KEY }}
+          SONIOX_API_KEY: ${{ secrets.SONIOX_API_KEY }}
           # FAL_API_KEY: ${{ secrets.FAL_API_KEY }}
           # CLOVA_API_KEY: ${{ secrets.CLOVA_API_KEY }}
 

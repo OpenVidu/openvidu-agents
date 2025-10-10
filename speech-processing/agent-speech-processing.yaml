@@ -301,3 +301,11 @@ live_captions:
     model:
     # The language code to use for transcription (e.g., "en" for English)
     language:
+
+  cartesia:
+    # API key for Cartesia. See https://play.cartesia.ai/keys
+    api_key:
+    # The Cartesia STT model to use
+    model:
+    # The language code to use for transcription (e.g., "en" for English)
+    language:

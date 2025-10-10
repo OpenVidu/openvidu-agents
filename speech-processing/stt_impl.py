@@ -544,6 +544,33 @@ def get_cartesia_stt_impl(agent_config) -> stt.STT:
     return cartesia.STT(api_key=api_key, **kwargs)
 
 
+def get_soniox_stt_impl(agent_config) -> stt.STT:
+    from livekit.plugins import soniox
+
+    config_manager = ConfigManager(agent_config, "live_captions.soniox")
+    wrong_credentials = (
+        "Wrong Soniox credentials. live_captions.soniox.api_key must be set"
+    )
+
+    api_key = config_manager.mandatory_value("api_key", wrong_credentials)
+
+    model = config_manager.configured_string_value("model")
+    language_hints = config_manager.configured_list_value("language_hints", str)
+    context = config_manager.configured_string_value("context")
+
+    kwargs = {
+        k: v
+        for k, v in {
+            "model": model,
+            "language_hints": language_hints,
+            "context": context,
+        }.items()
+        if v is not NOT_PROVIDED
+    }
+
+    return soniox.STT(api_key=api_key, params=soniox.STTOptions(**kwargs))
+
+
 def get_stt_impl(agent_config) -> stt.STT:
     try:
         stt_provider = agent_config["live_captions"]["provider"]
@@ -585,5 +612,7 @@ def get_stt_impl(agent_config) -> stt.STT:
         return get_mistral_stt_impl(agent_config)
     elif stt_provider == "cartesia":
         return get_cartesia_stt_impl(agent_config)
+    elif stt_provider == "soniox":
+        return get_soniox_stt_impl(agent_config)
     else:
         raise ValueError(f"unknown STT provider: {stt_provider}")

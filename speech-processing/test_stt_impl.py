@@ -28,6 +28,7 @@ from stt_impl import (
     get_sarvam_stt_impl,
     get_spitch_stt_impl,
     get_cartesia_stt_impl,
+    get_soniox_stt_impl,
     get_stt_impl,
 )
 
@@ -864,6 +865,44 @@ class TestSTTImplementations(unittest.TestCase):
 
         self.assertIn("Wrong Cartesia credentials", str(context.exception))
 
+    # Soniox STT Tests
+    @patch("livekit.plugins.soniox.STT")
+    def test_get_soniox_stt_impl_success(self, mock_soniox_stt):
+        # Arrange
+        config = {
+            "live_captions": {
+                "soniox": {
+                    "api_key": "test_soniox_key",
+                    "model": "premium",
+                    "language_hints": ["en", "es"],
+                    "context": "This is the context",
+                }
+            }
+        }
+        mock_soniox_stt.return_value = "soniox_stt_instance"
+
+        # Act
+        result = get_soniox_stt_impl(config)
+
+        # Assert
+        self.assertEqual(result, "soniox_stt_instance")
+        mock_soniox_stt.assert_called_once_with(
+            api_key="test_soniox_key",
+            model="premium",
+            language_hints=["en", "es"],
+            context="This is the context",
+        )
+
+    def test_get_soniox_stt_impl_missing_api_key(self):
+        # Arrange
+        config = {"live_captions": {"soniox": {}}}
+
+        # Act & Assert
+        with self.assertRaises(ValueError) as context:
+            get_soniox_stt_impl(config)
+
+        self.assertIn("Wrong Soniox credentials", str(context.exception))
+
     # Master get_stt_impl Tests
     def test_get_stt_impl_missing_provider(self):
         # Arrange
@@ -1080,3 +1119,15 @@ class TestSTTImplementations(unittest.TestCase):
         self.assertEqual(result, "cartesia_stt_instance")
         mock_get_cartesia.assert_called_once_with(config)
 
+    @patch("stt_impl.get_soniox_stt_impl")
+    def test_get_stt_impl_soniox(self, mock_get_soniox):
+        # Arrange
+        config = {"live_captions": {"provider": "soniox"}}
+        mock_get_soniox.return_value = "soniox_stt_instance"
+
+        # Act
+        result = get_stt_impl(config)
+
+        # Assert
+        self.assertEqual(result, "soniox_stt_instance")
+        mock_get_soniox.assert_called_once_with(config)

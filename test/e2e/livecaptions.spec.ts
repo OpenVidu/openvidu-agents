@@ -109,7 +109,7 @@ test.beforeAll(async () => {
   // If file does not exist or is empty, download it
   if (!fs.existsSync(audioFilePath) || fs.statSync(audioFilePath).size === 0) {
     await downloadFile(
-      "https://github.com/OpenVidu/openvidu/raw/v2/openvidu-test-e2e/docker/stt-test.wav",
+      "https://s3.eu-west-1.amazonaws.com/public.openvidu.io/stt-test.wav",
       audioFilePath
     );
   }

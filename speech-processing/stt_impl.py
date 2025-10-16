@@ -2,6 +2,7 @@ import logging
 import os
 import json
 import tempfile
+from typing import Callable, NamedTuple
 from livekit.plugins.speechmatics.types import TranscriptionConfig
 from livekit.agents import stt
 
@@ -9,6 +10,105 @@ from openviduagentutils.config_manager import ConfigManager
 from openviduagentutils.not_provided import NOT_PROVIDED
 
 from azure.cognitiveservices.speech.enums import ProfanityOption
+
+
+# STT Provider Registry
+class STTProviderConfig(NamedTuple):
+    """Configuration for an STT provider."""
+
+    impl_function: Callable[[dict], stt.STT]
+    plugin_module: str
+    plugin_class: str
+
+
+# Central registry of all supported STT providers
+STT_PROVIDERS = {
+    "aws": STTProviderConfig(
+        impl_function=None,  # Will be set after function definitions
+        plugin_module="livekit.plugins.aws",
+        plugin_class="STT",
+    ),
+    "azure": STTProviderConfig(
+        impl_function=None,
+        plugin_module="livekit.plugins.azure",
+        plugin_class="STT",
+    ),
+    "azure_openai": STTProviderConfig(
+        impl_function=None,
+        plugin_module="livekit.plugins.openai",
+        plugin_class="STT",
+    ),
+    "google": STTProviderConfig(
+        impl_function=None,
+        plugin_module="livekit.plugins.google",
+        plugin_class="STT",
+    ),
+    "openai": STTProviderConfig(
+        impl_function=None,
+        plugin_module="livekit.plugins.openai",
+        plugin_class="STT",
+    ),
+    "groq": STTProviderConfig(
+        impl_function=None,
+        plugin_module="livekit.plugins.groq",
+        plugin_class="STT",
+    ),
+    "deepgram": STTProviderConfig(
+        impl_function=None,
+        plugin_module="livekit.plugins.deepgram",
+        plugin_class="STT",
+    ),
+    "assemblyai": STTProviderConfig(
+        impl_function=None,
+        plugin_module="livekit.plugins.assemblyai",
+        plugin_class="STT",
+    ),
+    "fal": STTProviderConfig(
+        impl_function=None,
+        plugin_module="livekit.plugins.fal",
+        plugin_class="WizperSTT",
+    ),
+    "clova": STTProviderConfig(
+        impl_function=None,
+        plugin_module="livekit.plugins.clova",
+        plugin_class="STT",
+    ),
+    "speechmatics": STTProviderConfig(
+        impl_function=None,
+        plugin_module="livekit.plugins.speechmatics",
+        plugin_class="STT",
+    ),
+    "gladia": STTProviderConfig(
+        impl_function=None,
+        plugin_module="livekit.plugins.gladia",
+        plugin_class="STT",
+    ),
+    "sarvam": STTProviderConfig(
+        impl_function=None,
+        plugin_module="livekit.plugins.sarvam",
+        plugin_class="STT",
+    ),
+    "mistralai": STTProviderConfig(
+        impl_function=None,
+        plugin_module="livekit.plugins.mistralai",
+        plugin_class="STT",
+    ),
+    "cartesia": STTProviderConfig(
+        impl_function=None,
+        plugin_module="livekit.plugins.cartesia",
+        plugin_class="STT",
+    ),
+    "soniox": STTProviderConfig(
+        impl_function=None,
+        plugin_module="livekit.plugins.soniox",
+        plugin_class="STT",
+    ),
+    "spitch": STTProviderConfig(
+        impl_function=None,
+        plugin_module="livekit.plugins.spitch",
+        plugin_class="STT",
+    ),
+}
 
 
 def get_aws_stt_impl(agent_config) -> stt.STT:
@@ -571,48 +671,101 @@ def get_soniox_stt_impl(agent_config) -> stt.STT:
     return soniox.STT(api_key=api_key, params=soniox.STTOptions(**kwargs))
 
 
+# Initialize the registry with implementation functions
+def _initialize_stt_registry():
+    """Initialize the STT provider registry with implementation functions.
+
+    This must be called after all get_*_stt_impl functions are defined.
+    It validates that all providers have their implementation functions.
+    """
+    global STT_PROVIDERS
+
+    provider_impl_map = {
+        "aws": get_aws_stt_impl,
+        "azure": get_azure_stt_impl,
+        "azure_openai": get_azure_openai_stt_impl,
+        "google": get_google_stt_impl,
+        "openai": get_openai_stt_impl,
+        "groq": get_groq_stt_impl,
+        "deepgram": get_deepgram_stt_impl,
+        "assemblyai": get_assemblyai_stt_impl,
+        "fal": get_fal_stt_impl,
+        "clova": get_clova_stt_impl,
+        "speechmatics": get_speechmatics_stt_impl,
+        "gladia": get_gladia_stt_impl,
+        "sarvam": get_sarvam_stt_impl,
+        "mistralai": get_mistral_stt_impl,
+        "cartesia": get_cartesia_stt_impl,
+        "soniox": get_soniox_stt_impl,
+        "spitch": get_spitch_stt_impl,
+    }
+
+    # Validate that all registered providers have implementation functions
+    missing_impls = []
+    for provider_name in STT_PROVIDERS.keys():
+        if provider_name not in provider_impl_map:
+            missing_impls.append(provider_name)
+
+    if missing_impls:
+        raise RuntimeError(
+            f"Missing implementation functions for STT providers: {', '.join(missing_impls)}. "
+            f"Please implement get_{{provider}}_stt_impl() functions for these providers."
+        )
+
+    # Validate that all implementation functions are registered
+    extra_impls = []
+    for provider_name in provider_impl_map.keys():
+        if provider_name not in STT_PROVIDERS:
+            extra_impls.append(provider_name)
+
+    if extra_impls:
+        raise RuntimeError(
+            f"Implementation functions exist for unregistered STT providers: {', '.join(extra_impls)}. "
+            f"Please add these providers to the STT_PROVIDERS registry."
+        )
+
+    # Update the registry with implementation functions
+    STT_PROVIDERS = {
+        provider: STTProviderConfig(
+            impl_function=provider_impl_map[provider],
+            plugin_module=config.plugin_module,
+            plugin_class=config.plugin_class,
+        )
+        for provider, config in STT_PROVIDERS.items()
+    }
+
+
 def get_stt_impl(agent_config) -> stt.STT:
+    """Get the STT implementation for the configured provider.
+
+    Args:
+        agent_config: Agent configuration dictionary
+
+    Returns:
+        Configured STT instance
+
+    Raises:
+        ValueError: If provider is not configured or unknown
+    """
     try:
         stt_provider = agent_config["live_captions"]["provider"]
     except Exception:
         stt_provider = None
+
     if stt_provider is None:
         raise ValueError("live_captions.provider not defined in agent configuration")
-    else:
-        logging.info(f"Using {stt_provider} as STT provider")
-    if stt_provider == "aws":
-        return get_aws_stt_impl(agent_config)
-    if stt_provider == "azure":
-        return get_azure_stt_impl(agent_config)
-    elif stt_provider == "azure_openai":
-        return get_azure_openai_stt_impl(agent_config)
-    elif stt_provider == "google":
-        return get_google_stt_impl(agent_config)
-    elif stt_provider == "openai":
-        return get_openai_stt_impl(agent_config)
-    elif stt_provider == "groq":
-        return get_groq_stt_impl(agent_config)
-    elif stt_provider == "deepgram":
-        return get_deepgram_stt_impl(agent_config)
-    elif stt_provider == "assemblyai":
-        return get_assemblyai_stt_impl(agent_config)
-    elif stt_provider == "fal":
-        return get_fal_stt_impl(agent_config)
-    elif stt_provider == "clova":
-        return get_clova_stt_impl(agent_config)
-    elif stt_provider == "speechmatics":
-        return get_speechmatics_stt_impl(agent_config)
-    elif stt_provider == "gladia":
-        return get_gladia_stt_impl(agent_config)
-    elif stt_provider == "sarvam":
-        return get_sarvam_stt_impl(agent_config)
-    elif stt_provider == "spitch":
-        return get_spitch_stt_impl(agent_config)
-    elif stt_provider == "mistralai":
-        return get_mistral_stt_impl(agent_config)
-    elif stt_provider == "cartesia":
-        return get_cartesia_stt_impl(agent_config)
-    elif stt_provider == "soniox":
-        return get_soniox_stt_impl(agent_config)
-    else:
-        raise ValueError(f"unknown STT provider: {stt_provider}")
+
+    if stt_provider not in STT_PROVIDERS:
+        raise ValueError(
+            f"Unknown STT provider: {stt_provider}. "
+            f"Supported providers: {', '.join(sorted(STT_PROVIDERS.keys()))}"
+        )
+
+    logging.info(f"Using {stt_provider} as STT provider")
+
+    provider_config = STT_PROVIDERS[stt_provider]
+    return provider_config.impl_function(agent_config)
+
+
+# Initialize the registry when the module is loaded
+_initialize_stt_registry()

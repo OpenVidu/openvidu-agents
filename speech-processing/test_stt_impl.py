@@ -13,6 +13,7 @@ from livekit.plugins.speechmatics.types import TranscriptionConfig
 from livekit.plugins.soniox import STTOptions as sonioxSTTOptions
 
 # Import the module containing the functions we want to test
+import stt_impl
 from stt_impl import (
     get_aws_stt_impl,
     get_azure_stt_impl,
@@ -934,210 +935,267 @@ class TestSTTImplementations(unittest.TestCase):
 
         self.assertIn("live_captions.provider not defined", str(context.exception))
 
-    @patch("stt_impl.get_aws_stt_impl")
-    def test_get_stt_impl_aws(self, mock_get_aws):
+    def test_get_stt_impl_aws(self):
         # Arrange
         config = {"live_captions": {"provider": "aws"}}
-        mock_get_aws.return_value = "aws_stt_instance"
+        mock_impl = MagicMock(return_value="aws_stt_instance")
 
-        # Act
-        result = get_stt_impl(config)
+        # Patch the registry entry
+        with patch.dict(
+            "stt_impl.STT_PROVIDERS",
+            {"aws": stt_impl.STT_PROVIDERS["aws"]._replace(impl_function=mock_impl)},
+        ):
+            # Act
+            result = get_stt_impl(config)
 
-        # Assert
-        self.assertEqual(result, "aws_stt_instance")
-        mock_get_aws.assert_called_once_with(config)
+            # Assert
+            self.assertEqual(result, "aws_stt_instance")
+            mock_impl.assert_called_once_with(config)
 
-    @patch("stt_impl.get_azure_stt_impl")
-    def test_get_stt_impl_azure(self, mock_get_azure):
-        # Arrange
+    def test_get_stt_impl_azure(self):
         config = {"live_captions": {"provider": "azure"}}
-        mock_get_azure.return_value = "azure_stt_instance"
+        mock_impl = MagicMock(return_value="azure_stt_instance")
 
-        # Act
-        result = get_stt_impl(config)
+        with patch.dict(
+            "stt_impl.STT_PROVIDERS",
+            {
+                "azure": stt_impl.STT_PROVIDERS["azure"]._replace(
+                    impl_function=mock_impl
+                )
+            },
+        ):
+            result = get_stt_impl(config)
+            self.assertEqual(result, "azure_stt_instance")
+            mock_impl.assert_called_once_with(config)
 
-        # Assert
-        self.assertEqual(result, "azure_stt_instance")
-        mock_get_azure.assert_called_once_with(config)
-
-    @patch("stt_impl.get_azure_openai_stt_impl")
-    def test_get_stt_impl_azure_openai(self, mock_get_azure_openai):
-        # Arrange
+    def test_get_stt_impl_azure_openai(self):
         config = {"live_captions": {"provider": "azure_openai"}}
-        mock_get_azure_openai.return_value = "azure_openai_stt_instance"
+        mock_impl = MagicMock(return_value="azure_openai_stt_instance")
 
-        # Act
-        result = get_stt_impl(config)
+        with patch.dict(
+            "stt_impl.STT_PROVIDERS",
+            {
+                "azure_openai": stt_impl.STT_PROVIDERS["azure_openai"]._replace(
+                    impl_function=mock_impl
+                )
+            },
+        ):
+            result = get_stt_impl(config)
+            self.assertEqual(result, "azure_openai_stt_instance")
+            mock_impl.assert_called_once_with(config)
 
-        # Assert
-        self.assertEqual(result, "azure_openai_stt_instance")
-        mock_get_azure_openai.assert_called_once_with(config)
-
-    @patch("stt_impl.get_google_stt_impl")
-    def test_get_stt_impl_google(self, mock_get_google):
-        # Arrange
+    def test_get_stt_impl_google(self):
         config = {"live_captions": {"provider": "google"}}
-        mock_get_google.return_value = "google_stt_instance"
+        mock_impl = MagicMock(return_value="google_stt_instance")
 
-        # Act
-        result = get_stt_impl(config)
+        with patch.dict(
+            "stt_impl.STT_PROVIDERS",
+            {
+                "google": stt_impl.STT_PROVIDERS["google"]._replace(
+                    impl_function=mock_impl
+                )
+            },
+        ):
+            result = get_stt_impl(config)
+            self.assertEqual(result, "google_stt_instance")
+            mock_impl.assert_called_once_with(config)
 
-        # Assert
-        self.assertEqual(result, "google_stt_instance")
-        mock_get_google.assert_called_once_with(config)
-
-    @patch("stt_impl.get_openai_stt_impl")
-    def test_get_stt_impl_openai(self, mock_get_openai):
-        # Arrange
+    def test_get_stt_impl_openai(self):
         config = {"live_captions": {"provider": "openai"}}
-        mock_get_openai.return_value = "openai_stt_instance"
+        mock_impl = MagicMock(return_value="openai_stt_instance")
 
-        # Act
-        result = get_stt_impl(config)
+        with patch.dict(
+            "stt_impl.STT_PROVIDERS",
+            {
+                "openai": stt_impl.STT_PROVIDERS["openai"]._replace(
+                    impl_function=mock_impl
+                )
+            },
+        ):
+            result = get_stt_impl(config)
+            self.assertEqual(result, "openai_stt_instance")
+            mock_impl.assert_called_once_with(config)
 
-        # Assert
-        self.assertEqual(result, "openai_stt_instance")
-        mock_get_openai.assert_called_once_with(config)
-
-    @patch("stt_impl.get_groq_stt_impl")
-    def test_get_stt_impl_groq(self, mock_get_groq):
-        # Arrange
+    def test_get_stt_impl_groq(self):
         config = {"live_captions": {"provider": "groq"}}
-        mock_get_groq.return_value = "groq_stt_instance"
+        mock_impl = MagicMock(return_value="groq_stt_instance")
 
-        # Act
-        result = get_stt_impl(config)
+        with patch.dict(
+            "stt_impl.STT_PROVIDERS",
+            {"groq": stt_impl.STT_PROVIDERS["groq"]._replace(impl_function=mock_impl)},
+        ):
+            result = get_stt_impl(config)
+            self.assertEqual(result, "groq_stt_instance")
+            mock_impl.assert_called_once_with(config)
 
-        # Assert
-        self.assertEqual(result, "groq_stt_instance")
-        mock_get_groq.assert_called_once_with(config)
-
-    @patch("stt_impl.get_deepgram_stt_impl")
-    def test_get_stt_impl_deepgram(self, mock_get_deepgram):
-        # Arrange
+    def test_get_stt_impl_deepgram(self):
         config = {"live_captions": {"provider": "deepgram"}}
-        mock_get_deepgram.return_value = "deepgram_stt_instance"
+        mock_impl = MagicMock(return_value="deepgram_stt_instance")
 
-        # Act
-        result = get_stt_impl(config)
+        with patch.dict(
+            "stt_impl.STT_PROVIDERS",
+            {
+                "deepgram": stt_impl.STT_PROVIDERS["deepgram"]._replace(
+                    impl_function=mock_impl
+                )
+            },
+        ):
+            result = get_stt_impl(config)
+            self.assertEqual(result, "deepgram_stt_instance")
+            mock_impl.assert_called_once_with(config)
 
-        # Assert
-        self.assertEqual(result, "deepgram_stt_instance")
-        mock_get_deepgram.assert_called_once_with(config)
-
-    @patch("stt_impl.get_assemblyai_stt_impl")
-    def test_get_stt_impl_assemblyai(self, mock_get_assemblyai):
-        # Arrange
+    def test_get_stt_impl_assemblyai(self):
         config = {"live_captions": {"provider": "assemblyai"}}
-        mock_get_assemblyai.return_value = "assemblyai_stt_instance"
+        mock_impl = MagicMock(return_value="assemblyai_stt_instance")
 
-        # Act
-        result = get_stt_impl(config)
+        with patch.dict(
+            "stt_impl.STT_PROVIDERS",
+            {
+                "assemblyai": stt_impl.STT_PROVIDERS["assemblyai"]._replace(
+                    impl_function=mock_impl
+                )
+            },
+        ):
+            result = get_stt_impl(config)
+            self.assertEqual(result, "assemblyai_stt_instance")
+            mock_impl.assert_called_once_with(config)
 
-        # Assert
-        self.assertEqual(result, "assemblyai_stt_instance")
-        mock_get_assemblyai.assert_called_once_with(config)
-
-    @patch("stt_impl.get_fal_stt_impl")
-    def test_get_stt_impl_fal(self, mock_get_fal):
-        # Arrange
+    def test_get_stt_impl_fal(self):
         config = {"live_captions": {"provider": "fal"}}
-        mock_get_fal.return_value = "fal_stt_instance"
+        mock_impl = MagicMock(return_value="fal_stt_instance")
 
-        # Act
-        result = get_stt_impl(config)
+        with patch.dict(
+            "stt_impl.STT_PROVIDERS",
+            {"fal": stt_impl.STT_PROVIDERS["fal"]._replace(impl_function=mock_impl)},
+        ):
+            result = get_stt_impl(config)
+            self.assertEqual(result, "fal_stt_instance")
+            mock_impl.assert_called_once_with(config)
 
-        # Assert
-        self.assertEqual(result, "fal_stt_instance")
-        mock_get_fal.assert_called_once_with(config)
-
-    @patch("stt_impl.get_clova_stt_impl")
-    def test_get_stt_impl_clova(self, mock_get_clova):
-        # Arrange
+    def test_get_stt_impl_clova(self):
         config = {"live_captions": {"provider": "clova"}}
-        mock_get_clova.return_value = "clova_stt_instance"
+        mock_impl = MagicMock(return_value="clova_stt_instance")
 
-        # Act
-        result = get_stt_impl(config)
+        with patch.dict(
+            "stt_impl.STT_PROVIDERS",
+            {
+                "clova": stt_impl.STT_PROVIDERS["clova"]._replace(
+                    impl_function=mock_impl
+                )
+            },
+        ):
+            result = get_stt_impl(config)
+            self.assertEqual(result, "clova_stt_instance")
+            mock_impl.assert_called_once_with(config)
 
-        # Assert
-        self.assertEqual(result, "clova_stt_instance")
-        mock_get_clova.assert_called_once_with(config)
-
-    @patch("stt_impl.get_speechmatics_stt_impl")
-    def test_get_stt_impl_speechmatics(self, mock_get_speechmatics):
-        # Arrange
+    def test_get_stt_impl_speechmatics(self):
         config = {"live_captions": {"provider": "speechmatics"}}
-        mock_get_speechmatics.return_value = "speechmatics_stt_instance"
+        mock_impl = MagicMock(return_value="speechmatics_stt_instance")
 
-        # Act
-        result = get_stt_impl(config)
+        with patch.dict(
+            "stt_impl.STT_PROVIDERS",
+            {
+                "speechmatics": stt_impl.STT_PROVIDERS["speechmatics"]._replace(
+                    impl_function=mock_impl
+                )
+            },
+        ):
+            result = get_stt_impl(config)
+            self.assertEqual(result, "speechmatics_stt_instance")
+            mock_impl.assert_called_once_with(config)
 
-        # Assert
-        self.assertEqual(result, "speechmatics_stt_instance")
-        mock_get_speechmatics.assert_called_once_with(config)
-
-    @patch("stt_impl.get_gladia_stt_impl")
-    def test_get_stt_impl_gladia(self, mock_get_gladia):
-        # Arrange
+    def test_get_stt_impl_gladia(self):
         config = {"live_captions": {"provider": "gladia"}}
-        mock_get_gladia.return_value = "gladia_stt_instance"
+        mock_impl = MagicMock(return_value="gladia_stt_instance")
 
-        # Act
-        result = get_stt_impl(config)
+        with patch.dict(
+            "stt_impl.STT_PROVIDERS",
+            {
+                "gladia": stt_impl.STT_PROVIDERS["gladia"]._replace(
+                    impl_function=mock_impl
+                )
+            },
+        ):
+            result = get_stt_impl(config)
+            self.assertEqual(result, "gladia_stt_instance")
+            mock_impl.assert_called_once_with(config)
 
-        # Assert
-        self.assertEqual(result, "gladia_stt_instance")
-        mock_get_gladia.assert_called_once_with(config)
-
-    @patch("stt_impl.get_sarvam_stt_impl")
-    def test_get_stt_impl_sarvam(self, mock_get_sarvam):
-        # Arrange
+    def test_get_stt_impl_sarvam(self):
         config = {"live_captions": {"provider": "sarvam"}}
-        mock_get_sarvam.return_value = "sarvam_stt_instance"
+        mock_impl = MagicMock(return_value="sarvam_stt_instance")
 
-        # Act
-        result = get_stt_impl(config)
+        with patch.dict(
+            "stt_impl.STT_PROVIDERS",
+            {
+                "sarvam": stt_impl.STT_PROVIDERS["sarvam"]._replace(
+                    impl_function=mock_impl
+                )
+            },
+        ):
+            result = get_stt_impl(config)
+            self.assertEqual(result, "sarvam_stt_instance")
+            mock_impl.assert_called_once_with(config)
 
-        # Assert
-        self.assertEqual(result, "sarvam_stt_instance")
-        mock_get_sarvam.assert_called_once_with(config)
-
-    @patch("stt_impl.get_spitch_stt_impl")
-    def test_get_stt_impl_spitch(self, mock_get_spitch):
-        # Arrange
+    def test_get_stt_impl_spitch(self):
         config = {"live_captions": {"provider": "spitch"}}
-        mock_get_spitch.return_value = "spitch_stt_instance"
+        mock_impl = MagicMock(return_value="spitch_stt_instance")
 
-        # Act
-        result = get_stt_impl(config)
+        with patch.dict(
+            "stt_impl.STT_PROVIDERS",
+            {
+                "spitch": stt_impl.STT_PROVIDERS["spitch"]._replace(
+                    impl_function=mock_impl
+                )
+            },
+        ):
+            result = get_stt_impl(config)
+            self.assertEqual(result, "spitch_stt_instance")
+            mock_impl.assert_called_once_with(config)
 
-        # Assert
-        self.assertEqual(result, "spitch_stt_instance")
-        mock_get_spitch.assert_called_once_with(config)
+    def test_get_stt_impl_mistralai(self):
+        config = {"live_captions": {"provider": "mistralai"}}
+        mock_impl = MagicMock(return_value="mistralai_stt_instance")
 
-    @patch("stt_impl.get_cartesia_stt_impl")
-    def test_get_stt_impl_cartesia(self, mock_get_cartesia):
-        # Arrange
+        with patch.dict(
+            "stt_impl.STT_PROVIDERS",
+            {
+                "mistralai": stt_impl.STT_PROVIDERS["mistralai"]._replace(
+                    impl_function=mock_impl
+                )
+            },
+        ):
+            result = get_stt_impl(config)
+            self.assertEqual(result, "mistralai_stt_instance")
+            mock_impl.assert_called_once_with(config)
+
+    def test_get_stt_impl_cartesia(self):
         config = {"live_captions": {"provider": "cartesia"}}
-        mock_get_cartesia.return_value = "cartesia_stt_instance"
+        mock_impl = MagicMock(return_value="cartesia_stt_instance")
 
-        # Act
-        result = get_stt_impl(config)
+        with patch.dict(
+            "stt_impl.STT_PROVIDERS",
+            {
+                "cartesia": stt_impl.STT_PROVIDERS["cartesia"]._replace(
+                    impl_function=mock_impl
+                )
+            },
+        ):
+            result = get_stt_impl(config)
+            self.assertEqual(result, "cartesia_stt_instance")
+            mock_impl.assert_called_once_with(config)
 
-        # Assert
-        self.assertEqual(result, "cartesia_stt_instance")
-        mock_get_cartesia.assert_called_once_with(config)
-
-    @patch("stt_impl.get_soniox_stt_impl")
-    def test_get_stt_impl_soniox(self, mock_get_soniox):
-        # Arrange
+    def test_get_stt_impl_soniox(self):
         config = {"live_captions": {"provider": "soniox"}}
-        mock_get_soniox.return_value = "soniox_stt_instance"
+        mock_impl = MagicMock(return_value="soniox_stt_instance")
 
-        # Act
-        result = get_stt_impl(config)
-
-        # Assert
-        self.assertEqual(result, "soniox_stt_instance")
-        mock_get_soniox.assert_called_once_with(config)
+        with patch.dict(
+            "stt_impl.STT_PROVIDERS",
+            {
+                "soniox": stt_impl.STT_PROVIDERS["soniox"]._replace(
+                    impl_function=mock_impl
+                )
+            },
+        ):
+            result = get_stt_impl(config)
+            self.assertEqual(result, "soniox_stt_instance")
+            mock_impl.assert_called_once_with(config)

@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import signal
@@ -9,6 +10,7 @@ from livekit.agents import (
     WorkerOptions,
     cli,
     stt,
+    llm,
     WorkerType,
     WorkerPermissions,
     JobProcess,
@@ -16,62 +18,148 @@ from livekit.agents import (
     AgentSession,
     RoomOutputOptions,
     RoomInputOptions,
+    RoomIO,
+    utils,
+    StopResponse,
 )
+from livekit import rtc
 from livekit.plugins import silero
-from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
-from stt_impl import get_stt_impl
+from stt_impl import get_stt_impl, get_best_turn_detector
 from openviduagentutils.openvidu_agent import OpenViduAgent
 from openviduagentutils.config_manager import ConfigManager
+from openviduagentutils.not_provided import NOT_PROVIDED
 
 
 class Transcriber(Agent):
-    def __init__(self, stt: stt.STT):
+    def __init__(self, *, participant_identity: str, stt_impl: stt.STT):
         super().__init__(
             instructions="not-needed",
-            stt=stt,
+            stt=stt_impl,
+            turn_detection="stt"
         )
+        self.participant_identity = participant_identity
+
+    async def on_user_turn_completed(
+        self, chat_ctx: llm.ChatContext, new_message: llm.ChatMessage
+    ):
+        user_transcript = new_message.text_content
+        logging.info(f"{self.participant_identity} -> {user_transcript}")
+
+        raise StopResponse()
+
+
+class MultiUserTranscriber:
+    def __init__(self, ctx: JobContext, agent_config: object):
+        self.ctx = ctx
+        self.agent_config = agent_config
+        self._sessions: dict[str, AgentSession] = {}
+        self._tasks: set[asyncio.Task] = set()
+        self._pending_sessions: set[str] = set()
+
+    def start(self):
+        self.ctx.room.on("participant_connected", self.on_participant_connected)
+        self.ctx.room.on("participant_disconnected", self.on_participant_disconnected)
+
+    async def aclose(self):
+        await utils.aio.cancel_and_wait(*self._tasks)
+
+        await asyncio.gather(
+            *[self._close_session(session) for session in self._sessions.values()]
+        )
+
+        self.ctx.room.off("participant_connected", self.on_participant_connected)
+        self.ctx.room.off("participant_disconnected", self.on_participant_disconnected)
+
+    def on_participant_connected(self, participant: rtc.RemoteParticipant):
+        if (
+            participant.identity in self._sessions
+            or participant.identity in self._pending_sessions
+        ):
+            return
+
+        logging.info(f"starting session for {participant.identity}")
+        task = asyncio.create_task(self._start_session(participant))
+        self._tasks.add(task)
+        self._pending_sessions.add(participant.identity)
+
+        def on_task_done(task: asyncio.Task):
+            try:
+                self._sessions[participant.identity] = task.result()
+            finally:
+                self._tasks.discard(task)
+                self._pending_sessions.discard(participant.identity)
+                logging.info(f"session started for {participant.identity}")
+
+        task.add_done_callback(on_task_done)
+
+    def on_participant_disconnected(self, participant: rtc.RemoteParticipant):
+        self._pending_sessions.discard(participant.identity)
+
+        if (session := self._sessions.pop(participant.identity, None)) is None:
+            return
+
+        logging.info(f"closing session for {participant.identity}")
+        task = asyncio.create_task(self._close_session(session))
+        self._tasks.add(task)
+        task.add_done_callback(lambda _: self._tasks.discard(task))
+
+    async def _start_session(self, participant: rtc.RemoteParticipant) -> AgentSession:
+        if participant.identity in self._sessions:
+            return self._sessions[participant.identity]
+
+        stt_impl = get_stt_impl(self.agent_config)
+        # turn_detector = get_best_turn_detector(self.agent_config)
+
+        session = AgentSession()
+        room_io = RoomIO(
+            agent_session=session,
+            room=self.ctx.room,
+            participant=participant,
+            input_options=RoomInputOptions(
+                text_enabled=False,
+                audio_enabled=True,
+                video_enabled=False,
+                close_on_disconnect=True,
+                delete_room_on_close=False,
+            ),
+            output_options=RoomOutputOptions(
+                transcription_enabled=True,
+                audio_enabled=False,
+                sync_transcription=False,
+            ),
+        )
+        await room_io.start()
+        await session.start(
+            agent=Transcriber(
+                participant_identity=participant.identity,
+                stt_impl=stt_impl,
+            )
+        )
+        return session
+
+    async def _close_session(self, sess: AgentSession) -> None:
+        await sess.drain()
+        await sess.aclose()
 
 
 async def entrypoint(ctx: JobContext):
     openvidu_agent = OpenViduAgent.get_instance()
 
     agent_config = openvidu_agent.get_agent_config()
-    agent_name = openvidu_agent.get_agent_name()
 
-    try:
-        stt_impl = get_stt_impl(agent_config)
-    except ValueError as e:
-        logging.error(f"Failed to initialize provider: {e}")
-        sys.exit(3)
+    transcriber = MultiUserTranscriber(ctx, agent_config)
+    transcriber.start()
 
-    print(f"Agent {agent_name} joining room {ctx.room.name}")
     await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
+    for participant in ctx.room.remote_participants.values():
+        # handle all existing participants
+        transcriber.on_participant_connected(participant)
 
-    session = AgentSession(
-        # vad is needed for non-streaming STT implementations
-        vad=ctx.proc.userdata["vad"],
-        turn_detection=MultilingualModel(),
-    )
+    async def cleanup():
+        await transcriber.aclose()
 
-    await session.start(
-        agent=Transcriber(stt_impl),
-        room=ctx.room,
-        room_output_options=RoomOutputOptions(
-            # The agent will only generate text transcriptions as output
-            transcription_enabled=True,
-            audio_enabled=False,
-            sync_transcription=False,
-        ),
-        room_input_options=RoomInputOptions(
-            # The agent will only receive audio tracks as input
-            text_enabled=False,
-            video_enabled=False,
-            audio_enabled=True,
-            pre_connect_audio=True,
-            pre_connect_audio_timeout=3.0,
-        ),
-    )
+    ctx.add_shutdown_callback(cleanup)
 
 
 # async def _forward_transcription(

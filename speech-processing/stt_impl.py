@@ -2,9 +2,12 @@ import logging
 import os
 import json
 import tempfile
+import inspect
 from typing import Callable, NamedTuple
 from livekit.plugins.speechmatics.types import TranscriptionConfig
 from livekit.agents import stt
+from livekit.agents.types import NotGivenOr, NotGiven
+from livekit.agents.voice.agent_session import TurnDetectionMode
 
 from openviduagentutils.config_manager import ConfigManager
 from openviduagentutils.not_provided import NOT_PROVIDED
@@ -109,6 +112,24 @@ STT_PROVIDERS = {
         plugin_class="STT",
     ),
 }
+
+# https://docs.livekit.io/agents/build/turns/turn-detector/#detection-accuracy
+SUPPORTED_LANGUAGES_IN_MULTILINGUAL_TURN_DETECTION = [
+    "hi",  # Hindi
+    "ko",  # Korean
+    "fr",  # French
+    "pt",  # Portuguese
+    "id",  # Indonesian
+    "ru",  # Russian
+    "en",  # English
+    "zh",  # Chinese
+    "ja",  # Japanese
+    "it",  # Italian
+    "es",  # Spanish
+    "de",  # German
+    "tr",  # Turkish
+    "nl",  # Dutch
+]
 
 
 def get_aws_stt_impl(agent_config) -> stt.STT:
@@ -600,7 +621,7 @@ def get_spitch_stt_impl(agent_config) -> stt.STT:
     return spitch.STT(**kwargs)
 
 
-def get_mistral_stt_impl(agent_config) -> stt.STT:
+def get_mistralai_stt_impl(agent_config) -> stt.STT:
     from livekit.plugins import mistralai
 
     config_manager = ConfigManager(agent_config, "live_captions.mistralai")
@@ -694,7 +715,7 @@ def _initialize_stt_registry():
         "speechmatics": get_speechmatics_stt_impl,
         "gladia": get_gladia_stt_impl,
         "sarvam": get_sarvam_stt_impl,
-        "mistralai": get_mistral_stt_impl,
+        "mistralai": get_mistralai_stt_impl,
         "cartesia": get_cartesia_stt_impl,
         "soniox": get_soniox_stt_impl,
         "spitch": get_spitch_stt_impl,
@@ -765,6 +786,104 @@ def get_stt_impl(agent_config) -> stt.STT:
 
     provider_config = STT_PROVIDERS[stt_provider]
     return provider_config.impl_function(agent_config)
+
+
+def get_best_turn_detector(agent_config) -> NotGivenOr[TurnDetectionMode]:
+    """Get the best turn detection mode for the given agent configuration.
+
+    The best turn detection mode is determined by the following rules:
+        1. For STT providers that support native turn detection, use "stt" (for now only "assemblyai") (https://docs.livekit.io/agents/build/turns/#stt-endpointing)
+        2. Determine the language in use by the model, if defined. Try to get the "language" from the agent config, or determine it from the default language configuration of each stt plugin.
+            1. If the language is any variant of English (en, en-US, en-GB, etc), use livekit.plugins.turn_detector.english.EnglishModel
+            2. If the language is any variant of any of these languages [Spanish, French, German, Italian, Portuguese, Dutch, Chinese, Japanese, Korean, Indonesian, Turkish, Russian, and Hindi],
+               use livekit.plugins.turn_detector.multilingual.MultilingualModel
+            3. If the language is defined but not in the above list, return "vad"
+        3. If no language can be determined, return NotGiven (let the AgentSession decide the best turn detection mode)
+    Args:
+        agent_config (_type_): _description_
+
+    Returns:
+        NotGivenOr[TurnDetectionMode]: _description_
+    """
+    try:
+        stt_provider = agent_config["live_captions"]["provider"]
+    except Exception:
+        return NotGiven
+
+    # Rule 1: AssemblyAI uses STT endpointing
+    if stt_provider == "assemblyai":
+        return "stt"
+
+    # Rule 2: Determine language and select appropriate turn detector
+    config_manager = ConfigManager(agent_config, f"live_captions.{stt_provider}")
+    language = config_manager.configured_string_value("language")
+
+    # If no language is configured, try to get the default from the STT plugin constructor
+    if language is NOT_PROVIDED:
+        language = _get_stt_language_default(stt_provider)
+
+    # If still no language, return NotGiven
+    if language is None:
+        return NotGiven
+
+    # Rule 2.1: If language starts with "en", use English model
+    if isinstance(language, str) and language.lower().startswith("en"):
+        from livekit.plugins.turn_detector.english import EnglishModel
+
+        return EnglishModel()
+
+    # Rule 2.2: For other supported languages, use Multilingual model
+    if isinstance(language, str) and any(
+        language.lower().startswith(prefix)
+        for prefix in SUPPORTED_LANGUAGES_IN_MULTILINGUAL_TURN_DETECTION
+    ):
+        from livekit.plugins.turn_detector.multilingual import MultilingualModel
+
+        return MultilingualModel()
+
+    # Rule 2.3: If language is defined but not supported by the multilingual model, use "vad"
+    if isinstance(language, str):
+        return "vad"
+
+    # Rule 3: Cannot determine language
+    return NotGiven
+
+
+def _get_stt_language_default(stt_provider: str) -> str | None:
+    """Get the default language parameter from the STT plugin constructor.
+
+    Args:
+        stt_provider: The name of the STT provider (e.g., "aws", "azure", "openai")
+
+    Returns:
+        The default language value if it exists, None otherwise
+    """
+    if stt_provider not in STT_PROVIDERS:
+        return None
+
+    provider_config = STT_PROVIDERS[stt_provider]
+    module_name = provider_config.plugin_module
+    class_name = provider_config.plugin_class
+
+    try:
+        # Dynamically import the module
+        import importlib
+
+        module = importlib.import_module(module_name)
+        stt_class = getattr(module, class_name)
+
+        # Get the signature of the __init__ method
+        sig = inspect.signature(stt_class.__init__)
+
+        # Check if 'language' parameter exists and has a default
+        if "language" in sig.parameters:
+            default = sig.parameters["language"].default
+            if default is not inspect.Parameter.empty:
+                return default
+    except Exception as e:
+        logging.debug(f"Could not get language default for {stt_provider}: {e}")
+
+    return None
 
 
 # Initialize the registry when the module is loaded

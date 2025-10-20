@@ -1,4 +1,4 @@
-import { test, expect, Page } from "@playwright/test";
+import { test, expect, Page, ElementHandle } from "@playwright/test";
 import { LocalDeployment } from "./utils/local-deployment";
 import { TESTAPP_URL } from "./config";
 import { downloadFile, execCommand } from "./utils/helper";
@@ -139,16 +139,28 @@ STT_AI_PROVIDERS.forEach((provider) => {
       LocalDeployment.stop();
     });
 
-    test(`testing with ${providerName}`, async ({ page }) => {
-      console.log(`Running test with provider: ${providerName}`);
+    test(`testing simple STT with ${providerName}`, async ({ page }) => {
+      console.log(`Running simple test with provider: ${providerName}`);
       await page.goto(TESTAPP_URL);
       await page.click("#add-user-btn");
       await page.click(".connect-btn");
-      await waitForEvent(page, "interimTranscription", 1, 0, 60000);
+      const interimEvents = await waitForEvent(
+        page,
+        "interimTranscription",
+        1,
+        0,
+        60000
+      );
       console.log(
         `Interim transcription received from provider ${providerName}`
       );
-      await waitForEvent(page, "finalTranscription", 1, 0, 60000);
+      const finalEvents = await waitForEvent(
+        page,
+        "finalTranscription",
+        1,
+        0,
+        60000
+      );
       console.log(`Final transcription received from provider ${providerName}`);
       const totalInterimEvents = await countTotalEvents(
         page,
@@ -162,60 +174,230 @@ STT_AI_PROVIDERS.forEach((provider) => {
       );
       if (totalInterimEvents === totalFinalEvents) {
         console.warn(
-          `ATTENTION! No real interim transcriptions supported by provider ${providerName}`
+          `ATTENTION! Same number of interim and final events (${totalFinalEvents}) for provider ${providerName}.`
         );
       }
+      let firstInterimEventText = await getEventText(interimEvents[0]);
+      firstInterimEventText = firstInterimEventText.replace(
+        /^TestParticipant0 is saying: /i,
+        ""
+      );
+      let lastFinalEventText = await getEventText(
+        finalEvents[finalEvents.length - 1]
+      );
+      lastFinalEventText = lastFinalEventText.replace(
+        /^TestParticipant0 said: /i,
+        ""
+      );
+      if (firstInterimEventText === lastFinalEventText) {
+        console.warn(
+          `ATTENTION! First interim and last final transcription are identical ("${lastFinalEventText}") for provider ${providerName}.\nNo real interim transcriptions supported by provider ${providerName}`
+        );
+      }
+    });
+
+    test(`testing multiple users STT with ${providerName}`, async ({
+      page,
+    }) => {
+      console.log(`Running multi-user test with provider: ${providerName}`);
+      const NUM_USERS = 3;
+      await page.goto(TESTAPP_URL);
+      for (let i = 0; i < NUM_USERS; i++) {
+        await page.click("#add-user-btn");
+      }
+      for (let i = 0; i < NUM_USERS; i++) {
+        const connectButtons = await page.$$(".connect-btn");
+        await connectButtons[i].click();
+      }
+      // Check that each user has received at least one final transcription event for every other user (and itself)
+      const promises = [];
+      for (let user = 0; user < NUM_USERS; user++) {
+        for (let otherUser = 0; otherUser < NUM_USERS; otherUser++) {
+          promises.push(
+            waitForEventContentToStartWith(
+              page,
+              "finalTranscription",
+              `TestParticipant${otherUser} said: `,
+              1,
+              user,
+              30000
+            )
+          );
+        }
+      }
+      console.log(`Waiting for ${promises.length} final transcription events`);
+      await Promise.all(promises);
+      console.log(
+        `All final transcription events received for provider ${providerName}`
+      );
     });
   });
 });
 
+/*
+<mat-expansion-panel>
+  <mat-expansion-panel-header>
+    <span class="mat-content"> EVENT_NAME </span>
+  </mat-expansion-panel-header>
+  <div class="mat-expansion-panel-content-wrapper">
+    <div class="mat-expansion-panel-content">
+      <div class="mat-expansion-panel-body">
+        <div class="event-content">EVENT_CONTENT</div>
+      </div>
+    </div>
+  </div>
+</mat-expansion-panel>
+*/
 async function waitForEvent(
   page: Page,
   eventName: string,
   numEvents: number,
   user: number,
   timeout = 5000
-): Promise<any> {
-  return new Promise(async (resolve, reject) => {
-    const selector = `#openvidu-instance-${user} mat-accordion mat-expansion-panel mat-expansion-panel-header span.mat-content:has-text("${eventName}")`;
-    let eventsCount = 0;
-
-    const checkEvents = async () => {
-      let elements;
+): Promise<ElementHandle[]> {
+  const selector = `#openvidu-instance-${user} mat-accordion mat-expansion-panel mat-expansion-panel-header span.mat-content:has-text("${eventName}")`;
+  const locator = page.locator(selector);
+  try {
+    await locator.nth(numEvents - 1).waitFor({ timeout, state: "visible" });
+  } catch (error: any) {
+    console.error(`Timeout waiting for ${eventName} events:`, error.message);
+    if (!page.isClosed()) {
       try {
-        elements = await page.$$(selector);
-      } catch (error: any) {
-        console.error(
-          `Error selecting elements for event ${eventName}:`,
-          error.message
+        const screenshot = await page.screenshot();
+        const base64Image = screenshot.toString("base64");
+        console.log(
+          `Screenshot at timeout:\ndata:image/png;base64,${base64Image}\n`
         );
-        return reject(error);
+      } catch (screenshotError: any) {
+        console.error(`Failed to capture screenshot:`, screenshotError.message);
       }
-      eventsCount = elements.length;
+    } else {
+      console.warn(`Page already closed; skipping screenshot`);
+    }
+    throw error;
+  }
 
-      if (eventsCount >= numEvents) {
-        resolve(elements);
+  const headerHandles = await locator.elementHandles();
+  const panelElements: ElementHandle[] = [];
+
+  for (let i = 0; i < Math.min(numEvents, headerHandles.length); i++) {
+    const panelHandle = await headerHandles[i].evaluateHandle((header) =>
+      (header as Element).closest("mat-expansion-panel")
+    );
+    const elementHandle = panelHandle.asElement();
+    if (elementHandle) {
+      panelElements.push(elementHandle);
+    } else {
+      await panelHandle.dispose();
+    }
+  }
+
+  return panelElements;
+}
+
+// Same as waitForEvent but also checks for specific content inside the event
+async function waitForEventContentToStartWith(
+  page: Page,
+  eventName: string,
+  eventContent: string,
+  numEvents: number,
+  user: number,
+  timeout = 5000
+): Promise<ElementHandle[]> {
+  const selector = `#openvidu-instance-${user} mat-accordion mat-expansion-panel mat-expansion-panel-header span.mat-content:has-text("${eventName}")`;
+  const locator = page.locator(selector);
+  const deadline = Date.now() + timeout;
+
+  while (Date.now() < deadline) {
+    if (page.isClosed()) {
+      console.warn(`Page is closed, exiting waitForEventContentToStartWith`);
+      break;
+    }
+
+    const remaining = Math.max(deadline - Date.now(), 0);
+    const headerCount = await locator.count();
+    if (headerCount < numEvents) {
+      if (remaining === 0) {
+        break;
+      }
+      await page.waitForTimeout(Math.min(remaining, 200));
+      continue;
+    }
+
+    const headerHandles = await locator.elementHandles();
+    const matchingPanels: ElementHandle[] = [];
+
+    for (const headerHandle of headerHandles) {
+      const panelHandle = await headerHandle.evaluateHandle((header) =>
+        (header as Element).closest("mat-expansion-panel")
+      );
+      await headerHandle.dispose();
+      const elementHandle = panelHandle.asElement();
+      if (!elementHandle) {
+        await panelHandle.dispose();
+        continue;
+      }
+
+      const text = await getEventText(elementHandle);
+      await panelHandle.dispose();
+
+      if (text.startsWith(eventContent)) {
+        console.log(
+          `Found ${eventName} event for user ${user} starting with "${eventContent}": ${text}`
+        );
+        matchingPanels.push(elementHandle);
+        if (matchingPanels.length === numEvents) {
+          return matchingPanels;
+        }
       } else {
-        setTimeout(checkEvents, 100); // Check again after 100ms
+        await elementHandle.dispose();
       }
-    };
+    }
 
-    await checkEvents();
+    for (const panel of matchingPanels) {
+      await panel.dispose();
+    }
 
-    // Reject if timeout is reached
-    setTimeout(() => {
-      if (eventsCount < numEvents) {
-        // Perform a screenshot and log it as base64 image for debugging
-        page.screenshot().then((screenshot) => {
-          const base64Image = screenshot.toString("base64");
-          console.log(
-            `Screenshot at timeout for event ${eventName}: data:image/png;base64,${base64Image}`
-          );
-        });
-        reject(new Error(`Timeout waiting for ${eventName} events`));
-      }
-    }, timeout);
-  });
+    await page.waitForTimeout(
+      Math.min(Math.max(deadline - Date.now(), 0), 200)
+    );
+  }
+
+  if (!page.isClosed()) {
+    try {
+      const screenshot = await page.screenshot();
+      const base64Image = screenshot.toString("base64");
+      console.log(
+        `Screenshot at timeout for ${eventName} starting with "${eventContent}":\ndata:image/png;base64,${base64Image}\n`
+      );
+    } catch (screenshotError: any) {
+      console.error(
+        `Failed to capture screenshot for ${eventName}:`,
+        screenshotError.message
+      );
+    }
+  } else {
+    console.warn("Page already closed; skipping screenshot");
+  }
+
+  throw new Error(
+    `Timeout waiting for ${eventName} content starting with "${eventContent}"`
+  );
+}
+
+async function getEventText(elementHandle: ElementHandle): Promise<string> {
+  try {
+    const text = await elementHandle.evaluate((el) => {
+      const contentElement = (el as Element).querySelector(
+        ".mat-expansion-panel-body .event-content"
+      );
+      return contentElement ? contentElement.textContent : null;
+    });
+    return text ? text.trim() : "";
+  } catch (error: any) {
+    console.error(`Error getting text for event:`, error.message);
+    return "";
+  }
 }
 
 async function countTotalEvents(

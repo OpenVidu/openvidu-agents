@@ -881,7 +881,7 @@ def _get_stt_language_default(stt_provider: str) -> str | None:
             if default is not inspect.Parameter.empty:
                 return default
     except Exception as e:
-        logging.debug(f"Could not get language default for {stt_provider}: {e}")
+        logging.error(f"Could not get language default for {stt_provider}: {e}")
 
     return None
 

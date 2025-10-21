@@ -102,135 +102,177 @@ const STT_AI_PROVIDERS = [
   // },
 ] as const;
 
+const AUDIO_TRANSCRIPTIONS = [
+  "The stale smell of old beer lingers.",
+  "It takes heat to bring out the odor.",
+  "A cold dip restores health and zest.",
+  "A salt pickle tastes fine with ham.",
+  "Tacos al pastor are my favorite.",
+  "A zestful food is the hot cross bun.",
+];
+
 test.beforeAll(async () => {
   const fs = require("fs");
   const path = require("path");
-  const audioFilePath = path.join(__dirname, "resources", "stt-test.wav");
+  const audioFilePath = path.join(
+    __dirname,
+    "resources",
+    "stt-test-with-silence.wav"
+  );
   // If file does not exist or is empty, download it
   if (!fs.existsSync(audioFilePath) || fs.statSync(audioFilePath).size === 0) {
     await downloadFile(
-      "https://s3.eu-west-1.amazonaws.com/public.openvidu.io/stt-test.wav",
+      "https://s3.eu-west-1.amazonaws.com/public.openvidu.io/stt-test-with-silence.wav",
       audioFilePath
     );
   }
   LocalDeployment.stop();
 });
 
-STT_AI_PROVIDERS.forEach((provider) => {
-  const providerName = Object.keys(provider)[0];
+function describeProviderTests(
+  groupTitle: string,
+  registerTests: ({
+    provider,
+    providerName,
+  }: {
+    provider: (typeof STT_AI_PROVIDERS)[number];
+    providerName: string;
+  }) => void
+) {
+  // Reuse provider-level setup/teardown across different test groups.
+  test.describe(groupTitle, () => {
+    STT_AI_PROVIDERS.forEach((provider) => {
+      const providerName = Object.keys(provider)[0] as string;
 
-  test.describe(() => {
-    test.beforeEach(async ({ page }) => {
-      LocalDeployment.stop();
-      await LocalDeployment.start(provider);
+      test.describe(providerName, () => {
+        test.beforeEach(async () => {
+          LocalDeployment.stop();
+          await LocalDeployment.start(provider);
+        });
+
+        test.afterEach(async ({}, testInfo) => {
+          // Capture logs before stopping if test failed
+          if (testInfo.status === "failed") {
+            try {
+              console.log("\n=== Docker logs for failed test ===\n");
+              console.log(execCommand("docker logs agent-speech-processing"));
+              console.log("\n=== End of Docker logs ===\n");
+            } catch (error: any) {
+              console.log("Failed to get docker logs:", error.message);
+            }
+          }
+          LocalDeployment.stop();
+        });
+
+        registerTests({ provider, providerName });
+      });
     });
+  });
+}
 
-    test.afterEach(async ({}, testInfo) => {
-      // Capture logs before stopping if test failed
-      if (testInfo.status === "failed") {
-        try {
-          console.log("\n=== Docker logs for failed test ===\n");
-          console.log(execCommand("docker logs agent-speech-processing"));
-          console.log("\n=== End of Docker logs ===\n");
-        } catch (error: any) {
-          console.log("Failed to get docker logs:", error.message);
-        }
-      }
-      LocalDeployment.stop();
-    });
-
-    test(`testing simple STT with ${providerName}`, async ({ page }) => {
-      console.log(`Running simple test with provider: ${providerName}`);
-      await page.goto(TESTAPP_URL);
-      await page.click("#add-user-btn");
-      await page.click(".connect-btn");
-      const interimEvents = await waitForEvent(
-        page,
-        "interimTranscription",
-        1,
-        0,
-        60000
-      );
-      console.log(
-        `Interim transcription received from provider ${providerName}`
-      );
-      const finalEvents = await waitForEvent(
-        page,
-        "finalTranscription",
-        1,
-        0,
-        60000
-      );
-      console.log(`Final transcription received from provider ${providerName}`);
-      const totalInterimEvents = await countTotalEvents(
-        page,
-        "interimTranscription",
-        0
-      );
-      const totalFinalEvents = await countTotalEvents(
-        page,
-        "finalTranscription",
-        0
-      );
-      if (totalInterimEvents === totalFinalEvents) {
-        console.warn(
-          `ATTENTION! Same number of interim and final events (${totalFinalEvents}) for provider ${providerName}.`
-        );
-      }
-      let firstInterimEventText = await getEventText(interimEvents[0]);
-      firstInterimEventText = firstInterimEventText.replace(
-        /^TestParticipant0 is saying: /i,
-        ""
-      );
-      let lastFinalEventText = await getEventText(
-        finalEvents[finalEvents.length - 1]
-      );
-      lastFinalEventText = lastFinalEventText.replace(
-        /^TestParticipant0 said: /i,
-        ""
-      );
-      if (firstInterimEventText === lastFinalEventText) {
-        console.warn(
-          `ATTENTION! First interim and last final transcription are identical ("${lastFinalEventText}") for provider ${providerName}.\nNo real interim transcriptions supported by provider ${providerName}`
-        );
-      }
-    });
-
-    test(`testing multiple users STT with ${providerName}`, async ({
+describeProviderTests("Single user STT tests", ({ providerName }) => {
+  test(`testing simple STT with ${providerName}`, async ({ page }) => {
+    console.log(`Running simple test with provider: ${providerName}`);
+    await page.goto(TESTAPP_URL);
+    await page.click("#add-user-btn");
+    await page.click(".connect-btn");
+    const interimEvents = await waitForEvent(
       page,
-    }) => {
-      console.log(`Running multi-user test with provider: ${providerName}`);
-      const NUM_USERS = 3;
-      await page.goto(TESTAPP_URL);
-      for (let i = 0; i < NUM_USERS; i++) {
-        await page.click("#add-user-btn");
-      }
-      for (let i = 0; i < NUM_USERS; i++) {
-        const connectButtons = await page.$$(".connect-btn");
-        await connectButtons[i].click();
-      }
-      // Check that each user has received at least one final transcription event for every other user (and itself)
-      const promises = [];
-      for (let user = 0; user < NUM_USERS; user++) {
-        for (let otherUser = 0; otherUser < NUM_USERS; otherUser++) {
-          promises.push(
-            waitForEventContentToStartWith(
-              page,
-              "finalTranscription",
-              `TestParticipant${otherUser} said: `,
-              1,
-              user,
-              30000
-            )
-          );
-        }
-      }
-      console.log(`Waiting for ${promises.length} final transcription events`);
-      await Promise.all(promises);
-      console.log(
-        `All final transcription events received for provider ${providerName}`
+      "interimTranscription",
+      1,
+      0,
+      20000
+    );
+    console.log(`Interim transcription received from provider ${providerName}`);
+    const finalEvents = await waitForEvent(
+      page,
+      "finalTranscription",
+      1,
+      0,
+      20000
+    );
+    console.log(`Final transcription received from provider ${providerName}`);
+    const totalInterimEvents = await countTotalEvents(
+      page,
+      "interimTranscription",
+      0
+    );
+    const totalFinalEvents = await countTotalEvents(
+      page,
+      "finalTranscription",
+      0
+    );
+    if (totalInterimEvents === totalFinalEvents) {
+      console.warn(
+        `ATTENTION! Same number of interim and final events (${totalFinalEvents}) for provider ${providerName}.`
       );
-    });
+    }
+    let firstInterimEventText = await getEventText(interimEvents[0]);
+    firstInterimEventText = firstInterimEventText.replace(
+      /^TestParticipant0 is saying: /i,
+      ""
+    );
+    let lastFinalEventText = await getEventText(
+      finalEvents[finalEvents.length - 1]
+    );
+    lastFinalEventText = lastFinalEventText.replace(
+      /^TestParticipant0 said: /i,
+      ""
+    );
+    if (firstInterimEventText === lastFinalEventText) {
+      console.warn(
+        `ATTENTION! First interim and last final transcription are identical ("${lastFinalEventText}") for provider ${providerName}.\nNo real interim transcriptions supported by provider ${providerName}`
+      );
+    } else {
+      console.log(`Final transcription: "${lastFinalEventText}"`);
+    }
+    checkLevenshteinDistance(lastFinalEventText);
+  });
+});
+
+describeProviderTests("Multi-user STT tests", ({ providerName }) => {
+  test(`testing multiple users STT with ${providerName}`, async ({ page }) => {
+    console.log(`Running multi-user test with provider: ${providerName}`);
+    const NUM_USERS = 4;
+    await page.goto(TESTAPP_URL);
+    for (let i = 0; i < NUM_USERS; i++) {
+      await page.click("#add-user-btn");
+      await page.click(`#openvidu-instance-${i} .subscriber-checkbox`);
+      await page.click(`#room-options-btn-${i}`);
+      await page.click("#video-capture-false");
+      await page.click("#close-dialog-btn");
+    }
+    for (let i = 0; i < NUM_USERS; i++) {
+      const connectButtons = await page.$$(".connect-btn");
+      await connectButtons[i].click();
+    }
+    // Check that each user has received at least one final transcription event for every other user (and itself)
+    const promises = [];
+    for (let user = 0; user < NUM_USERS; user++) {
+      for (let otherUser = 0; otherUser < NUM_USERS; otherUser++) {
+        promises.push(
+          waitForEventContentToStartWith(
+            page,
+            "finalTranscription",
+            `TestParticipant${otherUser} said: `,
+            1,
+            user,
+            20000
+          )
+        );
+      }
+    }
+    console.log(`Waiting for ${promises.length} final transcription events`);
+    const elements = await Promise.all(promises);
+    console.log(
+      `All final transcription events received for provider ${providerName}`
+    );
+    for (const el of elements) {
+      const firstEl = el[0];
+      const text = await getEventText(firstEl);
+      const strippedText = text.replace(/^TestParticipant\d+ said: /i, "");
+      checkLevenshteinDistance(strippedText);
+    }
   });
 });
 
@@ -339,7 +381,6 @@ async function waitForEventContentToStartWith(
       }
 
       const text = await getEventText(elementHandle);
-      await panelHandle.dispose();
 
       if (text.startsWith(eventContent)) {
         console.log(
@@ -398,6 +439,39 @@ async function getEventText(elementHandle: ElementHandle): Promise<string> {
     console.error(`Error getting text for event:`, error.message);
     return "";
   }
+}
+
+function checkLevenshteinDistance(transcribedText: string) {
+  // Compare only first sentence of the transcription.
+  transcribedText = transcribedText.split(".")[0];
+  let expectedText = AUDIO_TRANSCRIPTIONS[0];
+  let LD = getLevenshteinDistance(expectedText, transcribedText);
+  if (LD > 5) {
+    throw new Error(
+      `Levenshtein distance (${LD}) exceeds maximum allowed between expected and transcribed text.\nExpected: "${expectedText}"\nTranscribed: "${transcribedText}"`
+    );
+  }
+  console.log(`Levenshtein distance is ${LD}`);
+}
+
+function getLevenshteinDistance(
+  expectedText: string,
+  transcribedText: string
+): number {
+  // Use fast-levenshtein NPM library
+  const levenshtein = require("fast-levenshtein");
+  // Remove all punctuation, trailing and leading spaces, and convert to lowercase
+  expectedText = expectedText
+    .replace(/[^\w\s]|_/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+  transcribedText = transcribedText
+    .replace(/[^\w\s]|_/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+  return levenshtein.get(transcribedText, expectedText);
 }
 
 async function countTotalEvents(

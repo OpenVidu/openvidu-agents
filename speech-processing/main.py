@@ -29,14 +29,21 @@ from stt_impl import get_stt_impl, get_best_turn_detector
 from openviduagentutils.openvidu_agent import OpenViduAgent
 from openviduagentutils.config_manager import ConfigManager
 from openviduagentutils.not_provided import NOT_PROVIDED
+from livekit.agents.types import NotGiven
 
 
 class Transcriber(Agent):
-    def __init__(self, *, participant_identity: str, stt_impl: stt.STT):
+    def __init__(
+        self,
+        *,
+        participant_identity: str,
+        stt_impl: stt.STT,
+        turn_detection: object = "stt",
+    ):
         super().__init__(
             instructions="not-needed",
             stt=stt_impl,
-            turn_detection="stt"
+            turn_detection=turn_detection,
         )
         self.participant_identity = participant_identity
 
@@ -56,6 +63,7 @@ class MultiUserTranscriber:
         self._sessions: dict[str, AgentSession] = {}
         self._tasks: set[asyncio.Task] = set()
         self._pending_sessions: set[str] = set()
+        self._vad_model = None
 
     def start(self):
         self.ctx.room.on("participant_connected", self.on_participant_connected)
@@ -109,7 +117,23 @@ class MultiUserTranscriber:
             return self._sessions[participant.identity]
 
         stt_impl = get_stt_impl(self.agent_config)
-        # turn_detector = get_best_turn_detector(self.agent_config)
+        try:
+            turn_detection = get_best_turn_detector(self.agent_config)
+        except Exception as exc:
+            logging.warning(
+                "Failed to determine optimal turn detector, defaulting to 'vad': %s",
+                exc,
+            )
+            turn_detection = "vad"
+
+        if turn_detection is NotGiven:
+            turn_detection = "stt"
+
+        if not stt_impl.capabilities.streaming:
+            vad_model = self._get_vad_model()
+            stt_impl = stt.StreamAdapter(stt=stt_impl, vad=vad_model)
+            if turn_detection == "stt":
+                turn_detection = "vad"
 
         session = AgentSession()
         room_io = RoomIO(
@@ -134,6 +158,7 @@ class MultiUserTranscriber:
             agent=Transcriber(
                 participant_identity=participant.identity,
                 stt_impl=stt_impl,
+                turn_detection=turn_detection,
             )
         )
         return session
@@ -141,6 +166,18 @@ class MultiUserTranscriber:
     async def _close_session(self, sess: AgentSession) -> None:
         await sess.drain()
         await sess.aclose()
+
+    def _get_vad_model(self):
+        if self._vad_model is None:
+            proc = getattr(self.ctx, "proc", None)
+            userdata = getattr(proc, "userdata", None)
+            if isinstance(userdata, dict):
+                self._vad_model = userdata.get("vad")
+
+        if self._vad_model is None:
+            self._vad_model = silero.VAD.load(min_silence_duration=0.2)
+
+        return self._vad_model
 
 
 async def entrypoint(ctx: JobContext):

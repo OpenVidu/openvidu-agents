@@ -24,6 +24,8 @@ from livekit.agents import (
 )
 from livekit import rtc
 from livekit.plugins import silero
+from livekit.plugins.turn_detector.english import EnglishModel
+from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
 from stt_impl import get_stt_impl, get_best_turn_detector
 from openviduagentutils.openvidu_agent import OpenViduAgent
@@ -186,6 +188,22 @@ class MultiUserTranscriber:
         return self._vad_model
 
 
+def _preload_turn_detector_models() -> dict[str, object]:
+    loaded_models: dict[str, object] = {}
+
+    try:
+        loaded_models["english"] = EnglishModel()
+    except Exception as exc:
+        logging.warning("Failed to preload English turn detector: %s", exc)
+
+    try:
+        loaded_models["multilingual"] = MultilingualModel()
+    except Exception as exc:
+        logging.warning("Failed to preload multilingual turn detector: %s", exc)
+
+    return loaded_models
+
+
 async def entrypoint(ctx: JobContext):
     openvidu_agent = OpenViduAgent.get_instance()
 
@@ -285,6 +303,8 @@ if __name__ == "__main__":
 
     # If calling "python main.py download-files" do not initialize the OpenViduAgent
     if len(sys.argv) > 1 and sys.argv[1] == "download-files":
+        silero.VAD.load()
+        _preload_turn_detector_models()
         cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint))
         logging.info("Files downloaded for all plugins")
         sys.exit(0)

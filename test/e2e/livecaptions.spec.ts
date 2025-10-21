@@ -302,7 +302,10 @@ async function waitForEvent(
   try {
     await locator.nth(numEvents - 1).waitFor({ timeout, state: "visible" });
   } catch (error: any) {
-    console.error(`Timeout waiting for ${eventName} events:`, error.message);
+    console.error(
+      `Timeout waiting for ${eventName} events (${numEvents}) in user ${user}:`,
+      error.message
+    );
     if (!page.isClosed()) {
       try {
         const screenshot = await page.screenshot();
@@ -422,7 +425,7 @@ async function waitForEventContentToStartWith(
   }
 
   throw new Error(
-    `Timeout waiting for ${eventName} content starting with "${eventContent}"`
+    `Timeout waiting for ${eventName} event contents (${numEvents}) for user ${user} starting with "${eventContent}"`
   );
 }
 

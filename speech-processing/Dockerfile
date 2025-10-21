@@ -47,8 +47,11 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Prepare Hugging Face cache configuration
-ENV HF_HOME=/root/.cache/huggingface \
+ENV HF_HOME=/app/.cache/huggingface \
     HF_HUB_DISABLE_TELEMETRY=1
+
+# Ensure the Hugging Face cache directory exists before switching users
+RUN mkdir -p "$HF_HOME"
 
 # Copy all remaining application files into the container
 # This includes source code, configuration files, and dependency specifications

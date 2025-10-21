@@ -17,7 +17,7 @@ export default defineConfig({
       args: [
         "--use-fake-ui-for-media-stream",
         "--use-fake-device-for-media-stream",
-        "--use-file-for-fake-audio-capture=e2e/resources/stt-test.wav",
+        "--use-file-for-fake-audio-capture=e2e/resources/stt-test-with-silence.wav",
         "--allow-file-access-from-files",
         "--no-sandbox",
         "--disable-dev-shm-usage",

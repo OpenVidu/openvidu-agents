@@ -135,4 +135,4 @@ dist
 /blob-report/
 /playwright/.cache/
 
-e2e/resources/stt-test.wav
+e2e/resources/*.wav

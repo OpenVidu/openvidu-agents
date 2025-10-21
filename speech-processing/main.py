@@ -28,7 +28,6 @@ from livekit.plugins import silero
 from stt_impl import get_stt_impl, get_best_turn_detector
 from openviduagentutils.openvidu_agent import OpenViduAgent
 from openviduagentutils.config_manager import ConfigManager
-from openviduagentutils.not_provided import NOT_PROVIDED
 from livekit.agents.types import NotGiven
 
 
@@ -39,11 +38,13 @@ class Transcriber(Agent):
         participant_identity: str,
         stt_impl: stt.STT,
         turn_detection: object = "stt",
+        vad_model: object | None = None,
     ):
         super().__init__(
             instructions="not-needed",
             stt=stt_impl,
             turn_detection=turn_detection,
+            vad=vad_model,
         )
         self.participant_identity = participant_identity
 
@@ -117,6 +118,7 @@ class MultiUserTranscriber:
             return self._sessions[participant.identity]
 
         stt_impl = get_stt_impl(self.agent_config)
+        vad_model = None
         try:
             turn_detection = get_best_turn_detector(self.agent_config)
         except Exception as exc:
@@ -134,6 +136,9 @@ class MultiUserTranscriber:
             stt_impl = stt.StreamAdapter(stt=stt_impl, vad=vad_model)
             if turn_detection == "stt":
                 turn_detection = "vad"
+
+        if turn_detection == "vad" and vad_model is None:
+            vad_model = self._get_vad_model()
 
         session = AgentSession()
         room_io = RoomIO(
@@ -159,6 +164,7 @@ class MultiUserTranscriber:
                 participant_identity=participant.identity,
                 stt_impl=stt_impl,
                 turn_detection=turn_detection,
+                vad_model=vad_model,
             )
         )
         return session

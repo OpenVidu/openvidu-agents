@@ -18,67 +18,67 @@ const STT_AI_PROVIDERS = [
       aws_default_region: process.env.AWS_DEFAULT_REGION,
     },
   },
-  {
-    google: {
-      credentials_info: process.env.GOOGLE_CREDENTIALS_INFO,
-    },
-  },
-  {
-    sarvam: {
-      api_key: process.env.SARVAM_API_KEY,
-    },
-  },
-  {
-    azure: {
-      speech_key: process.env.AZURE_SPEECH_KEY,
-      speech_region: process.env.AZURE_SPEECH_REGION,
-    },
-  },
-  {
-    assemblyai: {
-      api_key: process.env.ASSEMBLYAI_API_KEY,
-    },
-  },
-  {
-    gladia: {
-      api_key: process.env.GLADIA_API_KEY,
-    },
-  },
-  {
-    deepgram: {
-      api_key: process.env.DEEPGRAM_API_KEY,
-    },
-  },
-  {
-    groq: {
-      api_key: process.env.GROQ_API_KEY,
-    },
-  },
-  {
-    openai: {
-      api_key: process.env.OPENAI_API_KEY,
-    },
-  },
-  {
-    speechmatics: {
-      api_key: process.env.SPEECHMATICS_API_KEY,
-    },
-  },
-  {
-    mistralai: {
-      api_key: process.env.MISTRALAI_API_KEY,
-    },
-  },
-  {
-    cartesia: {
-      api_key: process.env.CARTESIA_API_KEY,
-    },
-  },
-  {
-    soniox: {
-      api_key: process.env.SONIOX_API_KEY,
-    },
-  },
+  // {
+  //   google: {
+  //     credentials_info: process.env.GOOGLE_CREDENTIALS_INFO,
+  //   },
+  // },
+  // {
+  //   sarvam: {
+  //     api_key: process.env.SARVAM_API_KEY,
+  //   },
+  // },
+  // {
+  //   azure: {
+  //     speech_key: process.env.AZURE_SPEECH_KEY,
+  //     speech_region: process.env.AZURE_SPEECH_REGION,
+  //   },
+  // },
+  // {
+  //   assemblyai: {
+  //     api_key: process.env.ASSEMBLYAI_API_KEY,
+  //   },
+  // },
+  // {
+  //   gladia: {
+  //     api_key: process.env.GLADIA_API_KEY,
+  //   },
+  // },
+  // {
+  //   deepgram: {
+  //     api_key: process.env.DEEPGRAM_API_KEY,
+  //   },
+  // },
+  // {
+  //   groq: {
+  //     api_key: process.env.GROQ_API_KEY,
+  //   },
+  // },
+  // {
+  //   openai: {
+  //     api_key: process.env.OPENAI_API_KEY,
+  //   },
+  // },
+  // {
+  //   speechmatics: {
+  //     api_key: process.env.SPEECHMATICS_API_KEY,
+  //   },
+  // },
+  // {
+  //   mistralai: {
+  //     api_key: process.env.MISTRALAI_API_KEY,
+  //   },
+  // },
+  // {
+  //   cartesia: {
+  //     api_key: process.env.CARTESIA_API_KEY,
+  //   },
+  // },
+  // {
+  //   soniox: {
+  //     api_key: process.env.SONIOX_API_KEY,
+  //   },
+  // },
   // REASON THIS PROVIDER CAN'T BE AUTOMATICALLY TESTED: it is broken as it needs library httpx,
   // which the google plugin also requires with a different version
   // {

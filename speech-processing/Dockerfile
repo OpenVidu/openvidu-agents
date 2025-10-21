@@ -46,10 +46,19 @@ COPY requirements.txt ./
 # --no-cache-dir ensures we don't use the system cache
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Prepare Hugging Face cache configuration
+ENV HF_HOME=/root/.cache/huggingface \
+    HF_HUB_DISABLE_TELEMETRY=1
+
 # Copy all remaining application files into the container
 # This includes source code, configuration files, and dependency specifications
 # (Excludes files specified in .dockerignore)
 COPY ./*.py .
+
+# Pre-download any ML models or files the agent needs
+# This ensures the container is ready to run immediately without downloading
+# dependencies at runtime, which improves startup time and reliability
+RUN python main.py download-files
 
 # Change ownership of all app files to the non-privileged user
 # This ensures the application can read/write files as needed
@@ -59,10 +68,8 @@ RUN chown -R appuser:appuser /app
 # This improves security by not running as root
 USER appuser
 
-# Pre-download any ML models or files the agent needs
-# This ensures the container is ready to run immediately without downloading
-# dependencies at runtime, which improves startup time and reliability
-RUN python main.py download-files
+# After downloading, run in offline mode at runtime
+ENV HF_HUB_OFFLINE=1
 
 # Run the application
 # The "start" command tells the worker to connect to LiveKit and begin waiting for jobs.

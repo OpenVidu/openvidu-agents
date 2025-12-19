@@ -33,6 +33,8 @@ RUN apt-get update && apt-get install -y \
     g++ \
     python3-dev \
     git \
+    # Missing dependencies for some speech processing libraries
+    libglib2.0-0 \
   && rm -rf /var/lib/apt/lists/*
 
 # Create a new directory for our application code

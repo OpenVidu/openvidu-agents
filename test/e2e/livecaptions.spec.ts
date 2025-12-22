@@ -62,7 +62,7 @@ const STT_AI_PROVIDERS = [
   {
     speechmatics: {
       api_key: process.env.SPEECHMATICS_API_KEY,
-      max_concurrent_transcriptions: 3,
+      max_concurrent_transcriptions: 2, // https://docs.speechmatics.com/speech-to-text/realtime/limits
     },
   },
   {

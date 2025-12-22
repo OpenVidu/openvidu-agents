@@ -62,6 +62,7 @@ const STT_AI_PROVIDERS = [
   {
     speechmatics: {
       api_key: process.env.SPEECHMATICS_API_KEY,
+      max_concurrent_transcriptions: 3,
     },
   },
   {
@@ -233,7 +234,16 @@ describeProviderTests("Single user STT tests", ({ providerName }) => {
 describeProviderTests("Multi-user STT tests", ({ providerName }) => {
   test(`testing multiple users STT with ${providerName}`, async ({ page }) => {
     console.log(`Running multi-user test with provider: ${providerName}`);
-    const NUM_USERS = 4;
+
+    const providerConfig = STT_AI_PROVIDERS.find(
+      (p) => Object.keys(p)[0] === providerName
+    ) as any;
+    const maxConcurrentTranscriptions =
+      providerConfig[providerName].max_concurrent_transcriptions;
+    const NUM_USERS = maxConcurrentTranscriptions
+      ? Math.min(4, maxConcurrentTranscriptions)
+      : 4;
+
     await page.goto(TESTAPP_URL);
     for (let i = 0; i < NUM_USERS; i++) {
       await page.click("#add-user-btn");

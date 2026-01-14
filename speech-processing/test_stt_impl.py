@@ -31,6 +31,7 @@ from stt_impl import (
     get_spitch_stt_impl,
     get_cartesia_stt_impl,
     get_soniox_stt_impl,
+    get_vosk_stt_impl,
     get_stt_impl,
 )
 
@@ -1198,4 +1199,134 @@ class TestSTTImplementations(unittest.TestCase):
         ):
             result = get_stt_impl(config)
             self.assertEqual(result, "soniox_stt_instance")
+            mock_impl.assert_called_once_with(config)
+
+    # Vosk STT Tests
+    @patch("livekit.plugins.vosk.STT")
+    def test_get_vosk_stt_impl_success(self, mock_vosk_stt):
+        # Arrange
+        config = {
+            "live_captions": {
+                "vosk": {
+                    "model": "vosk-model-small-es-0.42",
+                    "language": "es",
+                    "sample_rate": 16000,
+                    "partial_results": True,
+                }
+            }
+        }
+        mock_vosk_stt.return_value = "vosk_stt_instance"
+
+        # Act
+        result = get_vosk_stt_impl(config)
+
+        # Assert
+        self.assertEqual(result, "vosk_stt_instance")
+        mock_vosk_stt.assert_called_once_with(
+            model_path="vosk-models/vosk-model-small-es-0.42",
+            language="es",
+            sample_rate=16000,
+            partial_results=True,
+        )
+
+    @patch("livekit.plugins.vosk.STT")
+    def test_get_vosk_stt_impl_auto_detect_language(self, mock_vosk_stt):
+        # Arrange - No language provided, should auto-detect from model name
+        config = {
+            "live_captions": {
+                "vosk": {
+                    "model": "vosk-model-small-fr-0.22",
+                }
+            }
+        }
+        mock_vosk_stt.return_value = "vosk_stt_instance"
+
+        # Act
+        result = get_vosk_stt_impl(config)
+
+        # Assert
+        self.assertEqual(result, "vosk_stt_instance")
+        mock_vosk_stt.assert_called_once_with(
+            model_path="vosk-models/vosk-model-small-fr-0.22",
+            language="fr",
+        )
+
+    @patch("livekit.plugins.vosk.STT")
+    def test_get_vosk_stt_impl_unknown_model_defaults_to_en_us(self, mock_vosk_stt):
+        # Arrange - Unknown model name, should default to en-US
+        config = {
+            "live_captions": {
+                "vosk": {
+                    "model": "vosk-model-unknown-language",
+                }
+            }
+        }
+        mock_vosk_stt.return_value = "vosk_stt_instance"
+
+        # Act
+        result = get_vosk_stt_impl(config)
+
+        # Assert
+        self.assertEqual(result, "vosk_stt_instance")
+        mock_vosk_stt.assert_called_once_with(
+            model_path="vosk-models/vosk-model-unknown-language",
+            language="en-US",
+        )
+
+    @patch("livekit.plugins.vosk.STT")
+    def test_get_vosk_stt_impl_no_model_defaults_to_en_us(self, mock_vosk_stt):
+        # Arrange - No model or language, should default to en-US
+        config = {
+            "live_captions": {
+                "vosk": {}
+            }
+        }
+        mock_vosk_stt.return_value = "vosk_stt_instance"
+
+        # Act
+        result = get_vosk_stt_impl(config)
+
+        # Assert
+        self.assertEqual(result, "vosk_stt_instance")
+        mock_vosk_stt.assert_called_once_with(
+            language="en-US",
+        )
+
+    @patch("livekit.plugins.vosk.STT")
+    def test_get_vosk_stt_impl_explicit_language_overrides_auto_detect(self, mock_vosk_stt):
+        # Arrange - Explicit language should override auto-detect
+        config = {
+            "live_captions": {
+                "vosk": {
+                    "model": "vosk-model-small-fr-0.22",
+                    "language": "de",  # Explicit language different from model
+                }
+            }
+        }
+        mock_vosk_stt.return_value = "vosk_stt_instance"
+
+        # Act
+        result = get_vosk_stt_impl(config)
+
+        # Assert
+        self.assertEqual(result, "vosk_stt_instance")
+        mock_vosk_stt.assert_called_once_with(
+            model_path="vosk-models/vosk-model-small-fr-0.22",
+            language="de",
+        )
+
+    def test_get_stt_impl_vosk(self):
+        config = {"live_captions": {"provider": "vosk"}}
+        mock_impl = MagicMock(return_value="vosk_stt_instance")
+
+        with patch.dict(
+            "stt_impl.STT_PROVIDERS",
+            {
+                "vosk": stt_impl.STT_PROVIDERS["vosk"]._replace(
+                    impl_function=mock_impl
+                )
+            },
+        ):
+            result = get_stt_impl(config)
+            self.assertEqual(result, "vosk_stt_instance")
             mock_impl.assert_called_once_with(config)

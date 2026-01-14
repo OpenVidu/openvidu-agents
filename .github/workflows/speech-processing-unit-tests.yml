@@ -21,6 +21,9 @@ jobs:
 
             - name: Install dependencies
               run: |
+                  # Configure Git to use GitHub token for private repos
+                  git config --global url."https://${{ github.token }}@github.com/".insteadOf "https://github.com/"
+
                   # Install global dependencies
                   python -m pip install --upgrade pip
                   pip install pytest

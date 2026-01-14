@@ -27,7 +27,9 @@ jobs:
 
                   # Install speech-processing dependencies
                   pushd speech-processing
-                  pip install -r requirements.txt
+                  pip install -r requirements-base.txt
+                  pip install -r requirements-cloud.txt
+                  pip install -r requirements-vosk.txt
                   pip install -e ../openviduagentutils/
                   popd
 

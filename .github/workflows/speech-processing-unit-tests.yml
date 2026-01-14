@@ -20,6 +20,9 @@ jobs:
                   cache: "pip"
 
             - name: Install dependencies
+              env:
+                  # Skip Git LFS downloads (not needed for package installation)
+                  GIT_LFS_SKIP_SMUDGE: "1"
               run: |
                   # Configure Git to use PAT for private repos
                   git config --global url."https://${{ secrets.OPENVIDU_GITHUB_TOKEN }}@github.com/".insteadOf "https://github.com/"

@@ -21,8 +21,8 @@ jobs:
 
             - name: Install dependencies
               run: |
-                  # Configure Git to use GitHub token for private repos
-                  git config --global url."https://${{ github.token }}@github.com/".insteadOf "https://github.com/"
+                  # Configure Git to use PAT for private repos
+                  git config --global url."https://${{ secrets.OPENVIDU_GITHUB_TOKEN }}@github.com/".insteadOf "https://github.com/"
 
                   # Install global dependencies
                   python -m pip install --upgrade pip

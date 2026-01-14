@@ -162,7 +162,7 @@ class TestSTTProviderRegistry(unittest.TestCase):
     def test_provider_count(self):
         """Test that we have the expected number of providers."""
         # Update this number when adding new providers
-        expected_count = 17
+        expected_count = 18
         actual_count = len(stt_impl.STT_PROVIDERS)
 
         self.assertEqual(

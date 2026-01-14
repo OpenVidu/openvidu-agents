@@ -1,0 +1,7 @@
+# Requirements for cloud STT providers
+# Includes all cloud-based speech-to-text plugins
+
+-r requirements-base.txt
+
+# Cloud STT plugins
+livekit-agents[aws,azure,google,groq,openai,deepgram,assemblyai,fal,clova,speechmatics,gladia,sarvam,mistralai,cartesia,soniox,spitch]>=1.3.9

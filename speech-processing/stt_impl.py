@@ -4,15 +4,12 @@ import json
 import tempfile
 import inspect
 from typing import Callable, NamedTuple
-from livekit.plugins.speechmatics.types import TranscriptionConfig
 from livekit.agents import stt
 from livekit.agents.types import NotGivenOr, NotGiven
 from livekit.agents.voice.agent_session import TurnDetectionMode
 
 from openviduagentutils.config_manager import ConfigManager
 from openviduagentutils.not_provided import NOT_PROVIDED
-
-from azure.cognitiveservices.speech.enums import ProfanityOption
 
 
 # STT Provider Registry
@@ -111,6 +108,11 @@ STT_PROVIDERS = {
         plugin_module="livekit.plugins.spitch",
         plugin_class="STT",
     ),
+    "vosk": STTProviderConfig(
+        impl_function=None,
+        plugin_module="livekit.plugins.vosk",
+        plugin_class="STT",
+    ),
 }
 
 # https://docs.livekit.io/agents/build/turns/turn-detector/#detection-accuracy
@@ -188,6 +190,7 @@ def get_aws_stt_impl(agent_config) -> stt.STT:
 
 def get_azure_stt_impl(agent_config) -> stt.STT:
     from livekit.plugins import azure
+    from azure.cognitiveservices.speech.enums import ProfanityOption
 
     config_manager = ConfigManager(agent_config, "live_captions.azure")
     wrong_credentials = "Wrong azure credentials. One of these combinations must be set:\n    - speech_host\n    - speech_key + speech_region\n    - speech_auth_token + speech_region"
@@ -503,6 +506,7 @@ def get_clova_stt_impl(agent_config) -> stt.STT:
 
 def get_speechmatics_stt_impl(agent_config) -> stt.STT:
     from livekit.plugins import speechmatics
+    from livekit.plugins.speechmatics.types import TranscriptionConfig
 
     config_manager = ConfigManager(agent_config, "live_captions.speechmatics")
     wrong_credentials = (
@@ -621,6 +625,65 @@ def get_spitch_stt_impl(agent_config) -> stt.STT:
     return spitch.STT(**kwargs)
 
 
+def get_vosk_stt_impl(agent_config) -> stt.STT:
+    from livekit.plugins import vosk
+
+    # Direct mapping from Vosk model names to language codes
+    # Based on pre-installed models in the container
+    VOSK_MODEL_TO_LANGUAGE = {
+        "vosk-model-en-us-0.22-lgraph": "en-US",
+        "vosk-model-small-cn-0.22": "zh-CN",
+        "vosk-model-small-de-0.15": "de",
+        "vosk-model-small-en-in-0.4": "en-IN",
+        "vosk-model-small-es-0.42": "es",
+        "vosk-model-small-fr-0.22": "fr",
+        "vosk-model-small-hi-0.22": "hi",
+        "vosk-model-small-it-0.22": "it",
+        "vosk-model-small-ja-0.22": "ja",
+        "vosk-model-small-nl-0.22": "nl",
+        "vosk-model-small-pt-0.3": "pt",
+        "vosk-model-small-ru-0.22": "ru",
+    }
+
+    config_manager = ConfigManager(agent_config, "live_captions.vosk")
+
+    model = config_manager.configured_string_value("model")
+    language = config_manager.configured_string_value("language")
+    sample_rate = config_manager.configured_numeric_value("sample_rate")
+    partial_results = config_manager.configured_boolean_value("partial_results")
+
+    # Auto-detect language from model name if not provided
+    if language is NOT_PROVIDED and model is not NOT_PROVIDED:
+        detected_language = VOSK_MODEL_TO_LANGUAGE.get(model)
+        if detected_language:
+            logging.info(
+                f"Auto-detected language '{detected_language}' from Vosk model '{model}'"
+            )
+            language = detected_language
+        else:
+            logging.warning(
+                f"Could not auto-detect language from Vosk model '{model}', defaulting to 'en-US'"
+            )
+            language = "en-US"
+    elif language is NOT_PROVIDED:
+        language = "en-US"
+
+    kwargs = {
+        k: v
+        for k, v in {
+            "model_path": (
+                "vosk-models/" + model if model is not NOT_PROVIDED else NOT_PROVIDED
+            ),
+            "language": language,
+            "sample_rate": sample_rate,
+            "partial_results": partial_results,
+        }.items()
+        if v is not NOT_PROVIDED
+    }
+
+    return vosk.STT(**kwargs)
+
+
 def get_mistralai_stt_impl(agent_config) -> stt.STT:
     from livekit.plugins import mistralai
 
@@ -719,6 +782,7 @@ def _initialize_stt_registry():
         "cartesia": get_cartesia_stt_impl,
         "soniox": get_soniox_stt_impl,
         "spitch": get_spitch_stt_impl,
+        "vosk": get_vosk_stt_impl,
     }
 
     # Validate that all registered providers have implementation functions

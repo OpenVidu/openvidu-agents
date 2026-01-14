@@ -1,2 +1,0 @@
-openviduagentutils @ git+https://github.com/OpenVidu/openvidu-agents.git#egg=openviduagentutils&subdirectory=openviduagentutils
-livekit-agents[silero,turn_detector,aws,azure,google,groq,openai,deepgram,assemblyai,fal,clova,speechmatics,gladia,sarvam,mistralai,cartesia,soniox,spitch]>=1.3.9

@@ -1,0 +1,29 @@
+# syntax=docker/dockerfile:1
+# Dockerfile for cloud-based STT providers
+
+ARG BASE_IMAGE=openvidu/agent-speech-processing-base:latest
+FROM ${BASE_IMAGE}
+
+# Copy cloud requirements and install dependencies
+COPY requirements-base.txt requirements-cloud.txt ./
+RUN pip install --no-cache-dir -r requirements-cloud.txt
+
+# Pre-download any ML models or files the agent needs
+# This ensures the container is ready to run immediately without downloading
+# dependencies at runtime, which improves startup time and reliability
+RUN python main.py download-files
+
+# Change ownership of all app files to the non-privileged user
+# This ensures the application can read/write files as needed
+RUN chown -R appuser:appuser /app
+
+# Switch to the non-privileged user for all subsequent operations
+# This improves security by not running as root
+USER appuser
+
+# After downloading, run in offline mode at runtime
+ENV HF_HUB_OFFLINE=1
+
+# Run the application
+# The "start" command tells the worker to connect to LiveKit and begin waiting for jobs.
+CMD ["python", "main.py", "start"]

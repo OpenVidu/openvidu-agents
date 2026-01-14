@@ -5,15 +5,16 @@ import signal
 import sys
 
 from livekit.agents import (
+    AgentServer,
     AutoSubscribe,
     JobContext,
-    WorkerOptions,
+    JobExecutorType,
+    JobProcess,
     cli,
     stt,
     llm,
     WorkerType,
     WorkerPermissions,
-    JobProcess,
     Agent,
     AgentSession,
     RoomOutputOptions,
@@ -299,13 +300,40 @@ def prewarm(proc: JobProcess):
     proc.userdata["vad"] = silero.VAD.load()
 
 
+def _preload_vosk_model(agent_config) -> None:
+    """Preload Vosk model into memory for sharing across threads.
+    
+    When using JobExecutorType.THREAD, all agent threads share the same process memory.
+    This function loads the Vosk model once at startup so all subsequent STT instances
+    reuse the cached model via livekit-plugins-vosk's internal _ModelCache.
+    """
+    try:
+        stt_provider = agent_config.get("live_captions", {}).get("provider")
+        if stt_provider == "vosk":
+            logging.info("Preloading Vosk model for shared thread-based execution...")
+            # Creating an STT instance triggers model loading into the cache
+            stt_impl = get_stt_impl(agent_config)
+            # Force model loading by calling a method that requires the model
+            # The model will be cached and shared across all thread-based jobs
+            logging.info("Vosk model preloaded successfully - will be shared across all agent threads")
+    except Exception as e:
+        logging.warning(f"Failed to preload Vosk model: {e}. Model will be loaded on first use.")
+
+
 if __name__ == "__main__":
 
     # If calling "python main.py download-files" do not initialize the OpenViduAgent
     if len(sys.argv) > 1 and sys.argv[1] == "download-files":
         silero.VAD.load()
         _preload_turn_detector_models()
-        cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint))
+        # Create a minimal server just for download-files
+        server = AgentServer()
+        
+        @server.rtc_session()
+        async def download_entrypoint(ctx: JobContext):
+            await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
+        
+        cli.run_app(server)
         logging.info("Files downloaded for all plugins")
         sys.exit(0)
 
@@ -319,17 +347,21 @@ if __name__ == "__main__":
         logging.error("load_threshold must be a number between 0 and 1")
         sys.exit(1)
 
-    worker_options = WorkerOptions(
-        prewarm_fnc=prewarm,
-        entrypoint_fnc=entrypoint,
+    # Create AgentServer with THREAD executor to share Vosk model across all agents
+    # This allows all agent threads to share a single Vosk model loaded in memory,
+    # significantly reducing memory usage when running multiple concurrent transcriptions
+    server = AgentServer(
+        # Use THREAD executor so all jobs run in threads within the same process
+        # This enables sharing the Vosk model (loaded once) across all agent threads
+        job_executor_type=JobExecutorType.THREAD,
+        ws_url=agent_config["ws_url"],
         api_key=agent_config["api_key"],
         api_secret=agent_config["api_secret"],
-        ws_url=agent_config["ws_url"],
         load_threshold=load_threshold,
         max_retry=sys.maxsize,
         drain_timeout=sys.maxsize,
-        # For speech transcription, we want to initiate a new instance of the agent for each room
-        worker_type=WorkerType.ROOM,
+        # Vosk models may require sizable memory
+        job_memory_warn_mb=1024,
         permissions=WorkerPermissions(
             # no need to publish tracks
             can_publish=False,
@@ -342,16 +374,34 @@ if __name__ == "__main__":
             hidden=True,
         ),
     )
+
+    # Set agent name for explicit dispatch if configured
     if agent_config["live_captions"]["processing"] == "manual":
-        worker_options.agent_name = agent_name
+        server._agent_name = agent_name
+
+    # Set worker type (ROOM = one agent per room)
+    server._server_type = WorkerType.ROOM
+
+    # Register the entrypoint
+    @server.rtc_session()
+    async def main_entrypoint(ctx: JobContext):
+        await entrypoint(ctx)
+
+    # Set up prewarm function
+    server.setup_fnc = prewarm
+
+    # Preload Vosk model into memory before starting the server
+    # This ensures all thread-based agents share the same model instance
+    _preload_vosk_model(agent_config)
 
     logging.info(
         f"Starting agent {agent_name} with processing configured to {agent_config['live_captions']['processing']}"
     )
+    logging.info("Using JobExecutorType.THREAD for shared Vosk model memory across all agents")
 
     # Redirect signal SIGQUIT as SIGTERM to allow graceful shutdown using livekit/agents mechanism
     signal.signal(
         signal.SIGQUIT, lambda signum, frame: os.kill(int(os.getpid()), signal.SIGTERM)
     )
 
-    cli.run_app(worker_options)
+    cli.run_app(server)

@@ -1,0 +1,53 @@
+# syntax=docker/dockerfile:1
+# Base Dockerfile for speech-processing agents
+
+ARG PYTHON_VERSION=3.12
+FROM python:${PYTHON_VERSION}-slim AS base
+
+# Keeps Python from buffering stdout and stderr to avoid situations where
+# the application crashes without emitting any logs due to buffering.
+ENV PYTHONUNBUFFERED=1
+
+# Disable pip version check to speed up builds
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# Create a non-privileged user that the app will run under.
+# See https://docs.docker.com/develop/develop-images/dockerfile_best-practices/#user
+ARG UID=10001
+RUN adduser \
+    --disabled-password \
+    --gecos "" \
+    --home "/app" \
+    --shell "/sbin/nologin" \
+    --uid "${UID}" \
+    appuser
+
+# Install build dependencies required for Python packages with native extensions
+# gcc: C compiler needed for building Python packages with C extensions
+# g++: C++ compiler needed for building Python packages with C++ extensions
+# python3-dev: Python development headers needed for compilation
+# We clean up the apt cache after installation to keep the image size down
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    python3-dev \
+    git \
+    # Missing dependencies for some speech processing libraries
+    libglib2.0-0 \
+  && rm -rf /var/lib/apt/lists/*
+
+# Create a new directory for our application code
+# And set it as the working directory
+WORKDIR /app
+
+# Prepare Hugging Face cache configuration
+ENV HF_HOME=/app/.cache/huggingface \
+    HF_HUB_DISABLE_TELEMETRY=1
+
+# Ensure the Hugging Face cache directory exists before switching users
+RUN mkdir -p "$HF_HOME"
+
+# Copy all application source files into the container
+# This includes source code, configuration files, and dependency specifications
+# (Excludes files specified in .dockerignore)
+COPY ./*.py .

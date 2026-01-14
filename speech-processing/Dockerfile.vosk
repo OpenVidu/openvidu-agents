@@ -1,0 +1,38 @@
+# syntax=docker/dockerfile:1
+# Dockerfile for Vosk offline STT
+# Self-contained image with Vosk models for offline speech recognition
+# No external API calls required - all processing happens locally
+
+ARG BASE_IMAGE=openvidu/agent-speech-processing-base:latest
+FROM ${BASE_IMAGE}
+
+# Copy the livekit-plugins-vosk package
+COPY livekit-plugins-vosk ./livekit-plugins-vosk
+
+# Copy vosk requirements and install dependencies
+COPY requirements-base.txt requirements-vosk.txt ./
+RUN pip install --no-cache-dir -r requirements-vosk.txt
+
+# Copy Vosk models for offline speech recognition
+# These models are immediately available when choosing "vosk" as STT provider
+COPY vosk-models ./vosk-models
+
+# Pre-download any ML models or files the agent needs (VAD, turn detector)
+# This ensures the container is ready to run immediately without downloading
+# dependencies at runtime, which improves startup time and reliability
+RUN python main.py download-files
+
+# Change ownership of all app files to the non-privileged user
+# This ensures the application can read/write files as needed
+RUN chown -R appuser:appuser /app
+
+# Switch to the non-privileged user for all subsequent operations
+# This improves security by not running as root
+USER appuser
+
+# After downloading, run in offline mode at runtime
+ENV HF_HUB_OFFLINE=1
+
+# Run the application
+# The "start" command tells the worker to connect to LiveKit and begin waiting for jobs.
+CMD ["python", "main.py", "start"]

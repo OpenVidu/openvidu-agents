@@ -2,16 +2,40 @@
 # Dockerfile for Vosk offline STT
 # Self-contained image with Vosk models for offline speech recognition
 # No external API calls required - all processing happens locally
+#
+# BUILD INSTRUCTIONS:
+# This Dockerfile requires a GitHub Personal Access Token (PAT) to clone from private repos.
+#
+# Option 1 - Using GITHUB_TOKEN environment variable:
+#   export GITHUB_TOKEN=ghp_your_token_here
+#   docker build --secret id=github_token,env=GITHUB_TOKEN -f Dockerfile.vosk -t openvidu/agent-speech-processing-vosk:main .
+#
+# Option 2 - Using a token file:
+#   echo "ghp_your_token_here" > ~/.github_token
+#   docker build --secret id=github_token,src=$HOME/.github_token -f Dockerfile.vosk -t openvidu/agent-speech-processing-vosk:main .
+#
+# The token needs 'repo' scope for private repository access.
+# Generate one at: https://github.com/settings/tokens
 
 ARG BASE_IMAGE=openvidu/agent-speech-processing-base:latest
 FROM ${BASE_IMAGE}
 
-# Copy the livekit-plugins-vosk package
-COPY livekit-plugins-vosk ./livekit-plugins-vosk
-
-# Copy vosk requirements and install dependencies
+# Copy vosk requirements
 COPY requirements-base.txt requirements-vosk.txt ./
-RUN pip install --no-cache-dir -r requirements-vosk.txt
+
+# Install dependencies using GitHub token for private repo access
+# The --mount=type=secret makes the token available only during this RUN command
+# and does NOT persist in the final image layer (secure)
+RUN --mount=type=secret,id=github_token \
+    if [ -f /run/secrets/github_token ]; then \
+        GITHUB_TOKEN=$(cat /run/secrets/github_token) && \
+        git config --global url."https://${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/" && \
+        pip install --no-cache-dir -r requirements-vosk.txt && \
+        git config --global --unset url."https://${GITHUB_TOKEN}@github.com/".insteadOf; \
+    else \
+        echo "WARNING: No github_token secret provided. Attempting install without authentication..." && \
+        pip install --no-cache-dir -r requirements-vosk.txt; \
+    fi
 
 # Copy Vosk models for offline speech recognition
 # These models are immediately available when choosing "vosk" as STT provider

@@ -47,7 +47,6 @@ ENV HF_HOME=/app/.cache/huggingface \
 # Ensure the Hugging Face cache directory exists before switching users
 RUN mkdir -p "$HF_HOME"
 
-# Copy all application source files into the container
-# This includes source code, configuration files, and dependency specifications
-# (Excludes files specified in .dockerignore)
-COPY ./*.py .
+# Copy only required application source files into the container
+# Note: test files are excluded via .dockerignore
+COPY main.py stt_impl.py ./

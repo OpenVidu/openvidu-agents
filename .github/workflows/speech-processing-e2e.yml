@@ -59,7 +59,10 @@ jobs:
         if: inputs.docker-tag-agent-speech-processing == ''
         run: |
           cd speech-processing
-          docker build --no-cache -t openvidu/agent-speech-processing:main .
+          docker build --no-cache -f Dockerfile.base -t openvidu/agent-speech-processing-base:main .
+          docker build --no-cache -f Dockerfile.cloud -t openvidu/agent-speech-processing-cloud:main .
+          export GITHUB_TOKEN=${{ secrets.OPENVIDU_PAT_REPOSITORY_AGENTS_READ_ACCESS }}
+          docker build --secret id=github_token,env=GITHUB_TOKEN --no-cache -f Dockerfile.vosk -t openvidu/agent-speech-processing-vosk:main .
 
       - name: Install openvidu-testapp dependencies
         working-directory: ./openvidu/openvidu-testapp

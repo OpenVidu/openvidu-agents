@@ -31,6 +31,11 @@ export class LocalDeployment {
         doc.setIn(["live_captions", providerName, key], value);
       }
     }
+    if (providerName === "vosk") {
+      doc.setIn("docker_image", "openvidu/agent-speech-processing-vosk:main");
+    } else {
+      doc.setIn("docker_image", "openvidu/agent-speech-processing-cloud:main");
+    }
 
     const output = doc.toString({
       lineWidth: 0,

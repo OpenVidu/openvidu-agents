@@ -80,6 +80,11 @@ const STT_AI_PROVIDERS = [
       api_key: process.env.SONIOX_API_KEY,
     },
   },
+  {
+    vosk: {
+      model: "vosk-model-en-us-0.22-lgraph",
+    },
+  },
   // REASON THIS PROVIDER CAN'T BE AUTOMATICALLY TESTED: it is broken as it needs library httpx,
   // which the google plugin also requires with a different version
   // {
@@ -227,7 +232,7 @@ describeProviderTests("Single user STT tests", ({ providerName }) => {
     } else {
       console.log(`Final transcription: "${lastFinalEventText}"`);
     }
-    checkLevenshteinDistance(lastFinalEventText);
+    checkLevenshteinDistance(providerName, lastFinalEventText);
   });
 });
 
@@ -258,6 +263,7 @@ describeProviderTests("Multi-user STT tests", ({ providerName }) => {
     }
     // Check that each user has received at least one final transcription event for every other user (and itself)
     const promises = [];
+    const TIMEOUT = providerName === "vosk" ? 50000 : 20000;
     for (let user = 0; user < NUM_USERS; user++) {
       for (let otherUser = 0; otherUser < NUM_USERS; otherUser++) {
         promises.push(
@@ -267,7 +273,7 @@ describeProviderTests("Multi-user STT tests", ({ providerName }) => {
             `TestParticipant${otherUser} said: `,
             1,
             user,
-            20000
+            TIMEOUT
           )
         );
       }
@@ -281,7 +287,7 @@ describeProviderTests("Multi-user STT tests", ({ providerName }) => {
       const firstEl = el[0];
       const text = await getEventText(firstEl);
       const strippedText = text.replace(/^TestParticipant\d+ said: /i, "");
-      checkLevenshteinDistance(strippedText);
+      checkLevenshteinDistance(providerName, strippedText);
     }
   });
 });
@@ -454,17 +460,35 @@ async function getEventText(elementHandle: ElementHandle): Promise<string> {
   }
 }
 
-function checkLevenshteinDistance(transcribedText: string) {
-  // Compare only first sentence of the transcription.
-  transcribedText = transcribedText.split(".")[0];
-  let expectedText = AUDIO_TRANSCRIPTIONS[0];
-  let LD = getLevenshteinDistance(expectedText, transcribedText);
-  if (LD > 5) {
-    throw new Error(
-      `Levenshtein distance (${LD}) exceeds maximum allowed between expected and transcribed text.\nExpected: "${expectedText}"\nTranscribed: "${transcribedText}"`
+function checkLevenshteinDistance(
+  providerName: string,
+  transcribedText: string
+) {
+  if (providerName !== "vosk") {
+    // Compare only first sentence of the transcription.
+    transcribedText = transcribedText.split(".")[0];
+    let expectedText = AUDIO_TRANSCRIPTIONS[0];
+    let LD = getLevenshteinDistance(expectedText, transcribedText);
+    if (LD > 5) {
+      throw new Error(
+        `Levenshtein distance (${LD}) exceeds maximum allowed between expected and transcribed text.\nExpected: "${expectedText}"\nTranscribed: "${transcribedText}"`
+      );
+    }
+    console.log(`Levenshtein distance is ${LD}`);
+  } else {
+    // Vosk: compare full transcription with all sentences
+    let expectedText = AUDIO_TRANSCRIPTIONS.join(" ");
+    expectedText = expectedText.replace(/\. ([A-Z])/g, (match, p1) =>
+      " " + p1.toLowerCase()
     );
+    let LD = getLevenshteinDistance(expectedText, transcribedText);
+    if (LD > 15) {
+      throw new Error(
+        `Levenshtein distance (${LD}) exceeds maximum allowed between expected and transcribed text.\nExpected: "${expectedText}"\nTranscribed: "${transcribedText}"`
+      );
+    }
+    console.log(`Levenshtein distance is ${LD}`);
   }
-  console.log(`Levenshtein distance is ${LD}`);
 }
 
 function getLevenshteinDistance(

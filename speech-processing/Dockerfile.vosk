@@ -17,7 +17,7 @@
 # The token needs 'repo' scope for private repository access.
 # Generate one at: https://github.com/settings/tokens
 
-ARG BASE_IMAGE=openvidu/agent-speech-processing-base:latest
+ARG BASE_IMAGE=openvidu/agent-speech-processing-base:main
 FROM ${BASE_IMAGE}
 
 # Copy vosk requirements

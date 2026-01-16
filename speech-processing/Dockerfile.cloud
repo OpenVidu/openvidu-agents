@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # Dockerfile for cloud-based STT providers
 
-ARG BASE_IMAGE=openvidu/agent-speech-processing-base:latest
+ARG BASE_IMAGE=openvidu/agent-speech-processing-base:main
 FROM ${BASE_IMAGE}
 
 # Copy cloud requirements and install dependencies

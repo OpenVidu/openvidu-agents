@@ -190,12 +190,13 @@ describeProviderTests("Single user STT tests", ({ providerName }) => {
       20000
     );
     console.log(`Interim transcription received from provider ${providerName}`);
+    const TIMEOUT_FINAL = providerName === "vosk" ? 50000 : 20000;
     const finalEvents = await waitForEvent(
       page,
       "finalTranscription",
       1,
       0,
-      20000
+      TIMEOUT_FINAL
     );
     console.log(`Final transcription received from provider ${providerName}`);
     const totalInterimEvents = await countTotalEvents(

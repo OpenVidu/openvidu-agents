@@ -18,24 +18,43 @@
 # Generate one at: https://github.com/settings/tokens
 
 ARG BASE_IMAGE=openvidu/agent-speech-processing-base:main
-FROM ${BASE_IMAGE}
+
+# =============================================================================
+# STAGE 1: Builder - Install dependencies with GitHub token (isolated stage)
+# =============================================================================
+# This entire stage is discarded after build. Even if the git config with the
+# token were accidentally left in place, it would never reach the final image.
+FROM ${BASE_IMAGE} AS builder
+
+# Create a virtual environment for clean package isolation
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
 
 # Copy vosk requirements
 COPY requirements-base.txt requirements-vosk.txt ./
 
 # Install dependencies using GitHub token for private repo access
-# The --mount=type=secret makes the token available only during this RUN command
-# and does NOT persist in the final image layer (secure)
+# The token is used here and the entire stage is thrown away - no cleanup needed
 RUN --mount=type=secret,id=github_token \
     if [ -f /run/secrets/github_token ]; then \
         GITHUB_TOKEN=$(cat /run/secrets/github_token) && \
         git config --global url."https://${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/" && \
-        pip install --no-cache-dir -r requirements-vosk.txt && \
-        git config --global --unset url."https://${GITHUB_TOKEN}@github.com/".insteadOf; \
+        pip install --no-cache-dir -r requirements-vosk.txt; \
     else \
         echo "WARNING: No github_token secret provided. Attempting install without authentication..." && \
         pip install --no-cache-dir -r requirements-vosk.txt; \
     fi
+
+# =============================================================================
+# STAGE 2: Final - Clean image with no trace of secrets
+# =============================================================================
+# Fresh start from base image. Only the virtual environment with installed
+# packages is copied. No git config, no shell history, no GITHUB_TOKEN traces.
+FROM ${BASE_IMAGE}
+
+# Copy the virtual environment with all installed packages from builder
+COPY --from=builder /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
 
 # Copy Vosk models for offline speech recognition
 # These models are immediately available when choosing "vosk" as STT provider
@@ -48,7 +67,7 @@ RUN python main.py download-files
 
 # Change ownership of all app files to the non-privileged user
 # This ensures the application can read/write files as needed
-RUN chown -R appuser:appuser /app
+RUN chown -R appuser:appuser /app /opt/venv
 
 # Switch to the non-privileged user for all subsequent operations
 # This improves security by not running as root

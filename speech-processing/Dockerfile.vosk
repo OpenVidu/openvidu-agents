@@ -39,7 +39,8 @@ RUN --mount=type=secret,id=github_token \
     if [ -f /run/secrets/github_token ]; then \
         GITHUB_TOKEN=$(cat /run/secrets/github_token) && \
         git config --global url."https://${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/" && \
-        pip install --no-cache-dir -r requirements-vosk.txt; \
+        pip install --no-cache-dir -r requirements-vosk.txt && \
+        git config --global --unset url."https://${GITHUB_TOKEN}@github.com/".insteadOf; \
     else \
         echo "WARNING: No github_token secret provided. Attempting install without authentication..." && \
         pip install --no-cache-dir -r requirements-vosk.txt; \

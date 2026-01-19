@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1
+# syntax=docker/dockerfile:1.6
 # Dockerfile for Vosk offline STT
 # Self-contained image with Vosk models for offline speech recognition
 # No external API calls required - all processing happens locally
@@ -22,8 +22,6 @@ ARG BASE_IMAGE=openvidu/agent-speech-processing-base:main
 # =============================================================================
 # STAGE 1: Builder - Install dependencies with GitHub token (isolated stage)
 # =============================================================================
-# This entire stage is discarded after build. Even if the git config with the
-# token were accidentally left in place, it would never reach the final image.
 FROM ${BASE_IMAGE} AS builder
 
 # Create a virtual environment for clean package isolation
@@ -36,21 +34,20 @@ COPY requirements-base.txt requirements-vosk.txt ./
 # Install dependencies using GitHub token for private repo access
 # The token is used here and the entire stage is thrown away - no cleanup needed
 RUN --mount=type=secret,id=github_token \
+    set -e; \
     if [ -f /run/secrets/github_token ]; then \
-        GITHUB_TOKEN=$(cat /run/secrets/github_token) && \
-        git config --global url."https://${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/" && \
-        pip install --no-cache-dir -r requirements-vosk.txt && \
-        git config --global --unset url."https://${GITHUB_TOKEN}@github.com/".insteadOf; \
+    GITHUB_TOKEN="$(cat /run/secrets/github_token)"; \
+    git config --global url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/"; \
+    pip install --no-cache-dir -r requirements-vosk.txt; \
+    git config --global --unset url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf; \
     else \
-        echo "WARNING: No github_token secret provided. Attempting install without authentication..." && \
-        pip install --no-cache-dir -r requirements-vosk.txt; \
+    echo "WARNING: No github_token secret provided. Attempting install without authentication..."; \
+    pip install --no-cache-dir -r requirements-vosk.txt; \
     fi
 
 # =============================================================================
 # STAGE 2: Final - Clean image with no trace of secrets
 # =============================================================================
-# Fresh start from base image. Only the virtual environment with installed
-# packages is copied. No git config, no shell history, no GITHUB_TOKEN traces.
 FROM ${BASE_IMAGE}
 
 # Copy the virtual environment with all installed packages from builder
@@ -58,25 +55,19 @@ COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 # Copy Vosk models for offline speech recognition
-# These models are immediately available when choosing "vosk" as STT provider
 COPY vosk-models ./vosk-models
 
 # Pre-download any ML models or files the agent needs (VAD, turn detector)
-# This ensures the container is ready to run immediately without downloading
-# dependencies at runtime, which improves startup time and reliability
 RUN python main.py download-files
 
 # Change ownership of all app files to the non-privileged user
-# This ensures the application can read/write files as needed
 RUN chown -R appuser:appuser /app /opt/venv
 
 # Switch to the non-privileged user for all subsequent operations
-# This improves security by not running as root
 USER appuser
 
 # After downloading, run in offline mode at runtime
 ENV HF_HUB_OFFLINE=1
 
 # Run the application
-# The "start" command tells the worker to connect to LiveKit and begin waiting for jobs.
 CMD ["python", "main.py", "start"]

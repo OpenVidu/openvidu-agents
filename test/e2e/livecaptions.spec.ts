@@ -81,6 +81,11 @@ const STT_AI_PROVIDERS = [
     },
   },
   {
+    nvidia: {
+      api_key: process.env.NVIDIA_API_KEY,
+    },
+  },
+  {
     vosk: {
       model: "vosk-model-en-us-0.22-lgraph",
     },

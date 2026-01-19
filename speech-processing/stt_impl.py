@@ -44,6 +44,7 @@ spitch = _try_import_plugin("spitch")
 mistralai = _try_import_plugin("mistralai")
 cartesia = _try_import_plugin("cartesia")
 soniox = _try_import_plugin("soniox")
+nvidia = _try_import_plugin("nvidia")
 vosk = _try_import_plugin("vosk")
 
 
@@ -141,6 +142,11 @@ STT_PROVIDERS = {
     "spitch": STTProviderConfig(
         impl_function=None,
         plugin_module="livekit.plugins.spitch",
+        plugin_class="STT",
+    ),
+    "nvidia": STTProviderConfig(
+        impl_function=None,
+        plugin_module="livekit.plugins.nvidia",
         plugin_class="STT",
     ),
     "vosk": STTProviderConfig(
@@ -756,6 +762,45 @@ def get_soniox_stt_impl(agent_config) -> stt.STT:
     return soniox.STT(api_key=api_key, params=soniox.STTOptions(**kwargs))
 
 
+def get_nvidia_stt_impl(agent_config) -> stt.STT:
+    config_manager = ConfigManager(agent_config, "live_captions.nvidia")
+
+    api_key = config_manager.configured_string_value("api_key")
+    server = config_manager.configured_string_value("server")
+    use_ssl = config_manager.configured_boolean_value("use_ssl")
+
+    # If server is defined, it takes precedence (self-hosted scenario)
+    # If api_key is empty and server is not defined, raise an error
+    if api_key is NOT_PROVIDED and server is NOT_PROVIDED:
+        raise ValueError(
+            "Wrong NVIDIA configuration. Either live_captions.nvidia.api_key must be set "
+            "(for NVIDIA cloud) or live_captions.nvidia.server must be set (for self-hosted Riva NIM)."
+        )
+
+    model = config_manager.configured_string_value("model")
+    function_id = config_manager.configured_string_value("function_id")
+    punctuate = config_manager.configured_boolean_value("punctuate")
+    language_code = config_manager.configured_string_value("language_code")
+    sample_rate = config_manager.configured_numeric_value("sample_rate")
+
+    kwargs = {
+        k: v
+        for k, v in {
+            "api_key": api_key,
+            "model": model,
+            "function_id": function_id,
+            "punctuate": punctuate,
+            "language_code": language_code,
+            "sample_rate": sample_rate,
+            "server": server,
+            "use_ssl": use_ssl,
+        }.items()
+        if v is not NOT_PROVIDED
+    }
+
+    return nvidia.STT(**kwargs)
+
+
 # Initialize the registry with implementation functions
 def _initialize_stt_registry():
     """Initialize the STT provider registry with implementation functions.
@@ -782,6 +827,7 @@ def _initialize_stt_registry():
         "mistralai": get_mistralai_stt_impl,
         "cartesia": get_cartesia_stt_impl,
         "soniox": get_soniox_stt_impl,
+        "nvidia": get_nvidia_stt_impl,
         "spitch": get_spitch_stt_impl,
         "vosk": get_vosk_stt_impl,
     }

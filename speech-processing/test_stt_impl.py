@@ -31,6 +31,7 @@ from stt_impl import (
     get_spitch_stt_impl,
     get_cartesia_stt_impl,
     get_soniox_stt_impl,
+    get_nvidia_stt_impl,
     get_vosk_stt_impl,
     get_stt_impl,
 )
@@ -914,6 +915,116 @@ class TestSTTImplementations(unittest.TestCase):
             get_soniox_stt_impl(config)
 
         self.assertIn("Wrong Soniox credentials", str(context.exception))
+
+    # NVIDIA STT Tests
+    @patch("livekit.plugins.nvidia.STT")
+    def test_get_nvidia_stt_impl_success(self, mock_nvidia_stt):
+        # Arrange
+        config = {
+            "live_captions": {
+                "nvidia": {
+                    "api_key": "test_nvidia_key",
+                    "model": "parakeet-1.1b-en-US-asr-streaming-silero-vad-sortformer",
+                    "function_id": "1598d209-5e27-4d3c-8079-4751568b1081",
+                    "punctuate": True,
+                    "language_code": "en-US",
+                    "sample_rate": 16000,
+                    "server": "grpc.nvcf.nvidia.com:443",
+                    "use_ssl": True,
+                }
+            }
+        }
+        mock_nvidia_stt.return_value = "nvidia_stt_instance"
+
+        # Act
+        result = get_nvidia_stt_impl(config)
+
+        # Assert
+        self.assertEqual(result, "nvidia_stt_instance")
+        mock_nvidia_stt.assert_called_once_with(
+            api_key="test_nvidia_key",
+            model="parakeet-1.1b-en-US-asr-streaming-silero-vad-sortformer",
+            function_id="1598d209-5e27-4d3c-8079-4751568b1081",
+            punctuate=True,
+            language_code="en-US",
+            sample_rate=16000,
+            server="grpc.nvcf.nvidia.com:443",
+            use_ssl=True,
+        )
+
+    @patch("livekit.plugins.nvidia.STT")
+    def test_get_nvidia_stt_impl_minimal_config(self, mock_nvidia_stt):
+        # Arrange - Only api_key provided
+        config = {
+            "live_captions": {
+                "nvidia": {
+                    "api_key": "test_nvidia_key",
+                }
+            }
+        }
+        mock_nvidia_stt.return_value = "nvidia_stt_instance"
+
+        # Act
+        result = get_nvidia_stt_impl(config)
+
+        # Assert
+        self.assertEqual(result, "nvidia_stt_instance")
+        mock_nvidia_stt.assert_called_once_with(
+            api_key="test_nvidia_key",
+        )
+
+    @patch("livekit.plugins.nvidia.STT")
+    def test_get_nvidia_stt_impl_self_hosted_no_ssl(self, mock_nvidia_stt):
+        # Arrange - Self-hosted NIM without SSL (api_key not required)
+        config = {
+            "live_captions": {
+                "nvidia": {
+                    "server": "localhost:50051",
+                    "use_ssl": False,
+                    "language_code": "es-ES",
+                }
+            }
+        }
+        mock_nvidia_stt.return_value = "nvidia_stt_instance"
+
+        # Act
+        result = get_nvidia_stt_impl(config)
+
+        # Assert
+        self.assertEqual(result, "nvidia_stt_instance")
+        mock_nvidia_stt.assert_called_once_with(
+            language_code="es-ES",
+            server="localhost:50051",
+            use_ssl=False,
+        )
+
+    def test_get_nvidia_stt_impl_missing_api_key_and_server(self):
+        # Arrange - Neither api_key nor server provided
+        config = {"live_captions": {"nvidia": {}}}
+
+        # Act & Assert
+        with self.assertRaises(ValueError) as context:
+            get_nvidia_stt_impl(config)
+
+        self.assertIn("Wrong NVIDIA configuration", str(context.exception))
+        self.assertIn("api_key", str(context.exception))
+        self.assertIn("server", str(context.exception))
+
+    def test_get_stt_impl_nvidia(self):
+        config = {"live_captions": {"provider": "nvidia"}}
+        mock_impl = MagicMock(return_value="nvidia_stt_instance")
+
+        with patch.dict(
+            "stt_impl.STT_PROVIDERS",
+            {
+                "nvidia": stt_impl.STT_PROVIDERS["nvidia"]._replace(
+                    impl_function=mock_impl
+                )
+            },
+        ):
+            result = get_stt_impl(config)
+            self.assertEqual(result, "nvidia_stt_instance")
+            mock_impl.assert_called_once_with(config)
 
     # Master get_stt_impl Tests
     def test_get_stt_impl_missing_provider(self):

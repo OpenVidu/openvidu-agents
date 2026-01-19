@@ -84,7 +84,7 @@ jobs:
         uses: OpenVidu/actions/start-openvidu-local-deployment@main
         with:
           ref-openvidu-local-deployment: ${{ inputs.ref-openvidu-local-deployment || 'development' }}
-          pre_startup_commands: "sed -i 's|docker_image: docker.io/openvidu/agent-speech-processing:main|docker_image: docker.io/openvidu/agent-speech-processing:${{ inputs.docker-tag-agent-speech-processing || 'main' }}|g' agent-speech-processing.yaml"
+          pre_startup_commands: "sed -i 's|docker_image: docker.io/openvidu/agent-speech-processing-cloud:main|docker_image: docker.io/openvidu/agent-speech-processing-cloud:${{ inputs.docker-tag-agent-speech-processing || 'main' }}|g' agent-speech-processing.yaml"
           mediasoup-worker-bin: ${{ steps.setup-mediasoup-worker.outputs.MEDIASOUP_WORKER_BIN }}
           openvidu-edition: "pro"
           rtc-engine: ${{ inputs.rtc-engine }}

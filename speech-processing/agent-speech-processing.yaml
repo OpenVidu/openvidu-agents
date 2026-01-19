@@ -1,5 +1,5 @@
 # Docker image of the agent.
-docker_image: docker.io/openvidu/agent-speech-processing:main
+docker_image: docker.io/openvidu/agent-speech-processing-cloud:main
 
 # Whether to run the agent or not.
 enabled: true
@@ -321,7 +321,7 @@ live_captions:
     context:
 
   vosk:
-    # Vosk language model.
+    # Vosk language model. This provider requires docker_image "docker.io/openvidu/agent-speech-processing-vosk"
     # Below is the list of pre-installed models in the container (available at https://alphacephei.com/vosk/models):
     # - vosk-model-en-us-0.22-lgraph (English US)
     # - vosk-model-small-cn-0.22 (Chinese)

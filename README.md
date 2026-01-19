@@ -88,7 +88,8 @@ To build the Docker image (in this example for agent `speech-processing`):
 
 ```bash
 cd speech-processing
-docker build --no-cache -t openvidu/agent-speech-processing:3.2.0 .
+docker build --no-cache -f Dockerfile.base -t openvidu/agent-speech-processing-base:main .
+docker build --no-cache -f Dockerfile.cloud -t openvidu/agent-speech-processing-cloud:main .
 ```
 
 > `--no-cache` is required to bring latest changes from the shared utils library hosted in the repository.
@@ -103,7 +104,7 @@ python3 -m venv .venv
 . .venv/bin/activate
 # Install agent dependencies
 cd speech-processing
-pip3 install -r requirements.txt
+pip3 install -r requirements-cloud.txt
 ```
 
 ### Debugging in VSCode

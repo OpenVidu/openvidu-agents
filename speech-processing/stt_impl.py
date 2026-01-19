@@ -23,8 +23,8 @@ def _try_import_plugin(plugin_name: str):
         module = __import__(f"livekit.plugins.{plugin_name}", fromlist=[plugin_name])
         AVAILABLE_PLUGINS[plugin_name] = module
         return module
-    except (ImportError, ModuleNotFoundError):
-        logging.debug(f"Plugin '{plugin_name}' not available in this container")
+    except (ImportError, ModuleNotFoundError) as e:
+        logging.warning(f"Plugin '{plugin_name}' not available in this container: {e}")
         return None
 
 # Import all potentially available plugins

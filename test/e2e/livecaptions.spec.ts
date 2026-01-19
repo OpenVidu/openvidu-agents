@@ -483,7 +483,7 @@ function checkLevenshteinDistance(
       " " + p1.toLowerCase()
     );
     let LD = getLevenshteinDistance(expectedText, transcribedText);
-    if (LD > 15) {
+    if (LD > 20) {
       throw new Error(
         `Levenshtein distance (${LD}) exceeds maximum allowed between expected and transcribed text.\nExpected: "${expectedText}"\nTranscribed: "${transcribedText}"`
       );

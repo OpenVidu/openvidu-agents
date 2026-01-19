@@ -11,6 +11,41 @@ from livekit.agents.voice.agent_session import TurnDetectionMode
 from openviduagentutils.config_manager import ConfigManager
 from openviduagentutils.not_provided import NOT_PROVIDED
 
+# Import all available LiveKit plugins at module level (main thread) to ensure proper registration
+
+# Track which plugins are available in this container
+AVAILABLE_PLUGINS = {}
+
+# Try importing each plugin - if it fails, mark as unavailable
+def _try_import_plugin(plugin_name: str):
+    """Try to import a plugin module. Returns the module if successful, None otherwise."""
+    try:
+        module = __import__(f"livekit.plugins.{plugin_name}", fromlist=[plugin_name])
+        AVAILABLE_PLUGINS[plugin_name] = module
+        return module
+    except (ImportError, ModuleNotFoundError):
+        logging.debug(f"Plugin '{plugin_name}' not available in this container")
+        return None
+
+# Import all potentially available plugins
+aws = _try_import_plugin("aws")
+azure = _try_import_plugin("azure")
+openai = _try_import_plugin("openai")
+google = _try_import_plugin("google")
+groq = _try_import_plugin("groq")
+deepgram = _try_import_plugin("deepgram")
+assemblyai = _try_import_plugin("assemblyai")
+fal = _try_import_plugin("fal")
+clova = _try_import_plugin("clova")
+speechmatics = _try_import_plugin("speechmatics")
+gladia = _try_import_plugin("gladia")
+sarvam = _try_import_plugin("sarvam")
+spitch = _try_import_plugin("spitch")
+mistralai = _try_import_plugin("mistralai")
+cartesia = _try_import_plugin("cartesia")
+soniox = _try_import_plugin("soniox")
+vosk = _try_import_plugin("vosk")
+
 
 # STT Provider Registry
 class STTProviderConfig(NamedTuple):
@@ -135,8 +170,6 @@ SUPPORTED_LANGUAGES_IN_MULTILINGUAL_TURN_DETECTION = [
 
 
 def get_aws_stt_impl(agent_config) -> stt.STT:
-    from livekit.plugins import aws
-
     config_manager = ConfigManager(agent_config, "live_captions.aws")
     wrong_credentials = "Wrong AWS credentials. live_captions.aws.aws_access_key_id, live_captions.aws.aws_secret_access_key and live_captions.aws.aws_default_region must be set"
 
@@ -189,7 +222,6 @@ def get_aws_stt_impl(agent_config) -> stt.STT:
 
 
 def get_azure_stt_impl(agent_config) -> stt.STT:
-    from livekit.plugins import azure
     from azure.cognitiveservices.speech.enums import ProfanityOption
 
     config_manager = ConfigManager(agent_config, "live_captions.azure")
@@ -237,8 +269,6 @@ def get_azure_stt_impl(agent_config) -> stt.STT:
 
 
 def get_azure_openai_stt_impl(agent_config) -> stt.STT:
-    from livekit.plugins import openai
-
     config_manager = ConfigManager(agent_config, "live_captions.azure_openai")
 
     azure_api_key = config_manager.mandatory_value(
@@ -283,8 +313,6 @@ def get_azure_openai_stt_impl(agent_config) -> stt.STT:
 
 
 def get_google_stt_impl(agent_config) -> stt.STT:
-    from livekit.plugins import google
-
     config_manager = ConfigManager(agent_config, "live_captions.google")
     wrong_credentials = (
         "Wrong Google credentials. live_captions.google.credentials_info must be set"
@@ -334,8 +362,6 @@ def get_google_stt_impl(agent_config) -> stt.STT:
 
 
 def get_openai_stt_impl(agent_config) -> stt.STT:
-    from livekit.plugins import openai
-
     config_manager = ConfigManager(agent_config, "live_captions.openai")
     wrong_credentials = (
         "Wrong OpenAI credentials. live_captions.openai.api_key must be set"
@@ -362,8 +388,6 @@ def get_openai_stt_impl(agent_config) -> stt.STT:
 
 
 def get_groq_stt_impl(agent_config):
-    from livekit.plugins import groq
-
     config_manager = ConfigManager(agent_config, "live_captions.groq")
     wrong_credentials = "Wrong Groq credentials. live_captions.groq.api_key must be set"
 
@@ -390,8 +414,6 @@ def get_groq_stt_impl(agent_config):
 
 
 def get_deepgram_stt_impl(agent_config) -> stt.STT:
-    from livekit.plugins import deepgram
-
     config_manager = ConfigManager(agent_config, "live_captions.deepgram")
     wrong_credentials = (
         "Wrong Deepgram credentials. live_captions.deepgram.api_key must be set"
@@ -437,8 +459,6 @@ def get_deepgram_stt_impl(agent_config) -> stt.STT:
 
 
 def get_assemblyai_stt_impl(agent_config) -> stt.STT:
-    from livekit.plugins import assemblyai
-
     config_manager = ConfigManager(agent_config, "live_captions.assemblyai")
     wrong_credentials = (
         "Wrong AssemblyAI credentials. live_captions.assemblyai.api_key must be set"
@@ -471,8 +491,6 @@ def get_assemblyai_stt_impl(agent_config) -> stt.STT:
 
 
 def get_fal_stt_impl(agent_config) -> stt.STT:
-    from livekit.plugins import fal
-
     config_manager = ConfigManager(agent_config, "live_captions.fal")
     wrong_credentials = "Wrong FAL credentials. live_captions.fal.api_key must be set"
 
@@ -485,8 +503,6 @@ def get_fal_stt_impl(agent_config) -> stt.STT:
 
 
 def get_clova_stt_impl(agent_config) -> stt.STT:
-    from livekit.plugins import clova
-
     config_manager = ConfigManager(agent_config, "live_captions.clova")
     wrong_credentials = "Wrong Clova credentials. live_captions.clova.api_key and live_captions.clova.api_key must be set"
 
@@ -505,7 +521,6 @@ def get_clova_stt_impl(agent_config) -> stt.STT:
 
 
 def get_speechmatics_stt_impl(agent_config) -> stt.STT:
-    from livekit.plugins import speechmatics
     from livekit.plugins.speechmatics.types import TranscriptionConfig
 
     config_manager = ConfigManager(agent_config, "live_captions.speechmatics")
@@ -552,8 +567,6 @@ def get_speechmatics_stt_impl(agent_config) -> stt.STT:
 
 
 def get_gladia_stt_impl(agent_config) -> stt.STT:
-    from livekit.plugins import gladia
-
     config_manager = ConfigManager(agent_config, "live_captions.gladia")
     wrong_credentials = (
         "Wrong Gladia credentials. live_captions.gladia.api_key must be set"
@@ -586,8 +599,6 @@ def get_gladia_stt_impl(agent_config) -> stt.STT:
 
 
 def get_sarvam_stt_impl(agent_config) -> stt.STT:
-    from livekit.plugins import sarvam
-
     config_manager = ConfigManager(agent_config, "live_captions.sarvam")
     wrong_credentials = (
         "Wrong Sarvam credentials. live_captions.sarvam.api_key must be set"
@@ -607,8 +618,6 @@ def get_sarvam_stt_impl(agent_config) -> stt.STT:
 
 
 def get_spitch_stt_impl(agent_config) -> stt.STT:
-    from livekit.plugins import spitch
-
     config_manager = ConfigManager(agent_config, "live_captions.spitch")
     wrong_credentials = (
         "Wrong Spitch credentials. live_captions.spitch.api_key must be set"
@@ -626,8 +635,6 @@ def get_spitch_stt_impl(agent_config) -> stt.STT:
 
 
 def get_vosk_stt_impl(agent_config) -> stt.STT:
-    from livekit.plugins import vosk
-
     # Direct mapping from Vosk model names to language codes
     # Based on pre-installed models in the container
     VOSK_MODEL_TO_LANGUAGE = {
@@ -685,8 +692,6 @@ def get_vosk_stt_impl(agent_config) -> stt.STT:
 
 
 def get_mistralai_stt_impl(agent_config) -> stt.STT:
-    from livekit.plugins import mistralai
-
     config_manager = ConfigManager(agent_config, "live_captions.mistralai")
     wrong_credentials = (
         "Wrong MistralAI credentials. live_captions.mistralai.api_key must be set"
@@ -707,8 +712,6 @@ def get_mistralai_stt_impl(agent_config) -> stt.STT:
 
 
 def get_cartesia_stt_impl(agent_config) -> stt.STT:
-    from livekit.plugins import cartesia
-
     config_manager = ConfigManager(agent_config, "live_captions.cartesia")
     wrong_credentials = (
         "Wrong Cartesia credentials. live_captions.cartesia.api_key must be set"
@@ -729,8 +732,6 @@ def get_cartesia_stt_impl(agent_config) -> stt.STT:
 
 
 def get_soniox_stt_impl(agent_config) -> stt.STT:
-    from livekit.plugins import soniox
-
     config_manager = ConfigManager(agent_config, "live_captions.soniox")
     wrong_credentials = (
         "Wrong Soniox credentials. live_captions.soniox.api_key must be set"
@@ -846,9 +847,26 @@ def get_stt_impl(agent_config) -> stt.STT:
             f"Supported providers: {', '.join(sorted(STT_PROVIDERS.keys()))}"
         )
 
+    # Check if the plugin is available in this container
+    provider_config = STT_PROVIDERS[stt_provider]
+    plugin_name = provider_config.plugin_module.split(".")[-1]  # Extract plugin name from module path
+    
+    if plugin_name not in AVAILABLE_PLUGINS:
+        available_providers = [
+            name for name, config in STT_PROVIDERS.items()
+            if config.plugin_module.split(".")[-1] in AVAILABLE_PLUGINS
+        ]
+        raise ValueError(
+            f"STT provider '{stt_provider}' is not available in this container. "
+            f"The required plugin '{plugin_name}' is not installed. "
+            f"Available providers in this container: {', '.join(sorted(available_providers)) or 'none'}. "
+            f"Please use the correct Docker image for your desired provider "
+            f"(e.g., openvidu/agent-speech-processing-cloud:main for cloud providers, "
+            f"openvidu/agent-speech-processing-vosk:main for vosk)."
+        )
+
     logging.info(f"Using {stt_provider} as STT provider")
 
-    provider_config = STT_PROVIDERS[stt_provider]
     return provider_config.impl_function(agent_config)
 
 

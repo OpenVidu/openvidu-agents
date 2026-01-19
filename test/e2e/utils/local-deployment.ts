@@ -32,9 +32,9 @@ export class LocalDeployment {
       }
     }
     if (providerName === "vosk") {
-      doc.setIn("docker_image", "openvidu/agent-speech-processing-vosk:main");
+      doc.set("docker_image", "openvidu/agent-speech-processing-vosk:main");
     } else {
-      doc.setIn("docker_image", "openvidu/agent-speech-processing-cloud:main");
+      doc.set("docker_image", "openvidu/agent-speech-processing-cloud:main");
     }
 
     const output = doc.toString({

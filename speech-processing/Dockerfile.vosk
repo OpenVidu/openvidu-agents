@@ -61,18 +61,19 @@ ENV PATH="/opt/venv/bin:$PATH"
 # These models are immediately available when choosing "vosk" as STT provider
 COPY vosk-models ./vosk-models
 
-# Pre-download any ML models or files the agent needs (VAD, turn detector)
-# This ensures the container is ready to run immediately without downloading
-# dependencies at runtime, which improves startup time and reliability
-RUN python main.py download-files
-
-# Change ownership of all app files to the non-privileged user
-# This ensures the application can read/write files as needed
+# Change ownership of all app files to the non-privileged user BEFORE running commands
+# This ensures that any files created by download-files will have correct ownership
 RUN chown -R appuser:appuser /app /opt/venv
 
 # Switch to the non-privileged user for all subsequent operations
 # This improves security by not running as root
 USER appuser
+
+# Pre-download any ML models or files the agent needs (VAD, turn detector)
+# Running as appuser ensures files are created with correct ownership from the start
+# This ensures the container is ready to run immediately without downloading
+# dependencies at runtime, which improves startup time and reliability
+RUN python main.py download-files
 
 # After downloading, run in offline mode at runtime
 ENV HF_HUB_OFFLINE=1

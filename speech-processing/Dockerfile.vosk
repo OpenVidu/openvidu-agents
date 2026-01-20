@@ -36,13 +36,20 @@ COPY requirements-base.txt requirements-vosk.txt ./
 RUN --mount=type=secret,id=github_token \
     set -e; \
     if [ -f /run/secrets/github_token ]; then \
-    GITHUB_TOKEN="$(cat /run/secrets/github_token)"; \
-    git config --global url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/"; \
-    pip install --no-cache-dir -r requirements-vosk.txt; \
-    git config --global --unset url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf; \
+        # 1. Clean the token
+        GITHUB_TOKEN="$(cat /run/secrets/github_token | tr -d '\n' | tr -d ' ')"; \
+        # 2. Use a local config for this command only to keep the image clean
+        git config --global credential.helper store; \
+        # The 'x-access-token' username is specifically required for GitHub PATs
+        echo "https://x-access-token:${GITHUB_TOKEN}@github.com" > ~/.git-credentials; \
+        # 3. Perform the install
+        pip install --no-cache-dir -r requirements-vosk.txt; \
+        # 4. Cleanup configuration
+        rm ~/.git-credentials; \
+        git config --global --unset credential.helper; \
     else \
-    echo "WARNING: No github_token secret provided. Attempting install without authentication..."; \
-    pip install --no-cache-dir -r requirements-vosk.txt; \
+        echo "WARNING: No github_token secret provided. Attempting install without authentication..."; \
+        pip install --no-cache-dir -r requirements-vosk.txt; \
     fi
 
 # =============================================================================

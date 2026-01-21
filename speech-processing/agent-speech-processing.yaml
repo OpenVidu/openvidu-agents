@@ -16,7 +16,7 @@ live_captions:
   # - manual: the agent will connect to new Rooms only when your application dictates it by using the Agent Dispatch API.
   processing: automatic
 
-  # Which speech-to-text AI provider to use [aws, azure, google, openai, azure_openai, groq, deepgram, assemblyai, fal, clova, speechmatics, gladia, sarvam, mistralai, cartesia, soniox, spitch, nvidia, vosk]
+  # Which speech-to-text AI provider to use [aws, azure, google, openai, azure_openai, groq, deepgram, assemblyai, fal, clova, speechmatics, gladia, sarvam, mistralai, cartesia, soniox, nvidia, vosk]
   # The custom configuration for the selected provider must be set below
   provider:
 

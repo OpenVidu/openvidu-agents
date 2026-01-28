@@ -144,6 +144,19 @@ class MultiUserTranscriber:
             vad_model = self._get_vad_model()
 
         session = AgentSession()
+
+        # @session.on("user_input_transcribed")
+        # def on_transcript(event):
+        #     logging.info(f"[EVENT HANDLER CALLED] {participant.identity}")
+        #     if event.is_final:
+        #         logging.info(
+        #             f"[EVENT] {participant.identity} FINAL -> {event.transcript}"
+        #         )
+        #     else:
+        #         logging.info(
+        #             f"[EVENT] {participant.identity} PARTIAL -> {event.transcript}"
+        #         )
+
         room_io = RoomIO(
             agent_session=session,
             room=self.ctx.room,
@@ -302,7 +315,7 @@ def prewarm(proc: JobProcess):
 
 def _preload_vosk_model(agent_config) -> None:
     """Preload Vosk model into memory for sharing across threads.
-    
+
     When using JobExecutorType.THREAD, all agent threads share the same process memory.
     This function loads the Vosk model once at startup so all subsequent STT instances
     reuse the cached model via livekit-plugins-vosk's internal _ModelCache.
@@ -315,9 +328,40 @@ def _preload_vosk_model(agent_config) -> None:
             stt_impl = get_stt_impl(agent_config)
             # Force model loading by calling a method that requires the model
             # The model will be cached and shared across all thread-based jobs
-            logging.info("Vosk model preloaded successfully - will be shared across all agent threads")
+            logging.info(
+                "Vosk model preloaded successfully - will be shared across all agent threads"
+            )
     except Exception as e:
-        logging.warning(f"Failed to preload Vosk model: {e}. Model will be loaded on first use.")
+        logging.warning(
+            f"Failed to preload Vosk model: {e}. Model will be loaded on first use."
+        )
+
+
+def _preload_sherpa_model(agent_config) -> None:
+    """Preload sherpa model into memory for sharing across threads.
+
+    When using JobExecutorType.THREAD, all agent threads share the same process memory.
+    This function loads the sherpa model once at startup so all subsequent STT instances
+    reuse the cached recognizer via livekit-plugins-sherpa's internal _RecognizerCache.
+    """
+    try:
+        stt_provider = agent_config.get("live_captions", {}).get("provider")
+        if stt_provider == "sherpa":
+            logging.info(
+                "Preloading sherpa model for shared thread-based execution..."
+            )
+            # Creating an STT instance triggers recognizer loading into the cache
+            stt_impl = get_stt_impl(agent_config)
+            # Force model loading by ensuring the recognizer is created
+            # The _ensure_recognizer() method loads the model into _RecognizerCache
+            asyncio.run(stt_impl._ensure_recognizer())
+            logging.info(
+                "sherpa model preloaded successfully - will be shared across all agent threads"
+            )
+    except Exception as e:
+        logging.warning(
+            f"Failed to preload sherpa model: {e}. Model will be loaded on first use."
+        )
 
 
 if __name__ == "__main__":
@@ -328,11 +372,11 @@ if __name__ == "__main__":
         _preload_turn_detector_models()
         # Create a minimal server just for download-files
         server = AgentServer()
-        
+
         @server.rtc_session()
         async def download_entrypoint(ctx: JobContext):
             await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
-        
+
         cli.run_app(server)
         logging.info("Files downloaded for all plugins")
         sys.exit(0)
@@ -390,14 +434,17 @@ if __name__ == "__main__":
     # Set up prewarm function
     server.setup_fnc = prewarm
 
-    # Preload Vosk model into memory before starting the server
+    # Preload local STT models into memory before starting the server
     # This ensures all thread-based agents share the same model instance
     _preload_vosk_model(agent_config)
+    _preload_sherpa_model(agent_config)
 
     logging.info(
         f"Starting agent {agent_name} with processing configured to {agent_config['live_captions']['processing']}"
     )
-    logging.info("Using JobExecutorType.THREAD for shared Vosk model memory across all agents")
+    logging.info(
+        "Using JobExecutorType.THREAD for shared Vosk model memory across all agents"
+    )
 
     # Redirect signal SIGQUIT as SIGTERM to allow graceful shutdown using livekit/agents mechanism
     signal.signal(

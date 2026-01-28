@@ -1,0 +1,7 @@
+# Requirements for sherpa streaming STT
+# Dependencies for offline streaming speech recognition with sherpa
+
+-r requirements-base.txt
+
+# sherpa plugin for streaming offline speech recognition
+livekit-plugins-sherpa @ git+https://github.com/OpenVidu/agents.git#egg=livekit-plugins-sherpa&subdirectory=livekit-plugins/livekit-plugins-sherpa

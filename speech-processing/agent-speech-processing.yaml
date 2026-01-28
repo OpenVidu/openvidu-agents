@@ -16,7 +16,7 @@ live_captions:
   # - manual: the agent will connect to new Rooms only when your application dictates it by using the Agent Dispatch API.
   processing: automatic
 
-  # Which speech-to-text AI provider to use [aws, azure, google, openai, azure_openai, groq, deepgram, assemblyai, fal, clova, speechmatics, gladia, sarvam, mistralai, cartesia, soniox, nvidia, vosk]
+  # Which speech-to-text AI provider to use [aws, azure, google, openai, azure_openai, groq, deepgram, assemblyai, fal, clova, speechmatics, gladia, sarvam, mistralai, cartesia, soniox, nvidia, vosk, sherpa]
   # The custom configuration for the selected provider must be set below
   provider:
 
@@ -365,3 +365,25 @@ live_captions:
     sample_rate:
     # Whether to return interim/partial results during recognition. Default is true.
     partial_results:
+
+  sherpa:
+    # sherpa streaming model. This provider requires docker_image "docker.io/openvidu/agent-speech-processing-sherpa"
+    # Below is the list of pre-installed models in the container (available at https://github.com/k2-fsa/sherpa/releases/tag/asr-models):
+    # - sherpa-streaming-zipformer-en-kroko-2025-08-06 (English)
+    # - sherpa-streaming-zipformer-es-kroko-2025-08-06 (Spanish)
+    # - sherpa-streaming-zipformer-de-kroko-2025-08-06 (German)
+    # - sherpa-streaming-zipformer-fr-kroko-2025-08-06 (French)
+    # - sherpa-streaming-zipformer-ar_en_id_ja_ru_th_vi_zh-2025-02-10 (Multilingual: Arabic, English, Indonesian, Japanese, Russian, Thai, Vietnamese, Chinese)
+    model: sherpa-streaming-zipformer-en-kroko-2025-08-06
+    # Language code for reference. Auto-detected from model name if not set.
+    language:
+    # Audio sample rate in Hz. Default is 16000.
+    sample_rate:
+    # Whether to return interim/partial results during recognition. Default is true.
+    partial_results:
+    # Number of threads for ONNX Runtime. Default is 2.
+    num_threads:
+    # Recognizer type ("transducer", "paraformer", "zipformer_ctc", "nemo_ctc", "t_one_ctc"). Auto-detected from model name if not set.
+    recognizer_type:
+    # Decoding method ("greedy_search", "modified_beam_search"). Default is "greedy_search".
+    decoding_method:

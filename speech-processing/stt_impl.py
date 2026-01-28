@@ -16,6 +16,7 @@ from openviduagentutils.not_provided import NOT_PROVIDED
 # Track which plugins are available in this container
 AVAILABLE_PLUGINS = {}
 
+
 # Try importing each plugin - if it fails, mark as unavailable
 def _try_import_plugin(plugin_name: str):
     """Try to import a plugin module. Returns the module if successful, None otherwise."""
@@ -26,6 +27,7 @@ def _try_import_plugin(plugin_name: str):
     except (ImportError, ModuleNotFoundError) as e:
         logging.warning(f"Plugin '{plugin_name}' not available in this container: {e}")
         return None
+
 
 # Import all potentially available plugins
 aws = _try_import_plugin("aws")
@@ -46,6 +48,7 @@ cartesia = _try_import_plugin("cartesia")
 soniox = _try_import_plugin("soniox")
 nvidia = _try_import_plugin("nvidia")
 vosk = _try_import_plugin("vosk")
+sherpa = _try_import_plugin("sherpa")
 
 
 # STT Provider Registry
@@ -152,6 +155,11 @@ STT_PROVIDERS = {
     "vosk": STTProviderConfig(
         impl_function=None,
         plugin_module="livekit.plugins.vosk",
+        plugin_class="STT",
+    ),
+    "sherpa": STTProviderConfig(
+        impl_function=None,
+        plugin_module="livekit.plugins.sherpa",
         plugin_class="STT",
     ),
 }
@@ -697,6 +705,208 @@ def get_vosk_stt_impl(agent_config) -> stt.STT:
     return vosk.STT(**kwargs)
 
 
+def get_sherpa_stt_impl(agent_config) -> stt.STT:
+    """Get sherpa STT implementation for streaming offline speech recognition."""
+    # Direct mapping from sherpa streaming model names to language codes
+    # This is the complete list of all 81 official sherpa streaming models available
+    # here (as of Q1 2026): https://github.com/k2-fsa/sherpa/releases/tag/asr-models
+    SHERPA_MODEL_TO_LANGUAGE = {
+        # English models
+        "sherpa-streaming-zipformer-en-20M-2023-02-17": "en",
+        "sherpa-streaming-zipformer-en-2023-02-21": "en",
+        "sherpa-streaming-zipformer-en-2023-06-21": "en",
+        "sherpa-streaming-zipformer-en-2023-06-26": "en",
+        "sherpa-streaming-conformer-en-2023-05-09": "en",
+        "sherpa-streaming-zipformer-en-20M-2023-02-17-mobile": "en",
+        "sherpa-streaming-zipformer-en-2023-02-21-mobile": "en",
+        "sherpa-streaming-zipformer-en-2023-06-21-mobile": "en",
+        "sherpa-streaming-zipformer-en-2023-06-26-mobile": "en",
+        "sherpa-streaming-zipformer-en-kroko-2025-08-06": "en",
+        "sherpa-nemotron-speech-streaming-en-0.6b-int8-2026-01-14": "en",
+        # Chinese models
+        "sherpa-streaming-zipformer-zh-14M-2023-02-23": "zh",
+        "sherpa-streaming-zipformer-ctc-small-2024-03-18": "zh",
+        "sherpa-streaming-conformer-zh-2023-05-23": "zh",
+        "icefall-asr-zipformer-streaming-wenetspeech-20230615": "zh",
+        "sherpa-streaming-zipformer-zh-14M-2023-02-23-mobile": "zh",
+        "icefall-asr-zipformer-streaming-wenetspeech-20230615-mobile": "zh",
+        "sherpa-streaming-zipformer-small-ctc-zh-2025-04-01": "zh",
+        "sherpa-streaming-zipformer-small-ctc-zh-int8-2025-04-01": "zh",
+        "sherpa-streaming-zipformer-multi-zh-hans-2023-12-12": "zh",
+        "sherpa-streaming-zipformer-multi-zh-hans-2023-12-12-mobile": "zh",
+        "sherpa-streaming-zipformer-zh-int8-2025-06-30": "zh",
+        "sherpa-streaming-zipformer-zh-fp16-2025-06-30": "zh",
+        "sherpa-streaming-zipformer-zh-2025-06-30": "zh",
+        "sherpa-streaming-zipformer-ctc-zh-int8-2025-06-30": "zh",
+        "sherpa-streaming-zipformer-ctc-zh-fp16-2025-06-30": "zh",
+        "sherpa-streaming-zipformer-ctc-zh-2025-06-30": "zh",
+        "sherpa-streaming-zipformer-zh-xlarge-int8-2025-06-30": "zh",
+        "sherpa-streaming-zipformer-zh-xlarge-fp16-2025-06-30": "zh",
+        "sherpa-streaming-zipformer-ctc-zh-xlarge-int8-2025-06-30": "zh",
+        "sherpa-streaming-zipformer-ctc-zh-xlarge-fp16-2025-06-30": "zh",
+        "sherpa-streaming-zipformer-multi-zh-hans-int8-2023-12-13": "zh",
+        "sherpa-streaming-zipformer-multi-zh-hans-fp16-2023-12-13": "zh",
+        "sherpa-streaming-zipformer-multi-zh-hans-2023-12-13": "zh",
+        "sherpa-streaming-zipformer-ctc-multi-zh-hans-int8-2023-12-13": "zh",
+        "sherpa-streaming-zipformer-ctc-multi-zh-hans-fp16-2023-12-13": "zh",
+        "sherpa-streaming-zipformer-ctc-multi-zh-hans-2023-12-13": "zh",
+        # Bilingual/Trilingual models are excluded from auto-detection
+        # Users should manually specify language for these models:
+        # - sherpa-streaming-zipformer-bilingual-zh-en-2023-02-20 (zh/en)
+        # - sherpa-streaming-paraformer-bilingual-zh-en (zh/en)
+        # - sherpa-streaming-paraformer-trilingual-zh-cantonese-en (zh/yue/en)
+        # - sherpa-streaming-zipformer-small-bilingual-zh-en-2023-02-16 (zh/en)
+        # - sherpa-streaming-zipformer-bilingual-zh-en-2023-02-20-mobile (zh/en)
+        # - sherpa-streaming-zipformer-small-bilingual-zh-en-2023-02-16-mobile (zh/en)
+        # French models
+        "sherpa-streaming-zipformer-fr-2023-04-14": "fr",
+        "sherpa-streaming-zipformer-fr-2023-04-14-mobile": "fr",
+        "sherpa-streaming-zipformer-fr-kroko-2025-08-06": "fr",
+        # German models
+        "sherpa-streaming-zipformer-de-kroko-2025-08-06": "de",
+        # Spanish models
+        "sherpa-streaming-zipformer-es-kroko-2025-08-06": "es",
+        # Korean models
+        "sherpa-streaming-zipformer-korean-2024-06-16": "ko",
+        "sherpa-streaming-zipformer-korean-2024-06-16-mobile": "ko",
+        # Russian models
+        "sherpa-streaming-zipformer-small-ru-vosk-int8-2025-08-16": "ru",
+        "sherpa-streaming-zipformer-small-ru-vosk-2025-08-16": "ru",
+        "sherpa-streaming-t-one-russian-2025-09-08": "ru",
+        # Multilingual model is excluded from auto-detection
+        # Users should manually specify language for this multilingual model:
+        # - sherpa-streaming-zipformer-ar_en_id_ja_ru_th_vi_zh-2025-02-10 (ar/en/id/ja/ru/th/vi/zh)
+        # NeMo Fast Conformer CTC models
+        "sherpa-nemo-streaming-fast-conformer-ctc-en-80ms": "en",
+        "sherpa-nemo-streaming-fast-conformer-ctc-en-80ms-int8": "en",
+        "sherpa-nemo-streaming-fast-conformer-ctc-en-480ms": "en",
+        "sherpa-nemo-streaming-fast-conformer-ctc-en-480ms-int8": "en",
+        "sherpa-nemo-streaming-fast-conformer-ctc-en-1040ms": "en",
+        "sherpa-nemo-streaming-fast-conformer-ctc-en-1040ms-int8": "en",
+        # NeMo Fast Conformer Transducer models
+        "sherpa-nemo-streaming-fast-conformer-transducer-en-80ms": "en",
+        "sherpa-nemo-streaming-fast-conformer-transducer-en-80ms-int8": "en",
+        "sherpa-nemo-streaming-fast-conformer-transducer-en-480ms": "en",
+        "sherpa-nemo-streaming-fast-conformer-transducer-en-480ms-int8": "en",
+        "sherpa-nemo-streaming-fast-conformer-transducer-en-1040ms": "en",
+        "sherpa-nemo-streaming-fast-conformer-transducer-en-1040ms-int8": "en",
+        # Rockchip platform-optimized models (RK3588, RK3576, RK3568, RK3566, RK3562)
+        "sherpa-rk3588-streaming-zipformer-en-2023-06-26": "en",
+        "sherpa-rk3576-streaming-zipformer-en-2023-06-26": "en",
+        "sherpa-rk3568-streaming-zipformer-en-2023-06-26": "en",
+        "sherpa-rk3566-streaming-zipformer-en-2023-06-26": "en",
+        "sherpa-rk3562-streaming-zipformer-en-2023-06-26": "en",
+        # Rockchip bilingual models are excluded from auto-detection
+        # Users should manually specify language for these models:
+        # - sherpa-rk3588-streaming-zipformer-small-bilingual-zh-en-2023-02-16 (zh/en)
+        # - sherpa-rk3588-streaming-zipformer-bilingual-zh-en-2023-02-20 (zh/en)
+        # - sherpa-rk3576-streaming-zipformer-small-bilingual-zh-en-2023-02-16 (zh/en)
+        # - sherpa-rk3576-streaming-zipformer-bilingual-zh-en-2023-02-20 (zh/en)
+        # - sherpa-rk3568-streaming-zipformer-small-bilingual-zh-en-2023-02-16 (zh/en)
+        # - sherpa-rk3568-streaming-zipformer-bilingual-zh-en-2023-02-20 (zh/en)
+        # - sherpa-rk3566-streaming-zipformer-small-bilingual-zh-en-2023-02-16 (zh/en)
+        # - sherpa-rk3566-streaming-zipformer-bilingual-zh-en-2023-02-20 (zh/en)
+        # - sherpa-rk3562-streaming-zipformer-small-bilingual-zh-en-2023-02-16 (zh/en)
+        # - sherpa-rk3562-streaming-zipformer-bilingual-zh-en-2023-02-20 (zh/en)
+    }
+
+    # Mapping from model name patterns to recognizer types
+    # Pattern matching order matters - more specific patterns first
+    SHERPA_MODEL_TO_RECOGNIZER_TYPE = {
+        "nemo-streaming-fast-conformer-ctc": "nemo_ctc",
+        "nemo-streaming-fast-conformer-transducer": "transducer",
+        "nemotron-speech-streaming": "transducer",  # Nemotron uses transducer architecture
+        "streaming-paraformer": "paraformer",
+        "streaming-zipformer-small-ctc": "zipformer_ctc",
+        "streaming-zipformer-ctc": "zipformer_ctc",  # Must check -ctc variants BEFORE plain zipformer
+        "streaming-zipformer": "transducer",  # Zipformer without "-ctc" uses transducer
+        "zipformer-streaming": "transducer",
+        "streaming-conformer": "transducer",  # Conformer uses transducer architecture
+        "streaming-t-one": "t_one_ctc",
+    }
+
+    config_manager = ConfigManager(agent_config, "live_captions.sherpa")
+
+    model = config_manager.mandatory_value(
+        "model",
+        "Wrong sherpa configuration. live_captions.sherpa.model must be set",
+    )
+    language = config_manager.configured_string_value("language")
+    sample_rate = config_manager.configured_numeric_value("sample_rate")
+    partial_results = config_manager.configured_boolean_value("partial_results")
+    num_threads = config_manager.configured_numeric_value("num_threads")
+    recognizer_type_str = config_manager.configured_string_value("recognizer_type")
+    decoding_method = config_manager.configured_string_value("decoding_method")
+
+    # Auto-detect language from model name if not provided
+    if language is NOT_PROVIDED:
+        detected_language = SHERPA_MODEL_TO_LANGUAGE.get(model)
+        if detected_language:
+            logging.info(
+                f"Auto-detected language '{detected_language}' from sherpa model '{model}'"
+            )
+            language = detected_language
+        else:
+            logging.warning(
+                f"Could not auto-detect language from sherpa model '{model}'. Should be manually specified."
+            )
+
+    # Auto-detect recognizer_type from model name if not provided
+    if recognizer_type_str is NOT_PROVIDED:
+        for pattern, rtype in SHERPA_MODEL_TO_RECOGNIZER_TYPE.items():
+            if pattern in model:
+                recognizer_type_str = rtype
+                logging.info(
+                    f"Auto-detected recognizer_type '{rtype}' from sherpa model '{model}'"
+                )
+                break
+        if recognizer_type_str is NOT_PROVIDED:
+            logging.warning(
+                f"Could not auto-detect recognizer_type from sherpa model '{model}'. "
+                f"STT plugin will use default recognizer_type (TRANSDUCER). "
+                f"Consider specifying recognizer_type explicitly in YAML if this model requires a different type."
+            )
+
+    kwargs = {
+        k: v
+        for k, v in {
+            "model_path": "sherpa-onnx-streaming-models/" + model,
+            "language": language,
+            "sample_rate": sample_rate,
+            "partial_results": partial_results,
+            "num_threads": num_threads,
+        }.items()
+        if v is not NOT_PROVIDED
+    }
+
+    # Handle decoding_method enum conversion
+    if decoding_method is not NOT_PROVIDED:
+        from livekit.plugins.sherpa import DecodingMethod
+
+        if decoding_method == "greedy_search":
+            kwargs["decoding_method"] = DecodingMethod.GREEDY_SEARCH
+        elif decoding_method == "modified_beam_search":
+            kwargs["decoding_method"] = DecodingMethod.MODIFIED_BEAM_SEARCH
+
+    # Handle recognizer_type enum conversion
+    if recognizer_type_str is not NOT_PROVIDED:
+        from livekit.plugins.sherpa import RecognizerType
+
+        recognizer_type_map = {
+            "transducer": RecognizerType.TRANSDUCER,
+            "paraformer": RecognizerType.PARAFORMER,
+            "zipformer_ctc": RecognizerType.ZIPFORMER_CTC,
+            "nemo_ctc": RecognizerType.NEMO_CTC,
+            "t_one_ctc": RecognizerType.T_ONE_CTC,
+        }
+        if recognizer_type_str in recognizer_type_map:
+            kwargs["recognizer_type"] = recognizer_type_map[recognizer_type_str]
+        else:
+            logging.warning(f"Unknown recognizer_type '{recognizer_type_str}'.")
+
+    return sherpa.STT(**kwargs)
+
+
 def get_mistralai_stt_impl(agent_config) -> stt.STT:
     config_manager = ConfigManager(agent_config, "live_captions.mistralai")
     wrong_credentials = (
@@ -830,6 +1040,7 @@ def _initialize_stt_registry():
         "nvidia": get_nvidia_stt_impl,
         "spitch": get_spitch_stt_impl,
         "vosk": get_vosk_stt_impl,
+        "sherpa": get_sherpa_stt_impl,
     }
 
     # Validate that all registered providers have implementation functions
@@ -895,11 +1106,14 @@ def get_stt_impl(agent_config) -> stt.STT:
 
     # Check if the plugin is available in this container
     provider_config = STT_PROVIDERS[stt_provider]
-    plugin_name = provider_config.plugin_module.split(".")[-1]  # Extract plugin name from module path
-    
+    plugin_name = provider_config.plugin_module.split(".")[
+        -1
+    ]  # Extract plugin name from module path
+
     if plugin_name not in AVAILABLE_PLUGINS:
         available_providers = [
-            name for name, config in STT_PROVIDERS.items()
+            name
+            for name, config in STT_PROVIDERS.items()
             if config.plugin_module.split(".")[-1] in AVAILABLE_PLUGINS
         ]
         raise ValueError(

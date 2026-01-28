@@ -8,5 +8,3 @@ speech-processing/vosk-models/**/*.fst filter=lfs diff=lfs merge=lfs -text
 speech-processing/vosk-models/**/*.dubm filter=lfs diff=lfs merge=lfs -text
 speech-processing/vosk-models/**/*.ie filter=lfs diff=lfs merge=lfs -text
 speech-processing/vosk-models/**/*.mat filter=lfs diff=lfs merge=lfs -text
-# Vosk model archives (if you add zipped models later)
-speech-processing/vosk-models/**/*.zip filter=lfs diff=lfs merge=lfs -text

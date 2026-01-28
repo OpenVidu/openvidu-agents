@@ -178,9 +178,3 @@ node_modules/
 /playwright-report/
 /blob-report/
 /playwright/.cache/
-
-# Large model files (downloaded separately)
-speech-processing/sherpa-onnx-streaming-models/*
-!speech-processing/sherpa-onnx-streaming-models/README.md
-speech-processing/vosk-models/*
-!speech-processing/vosk-models/README.md

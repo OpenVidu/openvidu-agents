@@ -1,5 +1,4 @@
 # Requirements for Vosk offline STT
-# Minimal dependencies for offline speech recognition
 
 -r requirements-base.txt
 

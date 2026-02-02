@@ -7,7 +7,7 @@ enabled: true
 # Maximum CPU load threshold for the agent to accept new jobs. Value between 0 and 1.
 load_threshold: 0.7
 
-# Log level for the agent [DEBUG, INFO, WARNING, ERROR, CRITICAL]
+# Log level for the agent [DEBUG, INFO, WARN, ERROR, CRITICAL]
 log_level: INFO
 
 live_captions:
@@ -365,6 +365,8 @@ live_captions:
     sample_rate:
     # Whether to return interim/partial results during recognition. Default is true.
     partial_results:
+    # Whether to override Vosk's built-in Voice Activity Detection (VAD) with Silero's VAD. Default is false.
+    use_silero_vad: false
 
   sherpa:
     # sherpa streaming model. This provider requires docker_image "docker.io/openvidu/agent-speech-processing-sherpa"

@@ -10,6 +10,7 @@ from livekit.agents.voice.agent_session import TurnDetectionMode
 
 from openviduagentutils.config_manager import ConfigManager
 from openviduagentutils.not_provided import NOT_PROVIDED
+from vad_stt_wrapper import VADTriggeredSTT
 
 # Import all available LiveKit plugins at module level (main thread) to ensure proper registration
 
@@ -25,7 +26,7 @@ def _try_import_plugin(plugin_name: str):
         AVAILABLE_PLUGINS[plugin_name] = module
         return module
     except (ImportError, ModuleNotFoundError) as e:
-        logging.warning(f"Plugin '{plugin_name}' not available in this container: {e}")
+        logging.info(f"Plugin '{plugin_name}' not available in this container: {e}")
         return None
 
 
@@ -49,6 +50,129 @@ soniox = _try_import_plugin("soniox")
 nvidia = _try_import_plugin("nvidia")
 vosk = _try_import_plugin("vosk")
 sherpa = _try_import_plugin("sherpa")
+silero = _try_import_plugin("silero")
+turn_detector = _try_import_plugin("turn_detector")
+
+
+# Direct mapping from Vosk model names to language codes
+# Based on pre-installed models in the container
+VOSK_MODEL_TO_LANGUAGE = {
+    "vosk-model-en-us-0.22-lgraph": "en-US",
+    "vosk-model-small-cn-0.22": "zh-CN",
+    "vosk-model-small-de-0.15": "de",
+    "vosk-model-small-en-in-0.4": "en-IN",
+    "vosk-model-small-es-0.42": "es",
+    "vosk-model-small-fr-0.22": "fr",
+    "vosk-model-small-hi-0.22": "hi",
+    "vosk-model-small-it-0.22": "it",
+    "vosk-model-small-ja-0.22": "ja",
+    "vosk-model-small-nl-0.22": "nl",
+    "vosk-model-small-pt-0.3": "pt",
+    "vosk-model-small-ru-0.22": "ru",
+}
+
+# Direct mapping from sherpa streaming model names to language codes
+# This is the complete list of all 81 official sherpa streaming models available
+# here (as of Q1 2026): https://github.com/k2-fsa/sherpa/releases/tag/asr-models
+SHERPA_MODEL_TO_LANGUAGE = {
+    # English models
+    "sherpa-streaming-zipformer-en-20M-2023-02-17": "en",
+    "sherpa-streaming-zipformer-en-2023-02-21": "en",
+    "sherpa-streaming-zipformer-en-2023-06-21": "en",
+    "sherpa-streaming-zipformer-en-2023-06-26": "en",
+    "sherpa-streaming-conformer-en-2023-05-09": "en",
+    "sherpa-streaming-zipformer-en-20M-2023-02-17-mobile": "en",
+    "sherpa-streaming-zipformer-en-2023-02-21-mobile": "en",
+    "sherpa-streaming-zipformer-en-2023-06-21-mobile": "en",
+    "sherpa-streaming-zipformer-en-2023-06-26-mobile": "en",
+    "sherpa-streaming-zipformer-en-kroko-2025-08-06": "en",
+    "sherpa-nemotron-speech-streaming-en-0.6b-int8-2026-01-14": "en",
+    # Chinese models
+    "sherpa-streaming-zipformer-zh-14M-2023-02-23": "zh",
+    "sherpa-streaming-zipformer-ctc-small-2024-03-18": "zh",
+    "sherpa-streaming-conformer-zh-2023-05-23": "zh",
+    "icefall-asr-zipformer-streaming-wenetspeech-20230615": "zh",
+    "sherpa-streaming-zipformer-zh-14M-2023-02-23-mobile": "zh",
+    "icefall-asr-zipformer-streaming-wenetspeech-20230615-mobile": "zh",
+    "sherpa-streaming-zipformer-small-ctc-zh-2025-04-01": "zh",
+    "sherpa-streaming-zipformer-small-ctc-zh-int8-2025-04-01": "zh",
+    "sherpa-streaming-zipformer-multi-zh-hans-2023-12-12": "zh",
+    "sherpa-streaming-zipformer-multi-zh-hans-2023-12-12-mobile": "zh",
+    "sherpa-streaming-zipformer-zh-int8-2025-06-30": "zh",
+    "sherpa-streaming-zipformer-zh-fp16-2025-06-30": "zh",
+    "sherpa-streaming-zipformer-zh-2025-06-30": "zh",
+    "sherpa-streaming-zipformer-ctc-zh-int8-2025-06-30": "zh",
+    "sherpa-streaming-zipformer-ctc-zh-fp16-2025-06-30": "zh",
+    "sherpa-streaming-zipformer-ctc-zh-2025-06-30": "zh",
+    "sherpa-streaming-zipformer-zh-xlarge-int8-2025-06-30": "zh",
+    "sherpa-streaming-zipformer-zh-xlarge-fp16-2025-06-30": "zh",
+    "sherpa-streaming-zipformer-ctc-zh-xlarge-int8-2025-06-30": "zh",
+    "sherpa-streaming-zipformer-ctc-zh-xlarge-fp16-2025-06-30": "zh",
+    "sherpa-streaming-zipformer-multi-zh-hans-int8-2023-12-13": "zh",
+    "sherpa-streaming-zipformer-multi-zh-hans-fp16-2023-12-13": "zh",
+    "sherpa-streaming-zipformer-multi-zh-hans-2023-12-13": "zh",
+    "sherpa-streaming-zipformer-ctc-multi-zh-hans-int8-2023-12-13": "zh",
+    "sherpa-streaming-zipformer-ctc-multi-zh-hans-fp16-2023-12-13": "zh",
+    "sherpa-streaming-zipformer-ctc-multi-zh-hans-2023-12-13": "zh",
+    # Bilingual/Trilingual models are excluded from auto-detection
+    # Users should manually specify language for these models:
+    # - sherpa-streaming-zipformer-bilingual-zh-en-2023-02-20 (zh/en)
+    # - sherpa-streaming-paraformer-bilingual-zh-en (zh/en)
+    # - sherpa-streaming-paraformer-trilingual-zh-cantonese-en (zh/yue/en)
+    # - sherpa-streaming-zipformer-small-bilingual-zh-en-2023-02-16 (zh/en)
+    # - sherpa-streaming-zipformer-bilingual-zh-en-2023-02-20-mobile (zh/en)
+    # - sherpa-streaming-zipformer-small-bilingual-zh-en-2023-02-16-mobile (zh/en)
+    # French models
+    "sherpa-streaming-zipformer-fr-2023-04-14": "fr",
+    "sherpa-streaming-zipformer-fr-2023-04-14-mobile": "fr",
+    "sherpa-streaming-zipformer-fr-kroko-2025-08-06": "fr",
+    # German models
+    "sherpa-streaming-zipformer-de-kroko-2025-08-06": "de",
+    # Spanish models
+    "sherpa-streaming-zipformer-es-kroko-2025-08-06": "es",
+    # Korean models
+    "sherpa-streaming-zipformer-korean-2024-06-16": "ko",
+    "sherpa-streaming-zipformer-korean-2024-06-16-mobile": "ko",
+    # Russian models
+    "sherpa-streaming-zipformer-small-ru-vosk-int8-2025-08-16": "ru",
+    "sherpa-streaming-zipformer-small-ru-vosk-2025-08-16": "ru",
+    "sherpa-streaming-t-one-russian-2025-09-08": "ru",
+    # Multilingual model is excluded from auto-detection
+    # Users should manually specify language for this multilingual model:
+    # - sherpa-streaming-zipformer-ar_en_id_ja_ru_th_vi_zh-2025-02-10 (ar/en/id/ja/ru/th/vi/zh)
+    # NeMo Fast Conformer CTC models
+    "sherpa-nemo-streaming-fast-conformer-ctc-en-80ms": "en",
+    "sherpa-nemo-streaming-fast-conformer-ctc-en-80ms-int8": "en",
+    "sherpa-nemo-streaming-fast-conformer-ctc-en-480ms": "en",
+    "sherpa-nemo-streaming-fast-conformer-ctc-en-480ms-int8": "en",
+    "sherpa-nemo-streaming-fast-conformer-ctc-en-1040ms": "en",
+    "sherpa-nemo-streaming-fast-conformer-ctc-en-1040ms-int8": "en",
+    # NeMo Fast Conformer Transducer models
+    "sherpa-nemo-streaming-fast-conformer-transducer-en-80ms": "en",
+    "sherpa-nemo-streaming-fast-conformer-transducer-en-80ms-int8": "en",
+    "sherpa-nemo-streaming-fast-conformer-transducer-en-480ms": "en",
+    "sherpa-nemo-streaming-fast-conformer-transducer-en-480ms-int8": "en",
+    "sherpa-nemo-streaming-fast-conformer-transducer-en-1040ms": "en",
+    "sherpa-nemo-streaming-fast-conformer-transducer-en-1040ms-int8": "en",
+    # Rockchip platform-optimized models (RK3588, RK3576, RK3568, RK3566, RK3562)
+    "sherpa-rk3588-streaming-zipformer-en-2023-06-26": "en",
+    "sherpa-rk3576-streaming-zipformer-en-2023-06-26": "en",
+    "sherpa-rk3568-streaming-zipformer-en-2023-06-26": "en",
+    "sherpa-rk3566-streaming-zipformer-en-2023-06-26": "en",
+    "sherpa-rk3562-streaming-zipformer-en-2023-06-26": "en",
+    # Rockchip bilingual models are excluded from auto-detection
+    # Users should manually specify language for these models:
+    # - sherpa-rk3588-streaming-zipformer-small-bilingual-zh-en-2023-02-16 (zh/en)
+    # - sherpa-rk3588-streaming-zipformer-bilingual-zh-en-2023-02-20 (zh/en)
+    # - sherpa-rk3576-streaming-zipformer-small-bilingual-zh-en-2023-02-16 (zh/en)
+    # - sherpa-rk3576-streaming-zipformer-bilingual-zh-en-2023-02-20 (zh/en)
+    # - sherpa-rk3568-streaming-zipformer-small-bilingual-zh-en-2023-02-16 (zh/en)
+    # - sherpa-rk3568-streaming-zipformer-bilingual-zh-en-2023-02-20 (zh/en)
+    # - sherpa-rk3566-streaming-zipformer-small-bilingual-zh-en-2023-02-16 (zh/en)
+    # - sherpa-rk3566-streaming-zipformer-bilingual-zh-en-2023-02-20 (zh/en)
+    # - sherpa-rk3562-streaming-zipformer-small-bilingual-zh-en-2023-02-16 (zh/en)
+    # - sherpa-rk3562-streaming-zipformer-bilingual-zh-en-2023-02-20 (zh/en)
+}
 
 
 # STT Provider Registry
@@ -649,23 +773,6 @@ def get_spitch_stt_impl(agent_config) -> stt.STT:
 
 
 def get_vosk_stt_impl(agent_config) -> stt.STT:
-    # Direct mapping from Vosk model names to language codes
-    # Based on pre-installed models in the container
-    VOSK_MODEL_TO_LANGUAGE = {
-        "vosk-model-en-us-0.22-lgraph": "en-US",
-        "vosk-model-small-cn-0.22": "zh-CN",
-        "vosk-model-small-de-0.15": "de",
-        "vosk-model-small-en-in-0.4": "en-IN",
-        "vosk-model-small-es-0.42": "es",
-        "vosk-model-small-fr-0.22": "fr",
-        "vosk-model-small-hi-0.22": "hi",
-        "vosk-model-small-it-0.22": "it",
-        "vosk-model-small-ja-0.22": "ja",
-        "vosk-model-small-nl-0.22": "nl",
-        "vosk-model-small-pt-0.3": "pt",
-        "vosk-model-small-ru-0.22": "ru",
-    }
-
     config_manager = ConfigManager(agent_config, "live_captions.vosk")
 
     model = config_manager.configured_string_value("model")
@@ -689,6 +796,8 @@ def get_vosk_stt_impl(agent_config) -> stt.STT:
     elif language is NOT_PROVIDED:
         language = "en-US"
 
+    use_silero_vad = config_manager.configured_boolean_value("use_silero_vad")
+
     kwargs = {
         k: v
         for k, v in {
@@ -702,114 +811,22 @@ def get_vosk_stt_impl(agent_config) -> stt.STT:
         if v is not NOT_PROVIDED
     }
 
-    return vosk.STT(**kwargs)
+    base_stt = vosk.STT(**kwargs)
+
+    # Optionally wrap with VADTriggeredSTT to flush final transcripts based on VAD
+    if use_silero_vad is True and silero is not None:
+        logging.info("vosk.use_silero_vad=true - Using VAD wrapper around Vosk STT. Final transcripts will be forced by Silero VAD detection")
+        vad_model = silero.VAD.load(min_silence_duration=0.2)
+        return VADTriggeredSTT(stt_impl=base_stt, vad_impl=vad_model)
+    elif use_silero_vad is True and silero is None:
+        logging.warning("use_silero_vad=true but silero plugin not available, using Vosk without VAD wrapper")
+    elif use_silero_vad is False:
+        logging.info("vosk.use_silero_vad=false - Not using VAD wrapper for Vosk STT. Final transcripts will be triggered by Vosk EOU detection")
+
+    return base_stt
 
 
 def get_sherpa_stt_impl(agent_config) -> stt.STT:
-    """Get sherpa STT implementation for streaming offline speech recognition."""
-    # Direct mapping from sherpa streaming model names to language codes
-    # This is the complete list of all 81 official sherpa streaming models available
-    # here (as of Q1 2026): https://github.com/k2-fsa/sherpa/releases/tag/asr-models
-    SHERPA_MODEL_TO_LANGUAGE = {
-        # English models
-        "sherpa-streaming-zipformer-en-20M-2023-02-17": "en",
-        "sherpa-streaming-zipformer-en-2023-02-21": "en",
-        "sherpa-streaming-zipformer-en-2023-06-21": "en",
-        "sherpa-streaming-zipformer-en-2023-06-26": "en",
-        "sherpa-streaming-conformer-en-2023-05-09": "en",
-        "sherpa-streaming-zipformer-en-20M-2023-02-17-mobile": "en",
-        "sherpa-streaming-zipformer-en-2023-02-21-mobile": "en",
-        "sherpa-streaming-zipformer-en-2023-06-21-mobile": "en",
-        "sherpa-streaming-zipformer-en-2023-06-26-mobile": "en",
-        "sherpa-streaming-zipformer-en-kroko-2025-08-06": "en",
-        "sherpa-nemotron-speech-streaming-en-0.6b-int8-2026-01-14": "en",
-        # Chinese models
-        "sherpa-streaming-zipformer-zh-14M-2023-02-23": "zh",
-        "sherpa-streaming-zipformer-ctc-small-2024-03-18": "zh",
-        "sherpa-streaming-conformer-zh-2023-05-23": "zh",
-        "icefall-asr-zipformer-streaming-wenetspeech-20230615": "zh",
-        "sherpa-streaming-zipformer-zh-14M-2023-02-23-mobile": "zh",
-        "icefall-asr-zipformer-streaming-wenetspeech-20230615-mobile": "zh",
-        "sherpa-streaming-zipformer-small-ctc-zh-2025-04-01": "zh",
-        "sherpa-streaming-zipformer-small-ctc-zh-int8-2025-04-01": "zh",
-        "sherpa-streaming-zipformer-multi-zh-hans-2023-12-12": "zh",
-        "sherpa-streaming-zipformer-multi-zh-hans-2023-12-12-mobile": "zh",
-        "sherpa-streaming-zipformer-zh-int8-2025-06-30": "zh",
-        "sherpa-streaming-zipformer-zh-fp16-2025-06-30": "zh",
-        "sherpa-streaming-zipformer-zh-2025-06-30": "zh",
-        "sherpa-streaming-zipformer-ctc-zh-int8-2025-06-30": "zh",
-        "sherpa-streaming-zipformer-ctc-zh-fp16-2025-06-30": "zh",
-        "sherpa-streaming-zipformer-ctc-zh-2025-06-30": "zh",
-        "sherpa-streaming-zipformer-zh-xlarge-int8-2025-06-30": "zh",
-        "sherpa-streaming-zipformer-zh-xlarge-fp16-2025-06-30": "zh",
-        "sherpa-streaming-zipformer-ctc-zh-xlarge-int8-2025-06-30": "zh",
-        "sherpa-streaming-zipformer-ctc-zh-xlarge-fp16-2025-06-30": "zh",
-        "sherpa-streaming-zipformer-multi-zh-hans-int8-2023-12-13": "zh",
-        "sherpa-streaming-zipformer-multi-zh-hans-fp16-2023-12-13": "zh",
-        "sherpa-streaming-zipformer-multi-zh-hans-2023-12-13": "zh",
-        "sherpa-streaming-zipformer-ctc-multi-zh-hans-int8-2023-12-13": "zh",
-        "sherpa-streaming-zipformer-ctc-multi-zh-hans-fp16-2023-12-13": "zh",
-        "sherpa-streaming-zipformer-ctc-multi-zh-hans-2023-12-13": "zh",
-        # Bilingual/Trilingual models are excluded from auto-detection
-        # Users should manually specify language for these models:
-        # - sherpa-streaming-zipformer-bilingual-zh-en-2023-02-20 (zh/en)
-        # - sherpa-streaming-paraformer-bilingual-zh-en (zh/en)
-        # - sherpa-streaming-paraformer-trilingual-zh-cantonese-en (zh/yue/en)
-        # - sherpa-streaming-zipformer-small-bilingual-zh-en-2023-02-16 (zh/en)
-        # - sherpa-streaming-zipformer-bilingual-zh-en-2023-02-20-mobile (zh/en)
-        # - sherpa-streaming-zipformer-small-bilingual-zh-en-2023-02-16-mobile (zh/en)
-        # French models
-        "sherpa-streaming-zipformer-fr-2023-04-14": "fr",
-        "sherpa-streaming-zipformer-fr-2023-04-14-mobile": "fr",
-        "sherpa-streaming-zipformer-fr-kroko-2025-08-06": "fr",
-        # German models
-        "sherpa-streaming-zipformer-de-kroko-2025-08-06": "de",
-        # Spanish models
-        "sherpa-streaming-zipformer-es-kroko-2025-08-06": "es",
-        # Korean models
-        "sherpa-streaming-zipformer-korean-2024-06-16": "ko",
-        "sherpa-streaming-zipformer-korean-2024-06-16-mobile": "ko",
-        # Russian models
-        "sherpa-streaming-zipformer-small-ru-vosk-int8-2025-08-16": "ru",
-        "sherpa-streaming-zipformer-small-ru-vosk-2025-08-16": "ru",
-        "sherpa-streaming-t-one-russian-2025-09-08": "ru",
-        # Multilingual model is excluded from auto-detection
-        # Users should manually specify language for this multilingual model:
-        # - sherpa-streaming-zipformer-ar_en_id_ja_ru_th_vi_zh-2025-02-10 (ar/en/id/ja/ru/th/vi/zh)
-        # NeMo Fast Conformer CTC models
-        "sherpa-nemo-streaming-fast-conformer-ctc-en-80ms": "en",
-        "sherpa-nemo-streaming-fast-conformer-ctc-en-80ms-int8": "en",
-        "sherpa-nemo-streaming-fast-conformer-ctc-en-480ms": "en",
-        "sherpa-nemo-streaming-fast-conformer-ctc-en-480ms-int8": "en",
-        "sherpa-nemo-streaming-fast-conformer-ctc-en-1040ms": "en",
-        "sherpa-nemo-streaming-fast-conformer-ctc-en-1040ms-int8": "en",
-        # NeMo Fast Conformer Transducer models
-        "sherpa-nemo-streaming-fast-conformer-transducer-en-80ms": "en",
-        "sherpa-nemo-streaming-fast-conformer-transducer-en-80ms-int8": "en",
-        "sherpa-nemo-streaming-fast-conformer-transducer-en-480ms": "en",
-        "sherpa-nemo-streaming-fast-conformer-transducer-en-480ms-int8": "en",
-        "sherpa-nemo-streaming-fast-conformer-transducer-en-1040ms": "en",
-        "sherpa-nemo-streaming-fast-conformer-transducer-en-1040ms-int8": "en",
-        # Rockchip platform-optimized models (RK3588, RK3576, RK3568, RK3566, RK3562)
-        "sherpa-rk3588-streaming-zipformer-en-2023-06-26": "en",
-        "sherpa-rk3576-streaming-zipformer-en-2023-06-26": "en",
-        "sherpa-rk3568-streaming-zipformer-en-2023-06-26": "en",
-        "sherpa-rk3566-streaming-zipformer-en-2023-06-26": "en",
-        "sherpa-rk3562-streaming-zipformer-en-2023-06-26": "en",
-        # Rockchip bilingual models are excluded from auto-detection
-        # Users should manually specify language for these models:
-        # - sherpa-rk3588-streaming-zipformer-small-bilingual-zh-en-2023-02-16 (zh/en)
-        # - sherpa-rk3588-streaming-zipformer-bilingual-zh-en-2023-02-20 (zh/en)
-        # - sherpa-rk3576-streaming-zipformer-small-bilingual-zh-en-2023-02-16 (zh/en)
-        # - sherpa-rk3576-streaming-zipformer-bilingual-zh-en-2023-02-20 (zh/en)
-        # - sherpa-rk3568-streaming-zipformer-small-bilingual-zh-en-2023-02-16 (zh/en)
-        # - sherpa-rk3568-streaming-zipformer-bilingual-zh-en-2023-02-20 (zh/en)
-        # - sherpa-rk3566-streaming-zipformer-small-bilingual-zh-en-2023-02-16 (zh/en)
-        # - sherpa-rk3566-streaming-zipformer-bilingual-zh-en-2023-02-20 (zh/en)
-        # - sherpa-rk3562-streaming-zipformer-small-bilingual-zh-en-2023-02-16 (zh/en)
-        # - sherpa-rk3562-streaming-zipformer-bilingual-zh-en-2023-02-20 (zh/en)
-    }
-
     # Mapping from model name patterns to recognizer types
     # Pattern matching order matters - more specific patterns first
     SHERPA_MODEL_TO_RECOGNIZER_TYPE = {
@@ -1130,7 +1147,7 @@ def get_stt_impl(agent_config) -> stt.STT:
     return provider_config.impl_function(agent_config)
 
 
-def get_best_turn_detector(agent_config) -> NotGivenOr[TurnDetectionMode]:
+def get_best_turn_detector(agent_config, preloaded_models: dict | None = None) -> NotGivenOr[TurnDetectionMode]:
     """Get the best turn detection mode for the given agent configuration.
 
     The best turn detection mode is determined by the following rules:
@@ -1142,10 +1159,12 @@ def get_best_turn_detector(agent_config) -> NotGivenOr[TurnDetectionMode]:
             3. If the language is defined but not in the above list, return "vad"
         3. If no language can be determined, return NotGiven (let the AgentSession decide the best turn detection mode)
     Args:
-        agent_config (_type_): _description_
+        agent_config: The agent configuration dictionary.
+        preloaded_models: Optional dict of preloaded turn detector models with keys "english" and "multilingual".
+                         If provided, these cached instances will be returned instead of creating new ones.
 
     Returns:
-        NotGivenOr[TurnDetectionMode]: _description_
+        NotGivenOr[TurnDetectionMode]: The turn detection mode or model instance.
     """
     try:
         stt_provider = agent_config["live_captions"]["provider"]
@@ -1160,9 +1179,35 @@ def get_best_turn_detector(agent_config) -> NotGivenOr[TurnDetectionMode]:
     config_manager = ConfigManager(agent_config, f"live_captions.{stt_provider}")
     language = config_manager.configured_string_value("language")
 
-    # If no language is configured, try to get the default from the STT plugin constructor
+    logging.info(f"Configured language for STT provider '{stt_provider}': {language}")
+
+    # If no language is configured, try provider-specific detection first
     if language is NOT_PROVIDED:
-        language = _get_stt_language_default(stt_provider)
+        # For Vosk and Sherpa, try to auto-detect language from model name
+        try:
+            if stt_provider == "vosk":
+                model = config_manager.configured_string_value("model")
+                if model is not NOT_PROVIDED:
+                    language = VOSK_MODEL_TO_LANGUAGE.get(model)
+                    if language:
+                        logging.info(f"Auto-detected language '{language}' from Vosk model '{model}' for turn detection")
+            elif stt_provider == "sherpa":
+                model = config_manager.configured_string_value("model")
+                if model is not NOT_PROVIDED:
+                    language = SHERPA_MODEL_TO_LANGUAGE.get(model)
+                    if language:
+                        logging.info(f"Auto-detected language '{language}' from Sherpa model '{model}' for turn detection")
+        except Exception as e:
+            logging.error(f"Error during model-to-language detection for provider '{stt_provider}': {e}")
+        
+        # Fall back to getting the default from the STT plugin constructor
+        if language is NOT_PROVIDED or language is None:
+            try:
+                language = _get_stt_language_default(stt_provider)
+            except Exception as e:
+                logging.error(f"Error getting default language for provider '{stt_provider}': {e}")
+        
+    logging.info(f"Determined language for STT provider '{stt_provider}': {language}")
 
     # If still no language, return NotGiven
     if language is None:
@@ -1170,8 +1215,13 @@ def get_best_turn_detector(agent_config) -> NotGivenOr[TurnDetectionMode]:
 
     # Rule 2.1: If language starts with "en", use English model
     if isinstance(language, str) and language.lower().startswith("en"):
+        # Use preloaded model if available, otherwise create new instance
+        if preloaded_models and "english" in preloaded_models:
+            logging.info("Using preloaded English turn detector model")
+            return preloaded_models["english"]
+        
         from livekit.plugins.turn_detector.english import EnglishModel
-
+        logging.info("Creating new English turn detector model instance")
         return EnglishModel()
 
     # Rule 2.2: For other supported languages, use Multilingual model
@@ -1179,8 +1229,13 @@ def get_best_turn_detector(agent_config) -> NotGivenOr[TurnDetectionMode]:
         language.lower().startswith(prefix)
         for prefix in SUPPORTED_LANGUAGES_IN_MULTILINGUAL_TURN_DETECTION
     ):
+        # Use preloaded model if available, otherwise create new instance
+        if preloaded_models and "multilingual" in preloaded_models:
+            logging.info("Using preloaded Multilingual turn detector model")
+            return preloaded_models["multilingual"]
+        
         from livekit.plugins.turn_detector.multilingual import MultilingualModel
-
+        logging.info("Creating new Multilingual turn detector model instance")
         return MultilingualModel()
 
     # Rule 2.3: If language is defined but not supported by the multilingual model, use "vad"

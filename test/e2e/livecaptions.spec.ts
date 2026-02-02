@@ -128,13 +128,13 @@ test.beforeAll(async () => {
   const audioFilePath = path.join(
     __dirname,
     "resources",
-    "stt-test-with-silence.wav"
+    "stt-test-with-silence.wav",
   );
   // If file does not exist or is empty, download it
   if (!fs.existsSync(audioFilePath) || fs.statSync(audioFilePath).size === 0) {
     await downloadFile(
       "https://s3.eu-west-1.amazonaws.com/public.openvidu.io/stt-test-with-silence.wav",
-      audioFilePath
+      audioFilePath,
     );
   }
   LocalDeployment.stop();
@@ -148,7 +148,7 @@ function describeProviderTests(
   }: {
     provider: (typeof STT_AI_PROVIDERS)[number];
     providerName: string;
-  }) => void
+  }) => void,
 ) {
   // Reuse provider-level setup/teardown across different test groups.
   test.describe(groupTitle, () => {
@@ -192,7 +192,7 @@ describeProviderTests("Single user STT tests", ({ providerName }) => {
       "interimTranscription",
       1,
       0,
-      20000
+      20000,
     );
     console.log(`Interim transcription received from provider ${providerName}`);
     const TIMEOUT_FINAL = providerName === "vosk" ? 50000 : 20000;
@@ -201,39 +201,39 @@ describeProviderTests("Single user STT tests", ({ providerName }) => {
       "finalTranscription",
       1,
       0,
-      TIMEOUT_FINAL
+      TIMEOUT_FINAL,
     );
     console.log(`Final transcription received from provider ${providerName}`);
     const totalInterimEvents = await countTotalEvents(
       page,
       "interimTranscription",
-      0
+      0,
     );
     const totalFinalEvents = await countTotalEvents(
       page,
       "finalTranscription",
-      0
+      0,
     );
     if (totalInterimEvents === totalFinalEvents) {
       console.warn(
-        `ATTENTION! Same number of interim and final events (${totalFinalEvents}) for provider ${providerName}.`
+        `ATTENTION! Same number of interim and final events (${totalFinalEvents}) for provider ${providerName}.`,
       );
     }
     let firstInterimEventText = await getEventText(interimEvents[0]);
     firstInterimEventText = firstInterimEventText.replace(
       /^TestParticipant0 is saying: /i,
-      ""
+      "",
     );
     let lastFinalEventText = await getEventText(
-      finalEvents[finalEvents.length - 1]
+      finalEvents[finalEvents.length - 1],
     );
     lastFinalEventText = lastFinalEventText.replace(
       /^TestParticipant0 said: /i,
-      ""
+      "",
     );
     if (firstInterimEventText === lastFinalEventText) {
       console.warn(
-        `ATTENTION! First interim and last final transcription are identical ("${lastFinalEventText}") for provider ${providerName}.\nNo real interim transcriptions supported by provider ${providerName}`
+        `ATTENTION! First interim and last final transcription are identical ("${lastFinalEventText}") for provider ${providerName}.\nNo real interim transcriptions supported by provider ${providerName}`,
       );
     } else {
       console.log(`Final transcription: "${lastFinalEventText}"`);
@@ -247,7 +247,7 @@ describeProviderTests("Multi-user STT tests", ({ providerName }) => {
     console.log(`Running multi-user test with provider: ${providerName}`);
 
     const providerConfig = STT_AI_PROVIDERS.find(
-      (p) => Object.keys(p)[0] === providerName
+      (p) => Object.keys(p)[0] === providerName,
     ) as any;
     const maxConcurrentTranscriptions =
       providerConfig[providerName].max_concurrent_transcriptions;
@@ -279,15 +279,15 @@ describeProviderTests("Multi-user STT tests", ({ providerName }) => {
             `TestParticipant${otherUser} said: `,
             1,
             user,
-            TIMEOUT
-          )
+            TIMEOUT,
+          ),
         );
       }
     }
     console.log(`Waiting for ${promises.length} final transcription events`);
     const elements = await Promise.all(promises);
     console.log(
-      `All final transcription events received for provider ${providerName}`
+      `All final transcription events received for provider ${providerName}`,
     );
     for (const el of elements) {
       const firstEl = el[0];
@@ -317,7 +317,7 @@ async function waitForEvent(
   eventName: string,
   numEvents: number,
   user: number,
-  timeout = 5000
+  timeout = 5000,
 ): Promise<ElementHandle[]> {
   const selector = `#openvidu-instance-${user} mat-accordion mat-expansion-panel mat-expansion-panel-header span.mat-content:has-text("${eventName}")`;
   const locator = page.locator(selector);
@@ -326,14 +326,14 @@ async function waitForEvent(
   } catch (error: any) {
     console.error(
       `Timeout waiting for ${eventName} events (${numEvents}) in user ${user}:`,
-      error.message
+      error.message,
     );
     if (!page.isClosed()) {
       try {
         const screenshot = await page.screenshot();
         const base64Image = screenshot.toString("base64");
         console.log(
-          `Screenshot at timeout:\ndata:image/png;base64,${base64Image}\n`
+          `Screenshot at timeout:\ndata:image/png;base64,${base64Image}\n`,
         );
       } catch (screenshotError: any) {
         console.error(`Failed to capture screenshot:`, screenshotError.message);
@@ -349,7 +349,7 @@ async function waitForEvent(
 
   for (let i = 0; i < Math.min(numEvents, headerHandles.length); i++) {
     const panelHandle = await headerHandles[i].evaluateHandle((header) =>
-      (header as Element).closest("mat-expansion-panel")
+      (header as Element).closest("mat-expansion-panel"),
     );
     const elementHandle = panelHandle.asElement();
     if (elementHandle) {
@@ -369,7 +369,7 @@ async function waitForEventContentToStartWith(
   eventContent: string,
   numEvents: number,
   user: number,
-  timeout = 5000
+  timeout = 5000,
 ): Promise<ElementHandle[]> {
   const selector = `#openvidu-instance-${user} mat-accordion mat-expansion-panel mat-expansion-panel-header span.mat-content:has-text("${eventName}")`;
   const locator = page.locator(selector);
@@ -396,7 +396,7 @@ async function waitForEventContentToStartWith(
 
     for (const headerHandle of headerHandles) {
       const panelHandle = await headerHandle.evaluateHandle((header) =>
-        (header as Element).closest("mat-expansion-panel")
+        (header as Element).closest("mat-expansion-panel"),
       );
       await headerHandle.dispose();
       const elementHandle = panelHandle.asElement();
@@ -409,7 +409,7 @@ async function waitForEventContentToStartWith(
 
       if (text.startsWith(eventContent)) {
         console.log(
-          `Found ${eventName} event for user ${user} starting with "${eventContent}": ${text}`
+          `Found ${eventName} event for user ${user} starting with "${eventContent}": ${text}`,
         );
         matchingPanels.push(elementHandle);
         if (matchingPanels.length === numEvents) {
@@ -425,7 +425,7 @@ async function waitForEventContentToStartWith(
     }
 
     await page.waitForTimeout(
-      Math.min(Math.max(deadline - Date.now(), 0), 200)
+      Math.min(Math.max(deadline - Date.now(), 0), 200),
     );
   }
 
@@ -434,12 +434,12 @@ async function waitForEventContentToStartWith(
       const screenshot = await page.screenshot();
       const base64Image = screenshot.toString("base64");
       console.log(
-        `Screenshot at timeout for ${eventName} starting with "${eventContent}":\ndata:image/png;base64,${base64Image}\n`
+        `Screenshot at timeout for ${eventName} starting with "${eventContent}":\ndata:image/png;base64,${base64Image}\n`,
       );
     } catch (screenshotError: any) {
       console.error(
         `Failed to capture screenshot for ${eventName}:`,
-        screenshotError.message
+        screenshotError.message,
       );
     }
   } else {
@@ -447,7 +447,7 @@ async function waitForEventContentToStartWith(
   }
 
   throw new Error(
-    `Timeout waiting for ${eventName} event contents (${numEvents}) for user ${user} starting with "${eventContent}"`
+    `Timeout waiting for ${eventName} event contents (${numEvents}) for user ${user} starting with "${eventContent}"`,
   );
 }
 
@@ -455,7 +455,7 @@ async function getEventText(elementHandle: ElementHandle): Promise<string> {
   try {
     const text = await elementHandle.evaluate((el) => {
       const contentElement = (el as Element).querySelector(
-        ".mat-expansion-panel-body .event-content"
+        ".mat-expansion-panel-body .event-content",
       );
       return contentElement ? contentElement.textContent : null;
     });
@@ -468,38 +468,23 @@ async function getEventText(elementHandle: ElementHandle): Promise<string> {
 
 function checkLevenshteinDistance(
   providerName: string,
-  transcribedText: string
+  transcribedText: string,
 ) {
-  if (providerName !== "vosk") {
-    // Compare only first sentence of the transcription.
-    transcribedText = transcribedText.split(".")[0];
-    let expectedText = AUDIO_TRANSCRIPTIONS[0];
-    let LD = getLevenshteinDistance(expectedText, transcribedText);
-    if (LD > 5) {
-      throw new Error(
-        `Levenshtein distance (${LD}) exceeds maximum allowed between expected and transcribed text.\nExpected: "${expectedText}"\nTranscribed: "${transcribedText}"`
-      );
-    }
-    console.log(`Levenshtein distance is ${LD}`);
-  } else {
-    // Vosk: compare full transcription with all sentences
-    let expectedText = AUDIO_TRANSCRIPTIONS.join(" ");
-    expectedText = expectedText.replace(/\. ([A-Z])/g, (match, p1) =>
-      " " + p1.toLowerCase()
+  // Compare only first sentence of the transcription.
+  transcribedText = transcribedText.split(".")[0];
+  let expectedText = AUDIO_TRANSCRIPTIONS[0];
+  let LD = getLevenshteinDistance(expectedText, transcribedText);
+  if (LD > 5) {
+    throw new Error(
+      `Levenshtein distance (${LD}) exceeds maximum allowed between expected and transcribed text.\nExpected: "${expectedText}"\nTranscribed: "${transcribedText}"`,
     );
-    let LD = getLevenshteinDistance(expectedText, transcribedText);
-    if (LD > 20) {
-      throw new Error(
-        `Levenshtein distance (${LD}) exceeds maximum allowed between expected and transcribed text.\nExpected: "${expectedText}"\nTranscribed: "${transcribedText}"`
-      );
-    }
-    console.log(`Levenshtein distance is ${LD}`);
   }
+  console.log(`Levenshtein distance is ${LD}`);
 }
 
 function getLevenshteinDistance(
   expectedText: string,
-  transcribedText: string
+  transcribedText: string,
 ): number {
   // Use fast-levenshtein NPM library
   const levenshtein = require("fast-levenshtein");
@@ -520,7 +505,7 @@ function getLevenshteinDistance(
 async function countTotalEvents(
   page: Page,
   eventName: string,
-  user: number
+  user: number,
 ): Promise<number> {
   const selector = `#openvidu-instance-${user} mat-accordion mat-expansion-panel mat-expansion-panel-header span.mat-content:has-text("${eventName}")`;
   try {

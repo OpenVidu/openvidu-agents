@@ -50,12 +50,22 @@ class Transcriber(Agent):
             vad=vad_model,
         )
         self.participant_identity = participant_identity
+        logging.info(f"[Transcriber] Transcriber initialized for {participant_identity} (stt_provider={stt_impl.provider}, "
+                     f"turn_detection={turn_detection}, vad_model={'None' if vad_model is None else type(vad_model).__name__})")
 
     async def on_user_turn_completed(
         self, chat_ctx: llm.ChatContext, new_message: llm.ChatMessage
     ):
+        import time
         user_transcript = new_message.text_content
-        logging.info(f"{self.participant_identity} -> {user_transcript}")
+        logging.info(
+            f"[Transcriber] Turn completed for {self.participant_identity}: '{user_transcript}' "
+            f"(timestamp={time.time():.3f})"
+        )
+        logging.debug(
+            f"[Transcriber] Full message details: text_content='{new_message.text_content}', "
+            f"role={new_message.role}"
+        )
 
         raise StopResponse()
 
@@ -121,9 +131,14 @@ class MultiUserTranscriber:
             return self._sessions[participant.identity]
 
         stt_impl = get_stt_impl(self.agent_config)
+        
         vad_model = None
         try:
-            turn_detection = get_best_turn_detector(self.agent_config)
+            # Get cached turn detector from proc.userdata to avoid loading per participant
+            turn_detection = self._get_turn_detector()
+            logging.info(
+                f"Determined optimal turn detector for participant {participant.identity}: {turn_detection}"
+            )
         except Exception as exc:
             logging.warning(
                 "Failed to determine optimal turn detector, defaulting to 'vad': %s",
@@ -135,10 +150,17 @@ class MultiUserTranscriber:
             turn_detection = "stt"
 
         if not stt_impl.capabilities.streaming:
+            logging.info(
+                f"Provider {stt_impl.provider} does not support streaming. Wrapping with StreamAdapter"
+            )
             vad_model = self._get_vad_model()
             stt_impl = stt.StreamAdapter(stt=stt_impl, vad=vad_model)
             if turn_detection == "stt":
                 turn_detection = "vad"
+
+        # If STT is VAD-wrapped (use_silero_vad=true), VAD is already integrated
+        if stt_impl.provider.lower().startswith("vad-triggered/"):
+            vad_model = None
 
         if turn_detection == "vad" and vad_model is None:
             vad_model = self._get_vad_model()
@@ -175,6 +197,11 @@ class MultiUserTranscriber:
             ),
         )
         await room_io.start()
+        logging.info(
+            f"[MultiUserTranscriber] Starting Transcriber agent for {participant.identity} - "
+            f"stt_provider={stt_impl.provider}, turn_detection={turn_detection}, "
+            f"vad_model={'None' if vad_model is None else type(vad_model).__name__}"
+        )
         await session.start(
             agent=Transcriber(
                 participant_identity=participant.identity,
@@ -200,25 +227,71 @@ class MultiUserTranscriber:
             self._vad_model = silero.VAD.load(min_silence_duration=0.2)
 
         return self._vad_model
+    
+    def _get_turn_detector(self):
+        """Get cached turn detector from proc.userdata to share across participants."""
+        proc = getattr(self.ctx, "proc", None)
+        userdata = getattr(proc, "userdata", None)
+        if isinstance(userdata, dict):
+            turn_detectors = userdata.get("turn_detectors", {})
+            if turn_detectors:
+                # Return cached turn detector based on config
+                try:
+                    return get_best_turn_detector(self.agent_config, preloaded_models=turn_detectors)
+                except Exception:
+                    pass
+        
+        # Fallback: create new instance if cache unavailable
+        return get_best_turn_detector(self.agent_config)
 
 
 def _preload_turn_detector_models() -> dict[str, object]:
+    """Preload turn detector models. Must be called within a job context."""
     loaded_models: dict[str, object] = {}
 
     try:
         loaded_models["english"] = EnglishModel()
+        logging.info("Preloaded English turn detector model")
     except Exception as exc:
         logging.warning("Failed to preload English turn detector: %s", exc)
 
     try:
         loaded_models["multilingual"] = MultilingualModel()
+        logging.info("Preloaded Multilingual turn detector model")
     except Exception as exc:
         logging.warning("Failed to preload multilingual turn detector: %s", exc)
 
     return loaded_models
 
 
+def _ensure_turn_detectors_loaded(ctx: JobContext) -> None:
+    """Ensure turn detector models are loaded (called once from first entrypoint).
+    
+    Turn detector models require job context to initialize, so they cannot be
+    preloaded in prewarm(). This function loads them on the first job and caches
+    them in proc.userdata for all subsequent participants to share.
+    """
+    proc = getattr(ctx, "proc", None)
+    userdata = getattr(proc, "userdata", None)
+    
+    if not isinstance(userdata, dict):
+        return
+    
+    # Check if already loaded
+    turn_detectors = userdata.get("turn_detectors", {})
+    if turn_detectors:
+        logging.debug("Turn detector models already loaded, skipping")
+        return
+    
+    logging.info("Preloading turn detector models (first job, requires job context)...")
+    userdata["turn_detectors"] = _preload_turn_detector_models()
+
+
 async def entrypoint(ctx: JobContext):
+    # Preload turn detector models on first job (they require job context)
+    # These will be cached in proc.userdata for all subsequent participants
+    _ensure_turn_detectors_loaded(ctx)
+    
     openvidu_agent = OpenViduAgent.get_instance()
 
     agent_config = openvidu_agent.get_agent_config()
@@ -309,8 +382,11 @@ async def entrypoint(ctx: JobContext):
 #     await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
 
 
-def prewarm(proc: JobProcess):
-    proc.userdata["vad"] = silero.VAD.load()
+def prewarm(proc: JobProcess):    
+    proc.userdata["vad"] = silero.VAD.load(min_silence_duration=0.2)
+    # Turn detector models will be preloaded in the first entrypoint call
+    # because they require job context to initialize
+    proc.userdata["turn_detectors"] = {}
 
 
 def _preload_vosk_model(agent_config) -> None:
@@ -329,7 +405,7 @@ def _preload_vosk_model(agent_config) -> None:
             # Force model loading by calling a method that requires the model
             # The model will be cached and shared across all thread-based jobs
             logging.info(
-                "Vosk model preloaded successfully - will be shared across all agent threads"
+                "Vosk model preloaded successfully. Will be shared across all agent threads"
             )
     except Exception as e:
         logging.warning(
@@ -356,7 +432,7 @@ def _preload_sherpa_model(agent_config) -> None:
             # The _ensure_recognizer() method loads the model into _RecognizerCache
             asyncio.run(stt_impl._ensure_recognizer())
             logging.info(
-                "sherpa model preloaded successfully - will be shared across all agent threads"
+                "sherpa model preloaded successfully. Will be shared across all agent threads"
             )
     except Exception as e:
         logging.warning(
@@ -391,12 +467,9 @@ if __name__ == "__main__":
         logging.error("load_threshold must be a number between 0 and 1")
         sys.exit(1)
 
-    # Create AgentServer with THREAD executor to share Vosk model across all agents
-    # This allows all agent threads to share a single Vosk model loaded in memory,
-    # significantly reducing memory usage when running multiple concurrent transcriptions
     server = AgentServer(
-        # Use THREAD executor so all jobs run in threads within the same process
-        # This enables sharing the Vosk model (loaded once) across all agent threads
+        # Create AgentServer with THREAD executor to share local models across all agents
+        # Significantly reduces memory usage when running multiple concurrent transcriptions
         job_executor_type=JobExecutorType.THREAD,
         ws_url=agent_config["ws_url"],
         api_key=agent_config["api_key"],

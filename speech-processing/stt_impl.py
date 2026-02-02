@@ -51,7 +51,10 @@ nvidia = _try_import_plugin("nvidia")
 vosk = _try_import_plugin("vosk")
 sherpa = _try_import_plugin("sherpa")
 silero = _try_import_plugin("silero")
-turn_detector = _try_import_plugin("turn_detector")
+# ######################################
+# TODO: use turn detection when required
+# ######################################
+# turn_detector = _try_import_plugin("turn_detector")
 
 
 # Direct mapping from Vosk model names to language codes
@@ -1146,104 +1149,106 @@ def get_stt_impl(agent_config) -> stt.STT:
 
     return provider_config.impl_function(agent_config)
 
+# ######################################
+# TODO: use turn detection when required
+# ######################################
+# def get_best_turn_detector(agent_config, preloaded_models: dict | None = None) -> NotGivenOr[TurnDetectionMode]:
+#     """Get the best turn detection mode for the given agent configuration.
 
-def get_best_turn_detector(agent_config, preloaded_models: dict | None = None) -> NotGivenOr[TurnDetectionMode]:
-    """Get the best turn detection mode for the given agent configuration.
+#     The best turn detection mode is determined by the following rules:
+#         1. For STT providers that support native turn detection, use "stt" (for now only "assemblyai") (https://docs.livekit.io/agents/build/turns/#stt-endpointing)
+#         2. Determine the language in use by the model, if defined. Try to get the "language" from the agent config, or determine it from the default language configuration of each stt plugin.
+#             1. If the language is any variant of English (en, en-US, en-GB, etc), use livekit.plugins.turn_detector.english.EnglishModel
+#             2. If the language is any variant of any of these languages [Spanish, French, German, Italian, Portuguese, Dutch, Chinese, Japanese, Korean, Indonesian, Turkish, Russian, and Hindi],
+#                use livekit.plugins.turn_detector.multilingual.MultilingualModel
+#             3. If the language is defined but not in the above list, return "vad"
+#         3. If no language can be determined, return NotGiven (let the AgentSession decide the best turn detection mode)
+#     Args:
+#         agent_config: The agent configuration dictionary.
+#         preloaded_models: Optional dict of preloaded turn detector models with keys "english" and "multilingual".
+#                          If provided, these cached instances will be returned instead of creating new ones.
 
-    The best turn detection mode is determined by the following rules:
-        1. For STT providers that support native turn detection, use "stt" (for now only "assemblyai") (https://docs.livekit.io/agents/build/turns/#stt-endpointing)
-        2. Determine the language in use by the model, if defined. Try to get the "language" from the agent config, or determine it from the default language configuration of each stt plugin.
-            1. If the language is any variant of English (en, en-US, en-GB, etc), use livekit.plugins.turn_detector.english.EnglishModel
-            2. If the language is any variant of any of these languages [Spanish, French, German, Italian, Portuguese, Dutch, Chinese, Japanese, Korean, Indonesian, Turkish, Russian, and Hindi],
-               use livekit.plugins.turn_detector.multilingual.MultilingualModel
-            3. If the language is defined but not in the above list, return "vad"
-        3. If no language can be determined, return NotGiven (let the AgentSession decide the best turn detection mode)
-    Args:
-        agent_config: The agent configuration dictionary.
-        preloaded_models: Optional dict of preloaded turn detector models with keys "english" and "multilingual".
-                         If provided, these cached instances will be returned instead of creating new ones.
+#     Returns:
+#         NotGivenOr[TurnDetectionMode]: The turn detection mode or model instance.
+#     """
+#     try:
+#         stt_provider = agent_config["live_captions"]["provider"]
+#     except Exception:
+#         return NotGiven
 
-    Returns:
-        NotGivenOr[TurnDetectionMode]: The turn detection mode or model instance.
-    """
-    try:
-        stt_provider = agent_config["live_captions"]["provider"]
-    except Exception:
-        return NotGiven
+#     # Rule 1: AssemblyAI uses STT endpointing
+#     if stt_provider == "assemblyai":
+#         return "stt"
 
-    # Rule 1: AssemblyAI uses STT endpointing
-    if stt_provider == "assemblyai":
-        return "stt"
+#     # Rule 2: Determine language and select appropriate turn detector
+#     config_manager = ConfigManager(agent_config, f"live_captions.{stt_provider}")
+#     language = config_manager.configured_string_value("language")
 
-    # Rule 2: Determine language and select appropriate turn detector
-    config_manager = ConfigManager(agent_config, f"live_captions.{stt_provider}")
-    language = config_manager.configured_string_value("language")
+#     logging.info(f"Configured language for STT provider '{stt_provider}': {language}")
 
-    logging.info(f"Configured language for STT provider '{stt_provider}': {language}")
-
-    # If no language is configured, try provider-specific detection first
-    if language is NOT_PROVIDED:
-        # For Vosk and Sherpa, try to auto-detect language from model name
-        try:
-            if stt_provider == "vosk":
-                model = config_manager.configured_string_value("model")
-                if model is not NOT_PROVIDED:
-                    language = VOSK_MODEL_TO_LANGUAGE.get(model)
-                    if language:
-                        logging.info(f"Auto-detected language '{language}' from Vosk model '{model}' for turn detection")
-            elif stt_provider == "sherpa":
-                model = config_manager.configured_string_value("model")
-                if model is not NOT_PROVIDED:
-                    language = SHERPA_MODEL_TO_LANGUAGE.get(model)
-                    if language:
-                        logging.info(f"Auto-detected language '{language}' from Sherpa model '{model}' for turn detection")
-        except Exception as e:
-            logging.error(f"Error during model-to-language detection for provider '{stt_provider}': {e}")
+#     # If no language is configured, try provider-specific detection first
+#     if language is NOT_PROVIDED:
+#         # For Vosk and Sherpa, try to auto-detect language from model name
+#         try:
+#             if stt_provider == "vosk":
+#                 model = config_manager.configured_string_value("model")
+#                 if model is not NOT_PROVIDED:
+#                     language = VOSK_MODEL_TO_LANGUAGE.get(model)
+#                     if language:
+#                         logging.info(f"Auto-detected language '{language}' from Vosk model '{model}' for turn detection")
+#             elif stt_provider == "sherpa":
+#                 model = config_manager.configured_string_value("model")
+#                 if model is not NOT_PROVIDED:
+#                     language = SHERPA_MODEL_TO_LANGUAGE.get(model)
+#                     if language:
+#                         logging.info(f"Auto-detected language '{language}' from Sherpa model '{model}' for turn detection")
+#         except Exception as e:
+#             logging.error(f"Error during model-to-language detection for provider '{stt_provider}': {e}")
         
-        # Fall back to getting the default from the STT plugin constructor
-        if language is NOT_PROVIDED or language is None:
-            try:
-                language = _get_stt_language_default(stt_provider)
-            except Exception as e:
-                logging.error(f"Error getting default language for provider '{stt_provider}': {e}")
+#         # Fall back to getting the default from the STT plugin constructor
+#         if language is NOT_PROVIDED or language is None:
+#             try:
+#                 language = _get_stt_language_default(stt_provider)
+#             except Exception as e:
+#                 logging.error(f"Error getting default language for provider '{stt_provider}': {e}")
         
-    logging.info(f"Determined language for STT provider '{stt_provider}': {language}")
+#     logging.info(f"Determined language for STT provider '{stt_provider}': {language}")
 
-    # If still no language, return NotGiven
-    if language is None:
-        return NotGiven
+#     # If still no language, return NotGiven
+#     if language is None:
+#         return NotGiven
 
-    # Rule 2.1: If language starts with "en", use English model
-    if isinstance(language, str) and language.lower().startswith("en"):
-        # Use preloaded model if available, otherwise create new instance
-        if preloaded_models and "english" in preloaded_models:
-            logging.info("Using preloaded English turn detector model")
-            return preloaded_models["english"]
+#     # Rule 2.1: If language starts with "en", use English model
+#     if isinstance(language, str) and language.lower().startswith("en"):
+#         # Use preloaded model if available, otherwise create new instance
+#         if preloaded_models and "english" in preloaded_models:
+#             logging.info("Using preloaded English turn detector model")
+#             return preloaded_models["english"]
         
-        from livekit.plugins.turn_detector.english import EnglishModel
-        logging.info("Creating new English turn detector model instance")
-        return EnglishModel()
+#         from livekit.plugins.turn_detector.english import EnglishModel
+#         logging.info("Creating new English turn detector model instance")
+#         return EnglishModel()
 
-    # Rule 2.2: For other supported languages, use Multilingual model
-    if isinstance(language, str) and any(
-        language.lower().startswith(prefix)
-        for prefix in SUPPORTED_LANGUAGES_IN_MULTILINGUAL_TURN_DETECTION
-    ):
-        # Use preloaded model if available, otherwise create new instance
-        if preloaded_models and "multilingual" in preloaded_models:
-            logging.info("Using preloaded Multilingual turn detector model")
-            return preloaded_models["multilingual"]
+#     # Rule 2.2: For other supported languages, use Multilingual model
+#     if isinstance(language, str) and any(
+#         language.lower().startswith(prefix)
+#         for prefix in SUPPORTED_LANGUAGES_IN_MULTILINGUAL_TURN_DETECTION
+#     ):
+#         # Use preloaded model if available, otherwise create new instance
+#         if preloaded_models and "multilingual" in preloaded_models:
+#             logging.info("Using preloaded Multilingual turn detector model")
+#             return preloaded_models["multilingual"]
         
-        from livekit.plugins.turn_detector.multilingual import MultilingualModel
-        logging.info("Creating new Multilingual turn detector model instance")
-        return MultilingualModel()
+#         from livekit.plugins.turn_detector.multilingual import MultilingualModel
+#         logging.info("Creating new Multilingual turn detector model instance")
+#         return MultilingualModel()
 
-    # Rule 2.3: If language is defined but not supported by the multilingual model, use "vad"
-    if isinstance(language, str):
-        return "vad"
+#     # Rule 2.3: If language is defined but not supported by the multilingual model, use "vad"
+#     if isinstance(language, str):
+#         return "vad"
 
-    # Rule 3: Cannot determine language
-    return NotGiven
+#     # Rule 3: Cannot determine language
+#     return NotGiven
 
 
 def _get_stt_language_default(stt_provider: str) -> str | None:

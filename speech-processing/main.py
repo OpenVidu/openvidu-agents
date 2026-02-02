@@ -25,14 +25,18 @@ from livekit.agents import (
 )
 from livekit import rtc
 from livekit.plugins import silero
-from livekit.plugins.turn_detector.english import EnglishModel
-from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
-from stt_impl import get_stt_impl, get_best_turn_detector
+from stt_impl import get_stt_impl
 from openviduagentutils.openvidu_agent import OpenViduAgent
 from openviduagentutils.config_manager import ConfigManager
 from livekit.agents.types import NotGiven
 
+# ######################################
+# TODO: use turn detection when required
+# ######################################
+# from livekit.plugins.turn_detector.english import EnglishModel
+# from livekit.plugins.turn_detector.multilingual import MultilingualModel
+# from stt_impl import get_best_turn_detector
 
 class Transcriber(Agent):
     def __init__(
@@ -53,21 +57,21 @@ class Transcriber(Agent):
         logging.info(f"[Transcriber] Transcriber initialized for {participant_identity} (stt_provider={stt_impl.provider}, "
                      f"turn_detection={turn_detection}, vad_model={'None' if vad_model is None else type(vad_model).__name__})")
 
-    async def on_user_turn_completed(
-        self, chat_ctx: llm.ChatContext, new_message: llm.ChatMessage
-    ):
-        import time
-        user_transcript = new_message.text_content
-        logging.info(
-            f"[Transcriber] Turn completed for {self.participant_identity}: '{user_transcript}' "
-            f"(timestamp={time.time():.3f})"
-        )
-        logging.debug(
-            f"[Transcriber] Full message details: text_content='{new_message.text_content}', "
-            f"role={new_message.role}"
-        )
+    # async def on_user_turn_completed(
+    #     self, chat_ctx: llm.ChatContext, new_message: llm.ChatMessage
+    # ):
+    #     import time
+    #     user_transcript = new_message.text_content
+    #     logging.info(
+    #         f"[Transcriber] Turn completed for {self.participant_identity}: '{user_transcript}' "
+    #         f"(timestamp={time.time():.3f})"
+    #     )
+    #     logging.debug(
+    #         f"[Transcriber] Full message details: text_content='{new_message.text_content}', "
+    #         f"role={new_message.role}"
+    #     )
 
-        raise StopResponse()
+    #     raise StopResponse()
 
 
 class MultiUserTranscriber:
@@ -131,32 +135,39 @@ class MultiUserTranscriber:
             return self._sessions[participant.identity]
 
         stt_impl = get_stt_impl(self.agent_config)
-        
+
         vad_model = None
-        try:
-            # Get cached turn detector from proc.userdata to avoid loading per participant
-            turn_detection = self._get_turn_detector()
-            logging.info(
-                f"Determined optimal turn detector for participant {participant.identity}: {turn_detection}"
-            )
-        except Exception as exc:
-            logging.warning(
-                "Failed to determine optimal turn detector, defaulting to 'vad': %s",
-                exc,
-            )
-            turn_detection = "vad"
+        turn_detection = "manual"
 
-        if turn_detection is NotGiven:
-            turn_detection = "stt"
-
+        # ######################################
+        # TODO: use turn detection when required
+        # ######################################
+        # try:
+        #     # Get cached turn detector from proc.userdata to avoid loading per participant
+        #     turn_detection = self._get_turn_detector()
+        #     logging.info(
+        #         f"Determined optimal turn detector for participant {participant.identity}: {turn_detection}"
+        #     )
+        # except Exception as exc:
+        #     logging.warning(
+        #         "Failed to determine optimal turn detector, defaulting to 'vad': %s",
+        #         exc,
+        #     )
+        #     turn_detection = "vad"
+        # if turn_detection is NotGiven:
+        #     turn_detection = "stt"
+            
         if not stt_impl.capabilities.streaming:
             logging.info(
                 f"Provider {stt_impl.provider} does not support streaming. Wrapping with StreamAdapter"
             )
             vad_model = self._get_vad_model()
             stt_impl = stt.StreamAdapter(stt=stt_impl, vad=vad_model)
-            if turn_detection == "stt":
-                turn_detection = "vad"
+            # ######################################
+            # TODO: use turn detection when required
+            # ######################################
+            # if turn_detection == "stt":
+            #     turn_detection = "vad"
 
         # If STT is VAD-wrapped (use_silero_vad=true), VAD is already integrated
         if stt_impl.provider.lower().startswith("vad-triggered/"):
@@ -228,69 +239,80 @@ class MultiUserTranscriber:
 
         return self._vad_model
     
-    def _get_turn_detector(self):
-        """Get cached turn detector from proc.userdata to share across participants."""
-        proc = getattr(self.ctx, "proc", None)
-        userdata = getattr(proc, "userdata", None)
-        if isinstance(userdata, dict):
-            turn_detectors = userdata.get("turn_detectors", {})
-            if turn_detectors:
-                # Return cached turn detector based on config
-                try:
-                    return get_best_turn_detector(self.agent_config, preloaded_models=turn_detectors)
-                except Exception:
-                    pass
+    # ######################################
+    # TODO: use turn detection when required
+    # ######################################
+    # def _get_turn_detector(self):
+    #     """Get cached turn detector from proc.userdata to share across participants."""
+    #     proc = getattr(self.ctx, "proc", None)
+    #     userdata = getattr(proc, "userdata", None)
+    #     if isinstance(userdata, dict):
+    #         turn_detectors = userdata.get("turn_detectors", {})
+    #         if turn_detectors:
+    #             # Return cached turn detector based on config
+    #             try:
+    #                 return get_best_turn_detector(self.agent_config, preloaded_models=turn_detectors)
+    #             except Exception:
+    #                 pass
         
-        # Fallback: create new instance if cache unavailable
-        return get_best_turn_detector(self.agent_config)
+    #     # Fallback: create new instance if cache unavailable
+    #     return get_best_turn_detector(self.agent_config)
 
 
-def _preload_turn_detector_models() -> dict[str, object]:
-    """Preload turn detector models. Must be called within a job context."""
-    loaded_models: dict[str, object] = {}
+# ######################################
+# TODO: use turn detection when required
+# ######################################
+# def _preload_turn_detector_models() -> dict[str, object]:
+#     """Preload turn detector models. Must be called within a job context."""
+#     loaded_models: dict[str, object] = {}
 
-    try:
-        loaded_models["english"] = EnglishModel()
-        logging.info("Preloaded English turn detector model")
-    except Exception as exc:
-        logging.warning("Failed to preload English turn detector: %s", exc)
+#     try:
+#         loaded_models["english"] = EnglishModel()
+#         logging.info("Preloaded English turn detector model")
+#     except Exception as exc:
+#         logging.warning("Failed to preload English turn detector: %s", exc)
 
-    try:
-        loaded_models["multilingual"] = MultilingualModel()
-        logging.info("Preloaded Multilingual turn detector model")
-    except Exception as exc:
-        logging.warning("Failed to preload multilingual turn detector: %s", exc)
+#     try:
+#         loaded_models["multilingual"] = MultilingualModel()
+#         logging.info("Preloaded Multilingual turn detector model")
+#     except Exception as exc:
+#         logging.warning("Failed to preload multilingual turn detector: %s", exc)
 
-    return loaded_models
+#     return loaded_models
 
-
-def _ensure_turn_detectors_loaded(ctx: JobContext) -> None:
-    """Ensure turn detector models are loaded (called once from first entrypoint).
+# ######################################
+# TODO: use turn detection when required
+# ######################################
+# def _ensure_turn_detectors_loaded(ctx: JobContext) -> None:
+#     """Ensure turn detector models are loaded (called once from first entrypoint).
     
-    Turn detector models require job context to initialize, so they cannot be
-    preloaded in prewarm(). This function loads them on the first job and caches
-    them in proc.userdata for all subsequent participants to share.
-    """
-    proc = getattr(ctx, "proc", None)
-    userdata = getattr(proc, "userdata", None)
+#     Turn detector models require job context to initialize, so they cannot be
+#     preloaded in prewarm(). This function loads them on the first job and caches
+#     them in proc.userdata for all subsequent participants to share.
+#     """
+#     proc = getattr(ctx, "proc", None)
+#     userdata = getattr(proc, "userdata", None)
     
-    if not isinstance(userdata, dict):
-        return
+#     if not isinstance(userdata, dict):
+#         return
     
-    # Check if already loaded
-    turn_detectors = userdata.get("turn_detectors", {})
-    if turn_detectors:
-        logging.debug("Turn detector models already loaded, skipping")
-        return
+#     # Check if already loaded
+#     turn_detectors = userdata.get("turn_detectors", {})
+#     if turn_detectors:
+#         logging.debug("Turn detector models already loaded, skipping")
+#         return
     
-    logging.info("Preloading turn detector models (first job, requires job context)...")
-    userdata["turn_detectors"] = _preload_turn_detector_models()
+#     logging.info("Preloading turn detector models (first job, requires job context)...")
+#     userdata["turn_detectors"] = _preload_turn_detector_models()
 
 
 async def entrypoint(ctx: JobContext):
+    # ######################################
+    # TODO: use turn detection when required
+    # ######################################
     # Preload turn detector models on first job (they require job context)
     # These will be cached in proc.userdata for all subsequent participants
-    _ensure_turn_detectors_loaded(ctx)
+    # _ensure_turn_detectors_loaded(ctx)
     
     openvidu_agent = OpenViduAgent.get_instance()
 
@@ -384,9 +406,12 @@ async def entrypoint(ctx: JobContext):
 
 def prewarm(proc: JobProcess):    
     proc.userdata["vad"] = silero.VAD.load(min_silence_duration=0.2)
+    # ######################################
+    # TODO: use turn detection when required
+    # ######################################
     # Turn detector models will be preloaded in the first entrypoint call
     # because they require job context to initialize
-    proc.userdata["turn_detectors"] = {}
+    # proc.userdata["turn_detectors"] = {}
 
 
 def _preload_vosk_model(agent_config) -> None:
@@ -445,7 +470,12 @@ if __name__ == "__main__":
     # If calling "python main.py download-files" do not initialize the OpenViduAgent
     if len(sys.argv) > 1 and sys.argv[1] == "download-files":
         silero.VAD.load()
-        _preload_turn_detector_models()
+        
+        # ######################################
+        # TODO: use turn detection when required
+        # ######################################
+        # _preload_turn_detector_models()
+        
         # Create a minimal server just for download-files
         server = AgentServer()
 

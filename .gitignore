@@ -6,6 +6,9 @@ __pycache__/
 # C extensions
 *.so
 
+# Exception: Allow vosk shared library (tracked in Git LFS)
+!speech-processing/vosk-models/libvosk.so
+
 # Distribution / packaging
 .Python
 build/

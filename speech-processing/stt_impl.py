@@ -76,7 +76,7 @@ VOSK_MODEL_TO_LANGUAGE = {
 
 # Direct mapping from sherpa streaming model names to language codes
 # This is the complete list of all 81 official sherpa streaming models available
-# here (as of Q1 2026): https://github.com/k2-fsa/sherpa/releases/tag/asr-models
+# here (as of Q1 2026): https://github.com/k2-fsa/sherpa-onnx/releases/tag/asr-models
 SHERPA_MODEL_TO_LANGUAGE = {
     # English models
     "sherpa-onnx-streaming-zipformer-en-20M-2023-02-17": "en",

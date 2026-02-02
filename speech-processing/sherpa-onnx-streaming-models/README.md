@@ -1,4 +1,4 @@
-Place your sherpa streaming models here. Download from: https://github.com/k2-fsa/sherpa/releases/tag/asr-models
+Place your sherpa streaming models here. Download from: https://github.com/k2-fsa/sherpa-onnx/releases/tag/asr-models
 
 Included by default are:
 - sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06

@@ -370,7 +370,7 @@ live_captions:
 
   sherpa:
     # sherpa streaming model. This provider requires docker_image "docker.io/openvidu/agent-speech-processing-sherpa"
-    # Below is the list of pre-installed models in the container (available at https://github.com/k2-fsa/sherpa/releases/tag/asr-models):
+    # Below is the list of pre-installed models in the container (available at https://github.com/k2-fsa/sherpa-onnx/releases/tag/asr-models):
     # - sherpa-streaming-zipformer-en-kroko-2025-08-06 (English)
     # - sherpa-streaming-zipformer-es-kroko-2025-08-06 (Spanish)
     # - sherpa-streaming-zipformer-de-kroko-2025-08-06 (German)

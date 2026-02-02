@@ -79,102 +79,103 @@ VOSK_MODEL_TO_LANGUAGE = {
 # here (as of Q1 2026): https://github.com/k2-fsa/sherpa/releases/tag/asr-models
 SHERPA_MODEL_TO_LANGUAGE = {
     # English models
-    "sherpa-streaming-zipformer-en-20M-2023-02-17": "en",
-    "sherpa-streaming-zipformer-en-2023-02-21": "en",
-    "sherpa-streaming-zipformer-en-2023-06-21": "en",
-    "sherpa-streaming-zipformer-en-2023-06-26": "en",
-    "sherpa-streaming-conformer-en-2023-05-09": "en",
-    "sherpa-streaming-zipformer-en-20M-2023-02-17-mobile": "en",
-    "sherpa-streaming-zipformer-en-2023-02-21-mobile": "en",
-    "sherpa-streaming-zipformer-en-2023-06-21-mobile": "en",
-    "sherpa-streaming-zipformer-en-2023-06-26-mobile": "en",
-    "sherpa-streaming-zipformer-en-kroko-2025-08-06": "en",
-    "sherpa-nemotron-speech-streaming-en-0.6b-int8-2026-01-14": "en",
+    "sherpa-onnx-streaming-zipformer-en-20M-2023-02-17": "en",
+    "sherpa-onnx-streaming-zipformer-en-2023-02-21": "en",
+    "sherpa-onnx-streaming-zipformer-en-2023-06-21": "en",
+    "sherpa-onnx-streaming-zipformer-en-2023-06-26": "en",
+    "sherpa-onnx-streaming-conformer-en-2023-05-09": "en",
+    "sherpa-onnx-streaming-zipformer-en-20M-2023-02-17-mobile": "en",
+    "sherpa-onnx-streaming-zipformer-en-2023-02-21-mobile": "en",
+    "sherpa-onnx-streaming-zipformer-en-2023-06-21-mobile": "en",
+    "sherpa-onnx-streaming-zipformer-en-2023-06-26-mobile": "en",
+    "sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06": "en",
+    "sherpa-onnx-nemotron-speech-streaming-en-0.6b-int8-2026-01-14": "en",
+    "sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06": "en",
     # Chinese models
-    "sherpa-streaming-zipformer-zh-14M-2023-02-23": "zh",
-    "sherpa-streaming-zipformer-ctc-small-2024-03-18": "zh",
-    "sherpa-streaming-conformer-zh-2023-05-23": "zh",
+    "sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23": "zh",
+    "sherpa-onnx-streaming-zipformer-ctc-small-2024-03-18": "zh",
+    "sherpa-onnx-streaming-conformer-zh-2023-05-23": "zh",
     "icefall-asr-zipformer-streaming-wenetspeech-20230615": "zh",
-    "sherpa-streaming-zipformer-zh-14M-2023-02-23-mobile": "zh",
+    "sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23-mobile": "zh",
     "icefall-asr-zipformer-streaming-wenetspeech-20230615-mobile": "zh",
-    "sherpa-streaming-zipformer-small-ctc-zh-2025-04-01": "zh",
-    "sherpa-streaming-zipformer-small-ctc-zh-int8-2025-04-01": "zh",
-    "sherpa-streaming-zipformer-multi-zh-hans-2023-12-12": "zh",
-    "sherpa-streaming-zipformer-multi-zh-hans-2023-12-12-mobile": "zh",
-    "sherpa-streaming-zipformer-zh-int8-2025-06-30": "zh",
-    "sherpa-streaming-zipformer-zh-fp16-2025-06-30": "zh",
-    "sherpa-streaming-zipformer-zh-2025-06-30": "zh",
-    "sherpa-streaming-zipformer-ctc-zh-int8-2025-06-30": "zh",
-    "sherpa-streaming-zipformer-ctc-zh-fp16-2025-06-30": "zh",
-    "sherpa-streaming-zipformer-ctc-zh-2025-06-30": "zh",
-    "sherpa-streaming-zipformer-zh-xlarge-int8-2025-06-30": "zh",
-    "sherpa-streaming-zipformer-zh-xlarge-fp16-2025-06-30": "zh",
-    "sherpa-streaming-zipformer-ctc-zh-xlarge-int8-2025-06-30": "zh",
-    "sherpa-streaming-zipformer-ctc-zh-xlarge-fp16-2025-06-30": "zh",
-    "sherpa-streaming-zipformer-multi-zh-hans-int8-2023-12-13": "zh",
-    "sherpa-streaming-zipformer-multi-zh-hans-fp16-2023-12-13": "zh",
-    "sherpa-streaming-zipformer-multi-zh-hans-2023-12-13": "zh",
-    "sherpa-streaming-zipformer-ctc-multi-zh-hans-int8-2023-12-13": "zh",
-    "sherpa-streaming-zipformer-ctc-multi-zh-hans-fp16-2023-12-13": "zh",
-    "sherpa-streaming-zipformer-ctc-multi-zh-hans-2023-12-13": "zh",
+    "sherpa-onnx-streaming-zipformer-small-ctc-zh-2025-04-01": "zh",
+    "sherpa-onnx-streaming-zipformer-small-ctc-zh-int8-2025-04-01": "zh",
+    "sherpa-onnx-streaming-zipformer-multi-zh-hans-2023-12-12": "zh",
+    "sherpa-onnx-streaming-zipformer-multi-zh-hans-2023-12-12-mobile": "zh",
+    "sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30": "zh",
+    "sherpa-onnx-streaming-zipformer-zh-fp16-2025-06-30": "zh",
+    "sherpa-onnx-streaming-zipformer-zh-2025-06-30": "zh",
+    "sherpa-onnx-streaming-zipformer-ctc-zh-int8-2025-06-30": "zh",
+    "sherpa-onnx-streaming-zipformer-ctc-zh-fp16-2025-06-30": "zh",
+    "sherpa-onnx-streaming-zipformer-ctc-zh-2025-06-30": "zh",
+    "sherpa-onnx-streaming-zipformer-zh-xlarge-int8-2025-06-30": "zh",
+    "sherpa-onnx-streaming-zipformer-zh-xlarge-fp16-2025-06-30": "zh",
+    "sherpa-onnx-streaming-zipformer-ctc-zh-xlarge-int8-2025-06-30": "zh",
+    "sherpa-onnx-streaming-zipformer-ctc-zh-xlarge-fp16-2025-06-30": "zh",
+    "sherpa-onnx-streaming-zipformer-multi-zh-hans-int8-2023-12-13": "zh",
+    "sherpa-onnx-streaming-zipformer-multi-zh-hans-fp16-2023-12-13": "zh",
+    "sherpa-onnx-streaming-zipformer-multi-zh-hans-2023-12-13": "zh",
+    "sherpa-onnx-streaming-zipformer-ctc-multi-zh-hans-int8-2023-12-13": "zh",
+    "sherpa-onnx-streaming-zipformer-ctc-multi-zh-hans-fp16-2023-12-13": "zh",
+    "sherpa-onnx-streaming-zipformer-ctc-multi-zh-hans-2023-12-13": "zh",
     # Bilingual/Trilingual models are excluded from auto-detection
     # Users should manually specify language for these models:
-    # - sherpa-streaming-zipformer-bilingual-zh-en-2023-02-20 (zh/en)
-    # - sherpa-streaming-paraformer-bilingual-zh-en (zh/en)
-    # - sherpa-streaming-paraformer-trilingual-zh-cantonese-en (zh/yue/en)
-    # - sherpa-streaming-zipformer-small-bilingual-zh-en-2023-02-16 (zh/en)
-    # - sherpa-streaming-zipformer-bilingual-zh-en-2023-02-20-mobile (zh/en)
-    # - sherpa-streaming-zipformer-small-bilingual-zh-en-2023-02-16-mobile (zh/en)
+    # - sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20 (zh/en)
+    # - sherpa-onnx-streaming-paraformer-bilingual-zh-en (zh/en)
+    # - sherpa-onnx-streaming-paraformer-trilingual-zh-cantonese-en (zh/yue/en)
+    # - sherpa-onnx-streaming-zipformer-small-bilingual-zh-en-2023-02-16 (zh/en)
+    # - sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20-mobile (zh/en)
+    # - sherpa-onnx-streaming-zipformer-small-bilingual-zh-en-2023-02-16-mobile (zh/en)
     # French models
-    "sherpa-streaming-zipformer-fr-2023-04-14": "fr",
-    "sherpa-streaming-zipformer-fr-2023-04-14-mobile": "fr",
-    "sherpa-streaming-zipformer-fr-kroko-2025-08-06": "fr",
+    "sherpa-onnx-streaming-zipformer-fr-2023-04-14": "fr",
+    "sherpa-onnx-streaming-zipformer-fr-2023-04-14-mobile": "fr",
+    "sherpa-onnx-streaming-zipformer-fr-kroko-2025-08-06": "fr",
     # German models
-    "sherpa-streaming-zipformer-de-kroko-2025-08-06": "de",
+    "sherpa-onnx-streaming-zipformer-de-kroko-2025-08-06": "de",
     # Spanish models
-    "sherpa-streaming-zipformer-es-kroko-2025-08-06": "es",
+    "sherpa-onnx-streaming-zipformer-es-kroko-2025-08-06": "es",
     # Korean models
-    "sherpa-streaming-zipformer-korean-2024-06-16": "ko",
-    "sherpa-streaming-zipformer-korean-2024-06-16-mobile": "ko",
+    "sherpa-onnx-streaming-zipformer-korean-2024-06-16": "ko",
+    "sherpa-onnx-streaming-zipformer-korean-2024-06-16-mobile": "ko",
     # Russian models
-    "sherpa-streaming-zipformer-small-ru-vosk-int8-2025-08-16": "ru",
-    "sherpa-streaming-zipformer-small-ru-vosk-2025-08-16": "ru",
-    "sherpa-streaming-t-one-russian-2025-09-08": "ru",
+    "sherpa-onnx-streaming-zipformer-small-ru-vosk-int8-2025-08-16": "ru",
+    "sherpa-onnx-streaming-zipformer-small-ru-vosk-2025-08-16": "ru",
+    "sherpa-onnx-streaming-t-one-russian-2025-09-08": "ru",
     # Multilingual model is excluded from auto-detection
     # Users should manually specify language for this multilingual model:
-    # - sherpa-streaming-zipformer-ar_en_id_ja_ru_th_vi_zh-2025-02-10 (ar/en/id/ja/ru/th/vi/zh)
+    # - sherpa-onnx-streaming-zipformer-ar_en_id_ja_ru_th_vi_zh-2025-02-10 (ar/en/id/ja/ru/th/vi/zh)
     # NeMo Fast Conformer CTC models
-    "sherpa-nemo-streaming-fast-conformer-ctc-en-80ms": "en",
-    "sherpa-nemo-streaming-fast-conformer-ctc-en-80ms-int8": "en",
-    "sherpa-nemo-streaming-fast-conformer-ctc-en-480ms": "en",
-    "sherpa-nemo-streaming-fast-conformer-ctc-en-480ms-int8": "en",
-    "sherpa-nemo-streaming-fast-conformer-ctc-en-1040ms": "en",
-    "sherpa-nemo-streaming-fast-conformer-ctc-en-1040ms-int8": "en",
+    "sherpa-onnx-nemo-streaming-fast-conformer-ctc-en-80ms": "en",
+    "sherpa-onnx-nemo-streaming-fast-conformer-ctc-en-80ms-int8": "en",
+    "sherpa-onnx-nemo-streaming-fast-conformer-ctc-en-480ms": "en",
+    "sherpa-onnx-nemo-streaming-fast-conformer-ctc-en-480ms-int8": "en",
+    "sherpa-onnx-nemo-streaming-fast-conformer-ctc-en-1040ms": "en",
+    "sherpa-onnx-nemo-streaming-fast-conformer-ctc-en-1040ms-int8": "en",
     # NeMo Fast Conformer Transducer models
-    "sherpa-nemo-streaming-fast-conformer-transducer-en-80ms": "en",
-    "sherpa-nemo-streaming-fast-conformer-transducer-en-80ms-int8": "en",
-    "sherpa-nemo-streaming-fast-conformer-transducer-en-480ms": "en",
-    "sherpa-nemo-streaming-fast-conformer-transducer-en-480ms-int8": "en",
-    "sherpa-nemo-streaming-fast-conformer-transducer-en-1040ms": "en",
-    "sherpa-nemo-streaming-fast-conformer-transducer-en-1040ms-int8": "en",
+    "sherpa-onnx-nemo-streaming-fast-conformer-transducer-en-80ms": "en",
+    "sherpa-onnx-nemo-streaming-fast-conformer-transducer-en-80ms-int8": "en",
+    "sherpa-onnx-nemo-streaming-fast-conformer-transducer-en-480ms": "en",
+    "sherpa-onnx-nemo-streaming-fast-conformer-transducer-en-480ms-int8": "en",
+    "sherpa-onnx-nemo-streaming-fast-conformer-transducer-en-1040ms": "en",
+    "sherpa-onnx-nemo-streaming-fast-conformer-transducer-en-1040ms-int8": "en",
     # Rockchip platform-optimized models (RK3588, RK3576, RK3568, RK3566, RK3562)
-    "sherpa-rk3588-streaming-zipformer-en-2023-06-26": "en",
-    "sherpa-rk3576-streaming-zipformer-en-2023-06-26": "en",
-    "sherpa-rk3568-streaming-zipformer-en-2023-06-26": "en",
-    "sherpa-rk3566-streaming-zipformer-en-2023-06-26": "en",
-    "sherpa-rk3562-streaming-zipformer-en-2023-06-26": "en",
+    "sherpa-onnx-rk3588-streaming-zipformer-en-2023-06-26": "en",
+    "sherpa-onnx-rk3576-streaming-zipformer-en-2023-06-26": "en",
+    "sherpa-onnx-rk3568-streaming-zipformer-en-2023-06-26": "en",
+    "sherpa-onnx-rk3566-streaming-zipformer-en-2023-06-26": "en",
+    "sherpa-onnx-rk3562-streaming-zipformer-en-2023-06-26": "en",
     # Rockchip bilingual models are excluded from auto-detection
     # Users should manually specify language for these models:
-    # - sherpa-rk3588-streaming-zipformer-small-bilingual-zh-en-2023-02-16 (zh/en)
-    # - sherpa-rk3588-streaming-zipformer-bilingual-zh-en-2023-02-20 (zh/en)
-    # - sherpa-rk3576-streaming-zipformer-small-bilingual-zh-en-2023-02-16 (zh/en)
-    # - sherpa-rk3576-streaming-zipformer-bilingual-zh-en-2023-02-20 (zh/en)
-    # - sherpa-rk3568-streaming-zipformer-small-bilingual-zh-en-2023-02-16 (zh/en)
-    # - sherpa-rk3568-streaming-zipformer-bilingual-zh-en-2023-02-20 (zh/en)
-    # - sherpa-rk3566-streaming-zipformer-small-bilingual-zh-en-2023-02-16 (zh/en)
-    # - sherpa-rk3566-streaming-zipformer-bilingual-zh-en-2023-02-20 (zh/en)
-    # - sherpa-rk3562-streaming-zipformer-small-bilingual-zh-en-2023-02-16 (zh/en)
-    # - sherpa-rk3562-streaming-zipformer-bilingual-zh-en-2023-02-20 (zh/en)
+    # - sherpa-onnx-rk3588-streaming-zipformer-small-bilingual-zh-en-2023-02-16 (zh/en)
+    # - sherpa-onnx-rk3588-streaming-zipformer-bilingual-zh-en-2023-02-20 (zh/en)
+    # - sherpa-onnx-rk3576-streaming-zipformer-small-bilingual-zh-en-2023-02-16 (zh/en)
+    # - sherpa-onnx-rk3576-streaming-zipformer-bilingual-zh-en-2023-02-20 (zh/en)
+    # - sherpa-onnx-rk3568-streaming-zipformer-small-bilingual-zh-en-2023-02-16 (zh/en)
+    # - sherpa-onnx-rk3568-streaming-zipformer-bilingual-zh-en-2023-02-20 (zh/en)
+    # - sherpa-onnx-rk3566-streaming-zipformer-small-bilingual-zh-en-2023-02-16 (zh/en)
+    # - sherpa-onnx-rk3566-streaming-zipformer-bilingual-zh-en-2023-02-20 (zh/en)
+    # - sherpa-onnx-rk3562-streaming-zipformer-small-bilingual-zh-en-2023-02-16 (zh/en)
+    # - sherpa-onnx-rk3562-streaming-zipformer-bilingual-zh-en-2023-02-20 (zh/en)
 }
 
 

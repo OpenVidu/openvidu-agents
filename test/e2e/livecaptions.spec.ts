@@ -90,6 +90,11 @@ const STT_AI_PROVIDERS = [
       model: "vosk-model-en-us-0.22-lgraph",
     },
   },
+  {
+    sherpa: {
+      model: "sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06",
+    },
+  },
   // REASON THIS PROVIDER CAN'T BE AUTOMATICALLY TESTED: it is broken as it needs library httpx,
   // which the google plugin also requires with a different version
   // {

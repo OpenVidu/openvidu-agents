@@ -33,6 +33,8 @@ export class LocalDeployment {
     }
     if (providerName === "vosk") {
       doc.set("docker_image", "openvidu/agent-speech-processing-vosk:main");
+    } else if (providerName === "sherpa") {
+      doc.set("docker_image", "openvidu/agent-speech-processing-sherpa:main");
     } else {
       doc.set("docker_image", "openvidu/agent-speech-processing-cloud:main");
     }

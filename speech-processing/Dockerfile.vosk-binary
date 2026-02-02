@@ -1,15 +1,63 @@
 # syntax=docker/dockerfile:1.6
-# Dockerfile for Vosk offline STT copying a pre-compiled Vosk binary (libvosk.so)
+# Dockerfile for Vosk offline STT
 # Self-contained image with Vosk models for offline speech recognition
 # No external API calls required: all processing happens locally
 #
-# This Dockerfile uses a pre-compiled libvosk.so binary instead of building from source.
-# The binary should be placed at: vosk-models/libvosk.so
+# This Dockerfile compiles libvosk.so from source to get the latest version (not available in PyPI)
+#
+# BUILD INSTRUCTIONS:
+# This Dockerfile requires a GitHub Personal Access Token (PAT) with 'repo' scope to clone from private repos.
+#
+#   export GITHUB_TOKEN=ghp_your_token_here
+#   docker build --secret id=github_token,env=GITHUB_TOKEN -f Dockerfile.vosk -t openvidu/agent-speech-processing-vosk:main .
 
 ARG BASE_IMAGE=openvidu/agent-speech-processing-base:main
 
 # =============================================================================
-# STAGE 1: Python builder - Install Python dependencies
+# STAGE 1: Build Vosk/Kaldi from source
+# =============================================================================
+FROM debian:12-slim AS vosk-builder
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    git \
+    cmake \
+    build-essential \
+    automake \
+    autoconf \
+    libtool \
+    pkg-config \
+    python3 \
+    python3-dev \
+    wget \
+    gfortran \
+    sox \
+    subversion \
+    zlib1g-dev \
+    unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+# Build Kaldi using official build process
+WORKDIR /opt
+RUN git clone -b vosk --single-branch --depth=1 https://github.com/alphacep/kaldi
+
+WORKDIR /opt/kaldi/tools
+RUN make openfst cub && \
+    ./extras/install_openblas_clapack.sh
+
+WORKDIR /opt/kaldi/src
+RUN ./configure --mathlib=OPENBLAS_CLAPACK --shared --use-cuda=no && \
+    make -j $(nproc) online2 lm rnnlm
+
+# Build Vosk API
+WORKDIR /opt
+RUN git clone --depth=1 https://github.com/alphacep/vosk-api
+
+WORKDIR /opt/vosk-api/src
+RUN KALDI_ROOT=/opt/kaldi make -j $(nproc)
+
+# =============================================================================
+# STAGE 2: Python builder - Install Python dependencies with GitHub token
 # =============================================================================
 FROM ${BASE_IMAGE} AS builder
 
@@ -26,9 +74,15 @@ RUN pip install --no-cache-dir -r requirements-base.txt
 # Install vosk Python package from PyPI (for Python code structure)
 RUN pip install --no-cache-dir vosk==0.3.45
 
+# Copy compiled libvosk.so from vosk-builder stage
+COPY --from=vosk-builder /opt/vosk-api/src/libvosk.so /opt/venv/lib/python3.12/site-packages/vosk/
+
 # Install Python bindings from GitHub to get latest __init__.py with SetEndpointerMode
 RUN pip install --no-cache-dir --force-reinstall --no-deps \
     git+https://github.com/alphacep/vosk-api.git@625e44c62607a3b48fec6d72a30118448909e83f#subdirectory=python
+
+# Restore the compiled libvosk.so (Python reinstall removed it)
+COPY --from=vosk-builder /opt/vosk-api/src/libvosk.so /opt/venv/lib/python3.12/site-packages/vosk/
 
 # Install livekit-plugins-vosk from GitHub using GitHub token for private repo access
 RUN --mount=type=secret,id=github_token \
@@ -50,11 +104,8 @@ RUN --mount=type=secret,id=github_token \
         pip install --no-cache-dir -r requirements-vosk.txt; \
     fi
 
-# Copy the pre-compiled libvosk.so binary from the build context
-COPY vosk-models/libvosk.so /opt/venv/lib/python3.12/site-packages/vosk/libvosk.so
-
 # =============================================================================
-# STAGE 2: Final - Clean image
+# STAGE 3: Final - Clean image with no trace of secrets
 # =============================================================================
 FROM ${BASE_IMAGE}
 

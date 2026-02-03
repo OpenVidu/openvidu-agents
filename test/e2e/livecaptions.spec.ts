@@ -86,22 +86,34 @@ const STT_AI_PROVIDERS = [
     },
   },
   {
+    spitch: {
+      api_key: process.env.SPITCH_API_KEY,
+    },
+  },
+  {
     vosk: {
       model: "vosk-model-en-us-0.22-lgraph",
+      use_silero_vad: false,
+    },
+  },
+  {
+    vosk: {
+      model: "vosk-model-en-us-0.22-lgraph",
+      use_silero_vad: true,
     },
   },
   {
     sherpa: {
       model: "sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06",
+      use_silero_vad: false,
     },
   },
-  // REASON THIS PROVIDER CAN'T BE AUTOMATICALLY TESTED: it is broken as it needs library httpx,
-  // which the google plugin also requires with a different version
-  // {
-  //   spitch: {
-  //     api_key: process.env.SPITCH_API_KEY,
-  //   },
-  // },
+  {
+    sherpa: {
+      model: "sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06",
+      use_silero_vad: true,
+    },
+  },
   // REASON THIS PROVIDER CAN'T BE AUTOMATICALLY TESTED: no free credits or tier available
   // {
   //   fal: {
@@ -157,10 +169,19 @@ function describeProviderTests(
 ) {
   // Reuse provider-level setup/teardown across different test groups.
   test.describe(groupTitle, () => {
-    STT_AI_PROVIDERS.forEach((provider) => {
+    STT_AI_PROVIDERS.forEach((provider, index) => {
       const providerName = Object.keys(provider)[0] as string;
 
-      test.describe(providerName, () => {
+      // Generate unique test name for duplicate providers
+      const sameNameCount = STT_AI_PROVIDERS.slice(0, index).filter(
+        (p) => Object.keys(p)[0] === providerName,
+      ).length;
+      const uniqueTestName =
+        sameNameCount > 0
+          ? `${providerName}-${sameNameCount + 1}`
+          : providerName;
+
+      test.describe(uniqueTestName, () => {
         test.beforeEach(async () => {
           LocalDeployment.stop();
           await LocalDeployment.start(provider);

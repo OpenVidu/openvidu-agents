@@ -980,7 +980,11 @@ def get_sherpa_stt_impl(agent_config) -> stt.STT:
             "sherpa.use_silero_vad=true - Using VAD wrapper around sherpa STT. Final transcripts will be forced by Silero VAD detection"
         )
         vad_model = _get_cached_silero_vad()
-        return VADTriggeredSTT(stt_impl=base_stt, vad_impl=vad_model)
+        return VADTriggeredSTT(
+            stt_impl=base_stt,
+            vad_impl=vad_model,
+            flush_delay=0.4,  # Give Sherpa 400ms to catch up after VAD detection
+        )
     elif use_silero_vad is True and silero is None:
         logging.warning(
             "use_silero_vad=true but silero plugin not available, using sherpa without VAD wrapper"

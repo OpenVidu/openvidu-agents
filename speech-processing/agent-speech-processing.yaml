@@ -342,6 +342,12 @@ live_captions:
     # Set to false for locally hosted Riva NIM services without SSL.
     use_ssl:
 
+  spitch:
+    # API key for Spitch. See https://docs.spitch.app/keys
+    api_key:
+    # Language short code for the generated speech. For supported values, see https://docs.spitch.app/concepts/languages
+    language:
+
   vosk:
     # Vosk language model. This provider requires docker_image "docker.io/openvidu/agent-speech-processing-vosk"
     # Below is the list of pre-installed models in the container (available at https://alphacephei.com/vosk/models):

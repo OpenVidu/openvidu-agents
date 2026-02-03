@@ -216,7 +216,7 @@ class VADTriggeredSpeechStream(stt.SpeechStream):
                         logger.debug(f"[VADTriggeredStream:{self._stream_id}] Waiting {self._flush_delay}s before flush signal")
                         await asyncio.sleep(self._flush_delay)
                     
-                    logger.debug(f"[VADTriggeredStream:{self._stream_id}] ⚡ Setting flush_event to trigger STT flush")
+                    logger.debug(f"[VADTriggeredStream:{self._stream_id}] Setting flush_event to trigger STT flush")
                     flush_event.set()
                     
                     # Forward END_OF_SPEECH from VAD

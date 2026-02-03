@@ -3,6 +3,7 @@ import os
 import json
 import tempfile
 import inspect
+import threading
 from typing import Callable, NamedTuple
 from livekit.agents import stt
 from livekit.agents.types import NotGivenOr, NotGiven
@@ -51,6 +52,40 @@ nvidia = _try_import_plugin("nvidia")
 vosk = _try_import_plugin("vosk")
 sherpa = _try_import_plugin("sherpa")
 silero = _try_import_plugin("silero")
+
+# Module-level cached Silero VAD model for use_silero_vad feature
+# Can be set externally via set_cached_silero_vad() to reuse a prewarmed model
+_cached_silero_vad = None
+_vad_load_lock = threading.Lock()
+
+def set_cached_silero_vad(vad_model) -> None:
+    global _cached_silero_vad
+    with _vad_load_lock:
+        _cached_silero_vad = vad_model
+    logging.info("Cached Silero VAD model set for reuse in STT implementations")
+
+def _get_cached_silero_vad():
+    global _cached_silero_vad
+    
+    # If already loaded, return immediately without lock
+    if _cached_silero_vad is not None:
+        logging.info("Reusing pre-cached Silero VAD model")
+        return _cached_silero_vad
+    
+    # Need to load the model
+    if silero is not None:
+        with _vad_load_lock:
+            # Double-check: another thread may have loaded it while we waited for the lock
+            if _cached_silero_vad is not None:
+                logging.info("Silero VAD model was loaded by another thread")
+                return _cached_silero_vad
+            
+            logging.info("Loading Silero VAD model. Will be cached for reuse across all threads")
+            _cached_silero_vad = silero.VAD.load()
+            return _cached_silero_vad
+    
+    return None
+
 # ######################################
 # TODO: use turn detection when required
 # ######################################
@@ -820,7 +855,7 @@ def get_vosk_stt_impl(agent_config) -> stt.STT:
     # Optionally wrap with VADTriggeredSTT to flush final transcripts based on VAD
     if use_silero_vad is True and silero is not None:
         logging.info("vosk.use_silero_vad=true - Using VAD wrapper around Vosk STT. Final transcripts will be forced by Silero VAD detection")
-        vad_model = silero.VAD.load(min_silence_duration=0.2)
+        vad_model = _get_cached_silero_vad()
         return VADTriggeredSTT(stt_impl=base_stt, vad_impl=vad_model)
     elif use_silero_vad is True and silero is None:
         logging.warning("use_silero_vad=true but silero plugin not available, using Vosk without VAD wrapper")
@@ -858,6 +893,7 @@ def get_sherpa_stt_impl(agent_config) -> stt.STT:
     num_threads = config_manager.configured_numeric_value("num_threads")
     recognizer_type_str = config_manager.configured_string_value("recognizer_type")
     decoding_method = config_manager.configured_string_value("decoding_method")
+    use_silero_vad = config_manager.configured_boolean_value("use_silero_vad")
 
     # Auto-detect language from model name if not provided
     if language is NOT_PROVIDED:
@@ -925,7 +961,19 @@ def get_sherpa_stt_impl(agent_config) -> stt.STT:
         else:
             logging.warning(f"Unknown recognizer_type '{recognizer_type_str}'.")
 
-    return sherpa.STT(**kwargs)
+    base_stt = sherpa.STT(**kwargs)
+
+    # Optionally wrap with VADTriggeredSTT to flush final transcripts based on VAD
+    if use_silero_vad is True and silero is not None:
+        logging.info("sherpa.use_silero_vad=true - Using VAD wrapper around sherpa STT. Final transcripts will be forced by Silero VAD detection")
+        vad_model = _get_cached_silero_vad()
+        return VADTriggeredSTT(stt_impl=base_stt, vad_impl=vad_model)
+    elif use_silero_vad is True and silero is None:
+        logging.warning("use_silero_vad=true but silero plugin not available, using sherpa without VAD wrapper")
+    elif use_silero_vad is False:
+        logging.info("sherpa.use_silero_vad=false - Not using VAD wrapper for sherpa STT. Final transcripts will be triggered by sherpa EOU detection")
+
+    return base_stt
 
 
 def get_mistralai_stt_impl(agent_config) -> stt.STT:

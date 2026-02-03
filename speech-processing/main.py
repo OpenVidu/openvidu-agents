@@ -26,7 +26,7 @@ from livekit.agents import (
 from livekit import rtc
 from livekit.plugins import silero
 
-from stt_impl import get_stt_impl
+from stt_impl import get_stt_impl, set_cached_silero_vad
 from openviduagentutils.openvidu_agent import OpenViduAgent
 from openviduagentutils.config_manager import ConfigManager
 from livekit.agents.types import NotGiven
@@ -235,7 +235,7 @@ class MultiUserTranscriber:
                 self._vad_model = userdata.get("vad")
 
         if self._vad_model is None:
-            self._vad_model = silero.VAD.load(min_silence_duration=0.2)
+            self._vad_model = silero.VAD.load()
 
         return self._vad_model
     
@@ -405,7 +405,10 @@ async def entrypoint(ctx: JobContext):
 
 
 def prewarm(proc: JobProcess):    
-    proc.userdata["vad"] = silero.VAD.load(min_silence_duration=0.2)
+    proc.userdata["vad"] = silero.VAD.load()
+    # Share the prewarmed VAD model for use_silero_vad feature
+    set_cached_silero_vad(proc.userdata["vad"])
+
     # ######################################
     # TODO: use turn detection when required
     # ######################################

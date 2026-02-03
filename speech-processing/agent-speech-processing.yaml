@@ -389,3 +389,5 @@ live_captions:
     recognizer_type:
     # Decoding method ("greedy_search", "modified_beam_search"). Default is "greedy_search".
     decoding_method:
+    # Whether to override sherpa's built-in Voice Activity Detection (VAD) with Silero's VAD. Default is false.
+    use_silero_vad: false

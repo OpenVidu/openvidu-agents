@@ -5,13 +5,13 @@
     "test:e2e": "playwright test"
   },
   "devDependencies": {
-    "@playwright/test": "^1.55.0",
+    "@playwright/test": "^1.58.1",
     "@types/fast-levenshtein": "^0.0.4",
     "@types/jest": "30.0.0",
-    "@types/node": "24.9.0",
+    "@types/node": "25.2.0",
     "@types/yaml": "^1.9.7",
     "fast-levenshtein": "3.0.0",
-    "playwright-ctrf-json-reporter": "^0.0.24",
+    "playwright-ctrf-json-reporter": "^0.0.27",
     "ts-node": "10.9.2",
     "typescript": "5.9.3"
   },

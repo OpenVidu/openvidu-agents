@@ -1387,11 +1387,7 @@ class TestSTTImplementations(unittest.TestCase):
     @patch("livekit.plugins.vosk.STT")
     def test_get_vosk_stt_impl_no_model_defaults_to_en_us(self, mock_vosk_stt):
         # Arrange - No model or language, should default to en-US
-        config = {
-            "live_captions": {
-                "vosk": {}
-            }
-        }
+        config = {"live_captions": {"vosk": {}}}
         mock_vosk_stt.return_value = "vosk_stt_instance"
 
         # Act
@@ -1404,7 +1400,9 @@ class TestSTTImplementations(unittest.TestCase):
         )
 
     @patch("livekit.plugins.vosk.STT")
-    def test_get_vosk_stt_impl_explicit_language_overrides_auto_detect(self, mock_vosk_stt):
+    def test_get_vosk_stt_impl_explicit_language_overrides_auto_detect(
+        self, mock_vosk_stt
+    ):
         # Arrange - Explicit language should override auto-detect
         config = {
             "live_captions": {
@@ -1432,11 +1430,7 @@ class TestSTTImplementations(unittest.TestCase):
 
         with patch.dict(
             "stt_impl.STT_PROVIDERS",
-            {
-                "vosk": stt_impl.STT_PROVIDERS["vosk"]._replace(
-                    impl_function=mock_impl
-                )
-            },
+            {"vosk": stt_impl.STT_PROVIDERS["vosk"]._replace(impl_function=mock_impl)},
         ):
             result = get_stt_impl(config)
             self.assertEqual(result, "vosk_stt_instance")

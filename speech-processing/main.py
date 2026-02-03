@@ -38,6 +38,7 @@ from livekit.agents.types import NotGiven
 # from livekit.plugins.turn_detector.multilingual import MultilingualModel
 # from stt_impl import get_best_turn_detector
 
+
 class Transcriber(Agent):
     def __init__(
         self,
@@ -54,8 +55,10 @@ class Transcriber(Agent):
             vad=vad_model,
         )
         self.participant_identity = participant_identity
-        logging.info(f"[Transcriber] Transcriber initialized for {participant_identity} (stt_provider={stt_impl.provider}, "
-                     f"turn_detection={turn_detection}, vad_model={'None' if vad_model is None else type(vad_model).__name__})")
+        logging.info(
+            f"[Transcriber] Transcriber initialized for {participant_identity} (stt_provider={stt_impl.provider}, "
+            f"turn_detection={turn_detection}, vad_model={'None' if vad_model is None else type(vad_model).__name__})"
+        )
 
     # async def on_user_turn_completed(
     #     self, chat_ctx: llm.ChatContext, new_message: llm.ChatMessage
@@ -156,7 +159,7 @@ class MultiUserTranscriber:
         #     turn_detection = "vad"
         # if turn_detection is NotGiven:
         #     turn_detection = "stt"
-            
+
         if not stt_impl.capabilities.streaming:
             logging.info(
                 f"Provider {stt_impl.provider} does not support streaming. Wrapping with StreamAdapter"
@@ -238,7 +241,7 @@ class MultiUserTranscriber:
             self._vad_model = silero.VAD.load()
 
         return self._vad_model
-    
+
     # ######################################
     # TODO: use turn detection when required
     # ######################################
@@ -254,7 +257,7 @@ class MultiUserTranscriber:
     #                 return get_best_turn_detector(self.agent_config, preloaded_models=turn_detectors)
     #             except Exception:
     #                 pass
-        
+
     #     # Fallback: create new instance if cache unavailable
     #     return get_best_turn_detector(self.agent_config)
 
@@ -285,23 +288,23 @@ class MultiUserTranscriber:
 # ######################################
 # def _ensure_turn_detectors_loaded(ctx: JobContext) -> None:
 #     """Ensure turn detector models are loaded (called once from first entrypoint).
-    
+
 #     Turn detector models require job context to initialize, so they cannot be
 #     preloaded in prewarm(). This function loads them on the first job and caches
 #     them in proc.userdata for all subsequent participants to share.
 #     """
 #     proc = getattr(ctx, "proc", None)
 #     userdata = getattr(proc, "userdata", None)
-    
+
 #     if not isinstance(userdata, dict):
 #         return
-    
+
 #     # Check if already loaded
 #     turn_detectors = userdata.get("turn_detectors", {})
 #     if turn_detectors:
 #         logging.debug("Turn detector models already loaded, skipping")
 #         return
-    
+
 #     logging.info("Preloading turn detector models (first job, requires job context)...")
 #     userdata["turn_detectors"] = _preload_turn_detector_models()
 
@@ -313,7 +316,7 @@ async def entrypoint(ctx: JobContext):
     # Preload turn detector models on first job (they require job context)
     # These will be cached in proc.userdata for all subsequent participants
     # _ensure_turn_detectors_loaded(ctx)
-    
+
     openvidu_agent = OpenViduAgent.get_instance()
 
     agent_config = openvidu_agent.get_agent_config()
@@ -404,7 +407,7 @@ async def entrypoint(ctx: JobContext):
 #     await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
 
 
-def prewarm(proc: JobProcess):    
+def prewarm(proc: JobProcess):
     proc.userdata["vad"] = silero.VAD.load()
     # Share the prewarmed VAD model for use_silero_vad feature
     set_cached_silero_vad(proc.userdata["vad"])
@@ -451,9 +454,7 @@ def _preload_sherpa_model(agent_config) -> None:
     try:
         stt_provider = agent_config.get("live_captions", {}).get("provider")
         if stt_provider == "sherpa":
-            logging.info(
-                "Preloading sherpa model for shared thread-based execution..."
-            )
+            logging.info("Preloading sherpa model for shared thread-based execution...")
             # Creating an STT instance triggers recognizer loading into the cache
             stt_impl = get_stt_impl(agent_config)
             # Force model loading by ensuring the recognizer is created
@@ -473,12 +474,12 @@ if __name__ == "__main__":
     # If calling "python main.py download-files" do not initialize the OpenViduAgent
     if len(sys.argv) > 1 and sys.argv[1] == "download-files":
         silero.VAD.load()
-        
+
         # ######################################
         # TODO: use turn detection when required
         # ######################################
         # _preload_turn_detector_models()
-        
+
         # Create a minimal server just for download-files
         server = AgentServer()
 

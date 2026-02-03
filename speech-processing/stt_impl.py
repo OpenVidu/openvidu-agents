@@ -58,20 +58,22 @@ silero = _try_import_plugin("silero")
 _cached_silero_vad = None
 _vad_load_lock = threading.Lock()
 
+
 def set_cached_silero_vad(vad_model) -> None:
     global _cached_silero_vad
     with _vad_load_lock:
         _cached_silero_vad = vad_model
     logging.info("Cached Silero VAD model set for reuse in STT implementations")
 
+
 def _get_cached_silero_vad():
     global _cached_silero_vad
-    
+
     # If already loaded, return immediately without lock
     if _cached_silero_vad is not None:
         logging.info("Reusing pre-cached Silero VAD model")
         return _cached_silero_vad
-    
+
     # Need to load the model
     if silero is not None:
         with _vad_load_lock:
@@ -79,12 +81,15 @@ def _get_cached_silero_vad():
             if _cached_silero_vad is not None:
                 logging.info("Silero VAD model was loaded by another thread")
                 return _cached_silero_vad
-            
-            logging.info("Loading Silero VAD model. Will be cached for reuse across all threads")
+
+            logging.info(
+                "Loading Silero VAD model. Will be cached for reuse across all threads"
+            )
             _cached_silero_vad = silero.VAD.load()
             return _cached_silero_vad
-    
+
     return None
+
 
 # ######################################
 # TODO: use turn detection when required
@@ -854,13 +859,19 @@ def get_vosk_stt_impl(agent_config) -> stt.STT:
 
     # Optionally wrap with VADTriggeredSTT to flush final transcripts based on VAD
     if use_silero_vad is True and silero is not None:
-        logging.info("vosk.use_silero_vad=true - Using VAD wrapper around Vosk STT. Final transcripts will be forced by Silero VAD detection")
+        logging.info(
+            "vosk.use_silero_vad=true - Using VAD wrapper around Vosk STT. Final transcripts will be forced by Silero VAD detection"
+        )
         vad_model = _get_cached_silero_vad()
         return VADTriggeredSTT(stt_impl=base_stt, vad_impl=vad_model)
     elif use_silero_vad is True and silero is None:
-        logging.warning("use_silero_vad=true but silero plugin not available, using Vosk without VAD wrapper")
+        logging.warning(
+            "use_silero_vad=true but silero plugin not available, using Vosk without VAD wrapper"
+        )
     elif use_silero_vad is False:
-        logging.info("vosk.use_silero_vad=false - Not using VAD wrapper for Vosk STT. Final transcripts will be triggered by Vosk EOU detection")
+        logging.info(
+            "vosk.use_silero_vad=false - Not using VAD wrapper for Vosk STT. Final transcripts will be triggered by Vosk EOU detection"
+        )
 
     return base_stt
 
@@ -965,13 +976,19 @@ def get_sherpa_stt_impl(agent_config) -> stt.STT:
 
     # Optionally wrap with VADTriggeredSTT to flush final transcripts based on VAD
     if use_silero_vad is True and silero is not None:
-        logging.info("sherpa.use_silero_vad=true - Using VAD wrapper around sherpa STT. Final transcripts will be forced by Silero VAD detection")
+        logging.info(
+            "sherpa.use_silero_vad=true - Using VAD wrapper around sherpa STT. Final transcripts will be forced by Silero VAD detection"
+        )
         vad_model = _get_cached_silero_vad()
         return VADTriggeredSTT(stt_impl=base_stt, vad_impl=vad_model)
     elif use_silero_vad is True and silero is None:
-        logging.warning("use_silero_vad=true but silero plugin not available, using sherpa without VAD wrapper")
+        logging.warning(
+            "use_silero_vad=true but silero plugin not available, using sherpa without VAD wrapper"
+        )
     elif use_silero_vad is False:
-        logging.info("sherpa.use_silero_vad=false - Not using VAD wrapper for sherpa STT. Final transcripts will be triggered by sherpa EOU detection")
+        logging.info(
+            "sherpa.use_silero_vad=false - Not using VAD wrapper for sherpa STT. Final transcripts will be triggered by sherpa EOU detection"
+        )
 
     return base_stt
 
@@ -1198,6 +1215,7 @@ def get_stt_impl(agent_config) -> stt.STT:
 
     return provider_config.impl_function(agent_config)
 
+
 # ######################################
 # TODO: use turn detection when required
 # ######################################
@@ -1253,14 +1271,14 @@ def get_stt_impl(agent_config) -> stt.STT:
 #                         logging.info(f"Auto-detected language '{language}' from Sherpa model '{model}' for turn detection")
 #         except Exception as e:
 #             logging.error(f"Error during model-to-language detection for provider '{stt_provider}': {e}")
-        
+
 #         # Fall back to getting the default from the STT plugin constructor
 #         if language is NOT_PROVIDED or language is None:
 #             try:
 #                 language = _get_stt_language_default(stt_provider)
 #             except Exception as e:
 #                 logging.error(f"Error getting default language for provider '{stt_provider}': {e}")
-        
+
 #     logging.info(f"Determined language for STT provider '{stt_provider}': {language}")
 
 #     # If still no language, return NotGiven
@@ -1273,7 +1291,7 @@ def get_stt_impl(agent_config) -> stt.STT:
 #         if preloaded_models and "english" in preloaded_models:
 #             logging.info("Using preloaded English turn detector model")
 #             return preloaded_models["english"]
-        
+
 #         from livekit.plugins.turn_detector.english import EnglishModel
 #         logging.info("Creating new English turn detector model instance")
 #         return EnglishModel()
@@ -1287,7 +1305,7 @@ def get_stt_impl(agent_config) -> stt.STT:
 #         if preloaded_models and "multilingual" in preloaded_models:
 #             logging.info("Using preloaded Multilingual turn detector model")
 #             return preloaded_models["multilingual"]
-        
+
 #         from livekit.plugins.turn_detector.multilingual import MultilingualModel
 #         logging.info("Creating new Multilingual turn detector model instance")
 #         return MultilingualModel()

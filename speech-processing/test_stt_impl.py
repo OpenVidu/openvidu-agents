@@ -33,6 +33,7 @@ from stt_impl import (
     get_soniox_stt_impl,
     get_nvidia_stt_impl,
     get_vosk_stt_impl,
+    get_sherpa_stt_impl,
     get_stt_impl,
 )
 
@@ -1434,4 +1435,274 @@ class TestSTTImplementations(unittest.TestCase):
         ):
             result = get_stt_impl(config)
             self.assertEqual(result, "vosk_stt_instance")
+            mock_impl.assert_called_once_with(config)
+
+    # Sherpa STT Tests
+    @patch("livekit.plugins.sherpa.STT")
+    def test_get_sherpa_stt_impl_success(self, mock_sherpa_stt):
+        # Arrange
+        config = {
+            "live_captions": {
+                "sherpa": {
+                    "model": "sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20",
+                    "language": "zh",
+                    "sample_rate": 16000,
+                    "partial_results": True,
+                    "num_threads": 4,
+                    "recognizer_type": "transducer",
+                    "decoding_method": "greedy_search",
+                }
+            }
+        }
+        mock_sherpa_stt.return_value = "sherpa_stt_instance"
+
+        # Act
+        result = get_sherpa_stt_impl(config)
+
+        # Assert
+        self.assertEqual(result, "sherpa_stt_instance")
+        mock_sherpa_stt.assert_called_once()
+
+        # Check the call arguments
+        call_args = mock_sherpa_stt.call_args[1]
+        self.assertEqual(
+            call_args["model_path"],
+            "sherpa-onnx-streaming-models/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20",
+        )
+        self.assertEqual(call_args["language"], "zh")
+        self.assertEqual(call_args["sample_rate"], 16000)
+        self.assertEqual(call_args["partial_results"], True)
+        self.assertEqual(call_args["num_threads"], 4)
+
+    @patch("livekit.plugins.sherpa.STT")
+    def test_get_sherpa_stt_impl_minimal_config(self, mock_sherpa_stt):
+        # Arrange - Only model provided (mandatory)
+        config = {
+            "live_captions": {
+                "sherpa": {
+                    "model": "sherpa-onnx-streaming-zipformer-en-2023-06-26",
+                }
+            }
+        }
+        mock_sherpa_stt.return_value = "sherpa_stt_instance"
+
+        # Act
+        result = get_sherpa_stt_impl(config)
+
+        # Assert
+        self.assertEqual(result, "sherpa_stt_instance")
+        mock_sherpa_stt.assert_called_once()
+
+    @patch("livekit.plugins.sherpa.STT")
+    def test_get_sherpa_stt_impl_auto_detect_language_en(self, mock_sherpa_stt):
+        # Arrange - English model, no language specified
+        config = {
+            "live_captions": {
+                "sherpa": {
+                    "model": "sherpa-onnx-streaming-zipformer-en-2023-06-26",
+                }
+            }
+        }
+        mock_sherpa_stt.return_value = "sherpa_stt_instance"
+
+        # Act
+        result = get_sherpa_stt_impl(config)
+
+        # Assert
+        self.assertEqual(result, "sherpa_stt_instance")
+        mock_sherpa_stt.assert_called_once()
+        call_args = mock_sherpa_stt.call_args[1]
+        # Language should be auto-detected as "en" from model name
+        self.assertEqual(call_args.get("language"), "en")
+
+    @patch("livekit.plugins.sherpa.STT")
+    def test_get_sherpa_stt_impl_auto_detect_language_zh(self, mock_sherpa_stt):
+        # Arrange - Chinese model, no language specified
+        config = {
+            "live_captions": {
+                "sherpa": {
+                    "model": "sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23",
+                }
+            }
+        }
+        mock_sherpa_stt.return_value = "sherpa_stt_instance"
+
+        # Act
+        result = get_sherpa_stt_impl(config)
+
+        # Assert
+        self.assertEqual(result, "sherpa_stt_instance")
+        mock_sherpa_stt.assert_called_once()
+        call_args = mock_sherpa_stt.call_args[1]
+        # Language should be auto-detected as "zh" from model name
+        self.assertEqual(call_args.get("language"), "zh")
+
+    @patch("livekit.plugins.sherpa.STT")
+    def test_get_sherpa_stt_impl_auto_detect_recognizer_type_transducer(
+        self, mock_sherpa_stt
+    ):
+        # Arrange - Zipformer model (without -ctc), should auto-detect as transducer
+        config = {
+            "live_captions": {
+                "sherpa": {
+                    "model": "sherpa-onnx-streaming-zipformer-en-2023-06-26",
+                }
+            }
+        }
+        mock_sherpa_stt.return_value = "sherpa_stt_instance"
+
+        # Act
+        result = get_sherpa_stt_impl(config)
+
+        # Assert
+        self.assertEqual(result, "sherpa_stt_instance")
+        mock_sherpa_stt.assert_called_once()
+
+    @patch("livekit.plugins.sherpa.STT")
+    def test_get_sherpa_stt_impl_auto_detect_recognizer_type_paraformer(
+        self, mock_sherpa_stt
+    ):
+        # Arrange - Paraformer model
+        config = {
+            "live_captions": {
+                "sherpa": {
+                    "model": "sherpa-onnx-streaming-paraformer-zh-2023-09-14",
+                }
+            }
+        }
+        mock_sherpa_stt.return_value = "sherpa_stt_instance"
+
+        # Act
+        result = get_sherpa_stt_impl(config)
+
+        # Assert
+        self.assertEqual(result, "sherpa_stt_instance")
+        mock_sherpa_stt.assert_called_once()
+
+    @patch("livekit.plugins.sherpa.STT")
+    def test_get_sherpa_stt_impl_auto_detect_recognizer_type_nemo_ctc(
+        self, mock_sherpa_stt
+    ):
+        # Arrange - NeMo CTC model
+        config = {
+            "live_captions": {
+                "sherpa": {
+                    "model": "sherpa-onnx-nemo-streaming-fast-conformer-ctc-en-80ms",
+                }
+            }
+        }
+        mock_sherpa_stt.return_value = "sherpa_stt_instance"
+
+        # Act
+        result = get_sherpa_stt_impl(config)
+
+        # Assert
+        self.assertEqual(result, "sherpa_stt_instance")
+        mock_sherpa_stt.assert_called_once()
+
+    @patch("livekit.plugins.sherpa.STT")
+    def test_get_sherpa_stt_impl_explicit_recognizer_type(self, mock_sherpa_stt):
+        # Arrange - Explicit recognizer_type overrides auto-detection
+        config = {
+            "live_captions": {
+                "sherpa": {
+                    "model": "sherpa-onnx-streaming-zipformer-en-2023-06-26",
+                    "recognizer_type": "zipformer_ctc",
+                }
+            }
+        }
+        mock_sherpa_stt.return_value = "sherpa_stt_instance"
+
+        # Act
+        result = get_sherpa_stt_impl(config)
+
+        # Assert
+        self.assertEqual(result, "sherpa_stt_instance")
+        mock_sherpa_stt.assert_called_once()
+
+    @patch("livekit.plugins.sherpa.STT")
+    def test_get_sherpa_stt_impl_with_decoding_method(self, mock_sherpa_stt):
+        # Arrange
+        config = {
+            "live_captions": {
+                "sherpa": {
+                    "model": "sherpa-onnx-streaming-zipformer-en-2023-06-26",
+                    "decoding_method": "modified_beam_search",
+                }
+            }
+        }
+        mock_sherpa_stt.return_value = "sherpa_stt_instance"
+
+        # Act
+        result = get_sherpa_stt_impl(config)
+
+        # Assert
+        self.assertEqual(result, "sherpa_stt_instance")
+        mock_sherpa_stt.assert_called_once()
+
+    @patch("stt_impl.silero")
+    @patch("livekit.plugins.sherpa.STT")
+    def test_get_sherpa_stt_impl_with_silero_vad(self, mock_sherpa_stt, mock_silero):
+        # Arrange - With Silero VAD enabled
+        config = {
+            "live_captions": {
+                "sherpa": {
+                    "model": "sherpa-onnx-streaming-zipformer-en-2023-06-26",
+                    "use_silero_vad": True,
+                }
+            }
+        }
+        mock_sherpa_stt.return_value = MagicMock()
+        mock_silero.VAD.load.return_value = MagicMock()
+
+        # Act
+        result = get_sherpa_stt_impl(config)
+
+        # Assert - Should wrap with VADTriggeredSTT when use_silero_vad is True
+        self.assertIsNotNone(result)
+        mock_sherpa_stt.assert_called_once()
+
+    def test_get_sherpa_stt_impl_missing_model(self):
+        # Arrange - Model is mandatory
+        config = {"live_captions": {"sherpa": {}}}
+
+        # Act & Assert
+        with self.assertRaises(ValueError) as context:
+            get_sherpa_stt_impl(config)
+
+        self.assertIn("model must be set", str(context.exception))
+
+    @patch("livekit.plugins.sherpa.STT")
+    def test_get_sherpa_stt_impl_bilingual_model(self, mock_sherpa_stt):
+        # Arrange - Bilingual model (zh-en)
+        config = {
+            "live_captions": {
+                "sherpa": {
+                    "model": "sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20",
+                }
+            }
+        }
+        mock_sherpa_stt.return_value = "sherpa_stt_instance"
+
+        # Act
+        result = get_sherpa_stt_impl(config)
+
+        # Assert
+        self.assertEqual(result, "sherpa_stt_instance")
+        mock_sherpa_stt.assert_called_once()
+
+    def test_get_stt_impl_sherpa(self):
+        config = {"live_captions": {"provider": "sherpa"}}
+        mock_impl = MagicMock(return_value="sherpa_stt_instance")
+
+        with patch.dict(
+            "stt_impl.STT_PROVIDERS",
+            {
+                "sherpa": stt_impl.STT_PROVIDERS["sherpa"]._replace(
+                    impl_function=mock_impl
+                )
+            },
+        ):
+            result = get_stt_impl(config)
+            self.assertEqual(result, "sherpa_stt_instance")
             mock_impl.assert_called_once_with(config)

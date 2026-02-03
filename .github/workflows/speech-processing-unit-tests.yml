@@ -36,6 +36,7 @@ jobs:
                   pip install -r requirements-base.txt
                   pip install -r requirements-cloud.txt
                   pip install -r requirements-vosk.txt
+                  pip install -r requirements-sherpa.txt
                   pip install -e ../openviduagentutils/
                   popd
 

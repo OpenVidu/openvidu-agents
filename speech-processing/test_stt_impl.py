@@ -1670,7 +1670,7 @@ class TestSTTImplementations(unittest.TestCase):
         with self.assertRaises(ValueError) as context:
             get_sherpa_stt_impl(config)
 
-        self.assertIn("model must be set", str(context.exception))
+        self.assertIn("Wrong sherpa configuration. live_captions.sherpa.model must be set", str(context.exception))
 
     @patch("livekit.plugins.sherpa.STT")
     def test_get_sherpa_stt_impl_bilingual_model(self, mock_sherpa_stt):

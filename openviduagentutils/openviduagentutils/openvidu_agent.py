@@ -170,7 +170,7 @@ class OpenViduAgent:
         """Append --log-level flag to sys.argv based solely on YAML config.
 
         The user can specify at the root of the YAML:
-        log_level: DEBUG|INFO|WARNING|ERROR|CRITICAL
+        log_level: DEBUG|INFO|WARN|ERROR|CRITICAL
 
         If a --log-level flag already exists, leave it untouched.
         """
@@ -180,7 +180,7 @@ class OpenViduAgent:
         if not isinstance(raw_level, str) or not raw_level.strip():
             return
         level = raw_level.strip().upper()
-        valid = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
+        valid = {"DEBUG", "INFO", "WARN", "ERROR", "CRITICAL"}
         if level not in valid:
             logging.warning(
                 f"Invalid log_level '{raw_level}' in agent config. Expected one of {sorted(valid)}"

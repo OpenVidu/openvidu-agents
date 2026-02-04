@@ -3,21 +3,42 @@ import { execCommand, sleep } from "./helper";
 import fs from "fs";
 import yaml from "yaml";
 
-const LOCAL_DEPLOYMENT_PATH = process.env.LOCAL_DEPLOYMENT_PATH || "../../openvidu-local-deployment/pro";
-const DOCKER_COMPOSE_FILE = `${LOCAL_DEPLOYMENT_PATH}/docker-compose.yaml`;
-const AGENT_SPEECH_PROCESSING_FILE = `${LOCAL_DEPLOYMENT_PATH}/agent-speech-processing.yaml`;
+type DeploymentEdition = "community" | "pro";
+
+const DEFAULT_EDITION: DeploymentEdition =
+  (process.env.DEPLOYMENT_EDITION as DeploymentEdition) || "community";
+const LOCAL_DEPLOYMENT_BASE_PATH =
+  process.env.LOCAL_DEPLOYMENT_BASE_PATH || "../../openvidu-local-deployment";
 
 export class LocalDeployment {
-  static async start(provider: any) {
+  private static edition: DeploymentEdition = DEFAULT_EDITION;
+
+  private static getLocalDeploymentPath(): string {
+    return `${LOCAL_DEPLOYMENT_BASE_PATH}/${this.edition}`;
+  }
+
+  private static getDockerComposeFile(): string {
+    return `${this.getLocalDeploymentPath()}/docker-compose.yaml`;
+  }
+
+  private static getAgentSpeechProcessingFile(): string {
+    return `${this.getLocalDeploymentPath()}/agent-speech-processing.yaml`;
+  }
+
+  static async start(edition: DeploymentEdition, provider: any) {
+    this.edition = edition;
     console.log(
       "Configuring local deployment with agent-speech-processing live_captions provider " +
-        Object.keys(provider)[0]
+        Object.keys(provider)[0],
     );
+    console.log(`Using deployment edition: ${this.edition}`);
+    console.log(`Deployment path: ${this.getLocalDeploymentPath()}`);
 
     const providerName = Object.keys(provider)[0];
 
     // Parse with specific options to preserve comments
-    const yamlContent = fs.readFileSync(AGENT_SPEECH_PROCESSING_FILE, "utf8");
+    const agentSpeechProcessingFile = this.getAgentSpeechProcessingFile();
+    const yamlContent = fs.readFileSync(agentSpeechProcessingFile, "utf8");
     const doc = yaml.parseDocument(yamlContent, {
       keepSourceTokens: true,
       prettyErrors: true,
@@ -52,17 +73,18 @@ export class LocalDeployment {
       singleQuote: null,
       verifyAliasOrder: true,
     });
-    fs.writeFileSync(AGENT_SPEECH_PROCESSING_FILE, output, "utf8");
+    fs.writeFileSync(agentSpeechProcessingFile, output, "utf8");
 
     console.log("Restarting local deployment...");
-    execCommand(`docker compose -f ${DOCKER_COMPOSE_FILE} up -d`);
+    const dockerComposeFile = this.getDockerComposeFile();
+    execCommand(`docker compose -f ${dockerComposeFile} up -d`);
     let statusCode: string;
 
     // Check that container "ready-check" exited with code 0
     do {
       await sleep(1);
       statusCode = execCommand(
-        "docker inspect ready-check -f {{.State.Status}}:{{.State.ExitCode}}"
+        "docker inspect ready-check -f {{.State.Status}}:{{.State.ExitCode}}",
       );
     } while (statusCode !== "exited:0");
     console.log("Local deployment started");
@@ -70,6 +92,7 @@ export class LocalDeployment {
 
   static stop() {
     console.log("Stopping local deployment...");
-    execCommand(`docker compose -f ${DOCKER_COMPOSE_FILE} down -v`);
+    const dockerComposeFile = this.getDockerComposeFile();
+    execCommand(`docker compose -f ${dockerComposeFile} down -v`);
   }
 }

@@ -1,6 +1,14 @@
 import { defineConfig } from "@playwright/test";
 import { RUN_MODE } from "./e2e/config";
 
+const commonLaunchArgs = [
+  "--use-fake-ui-for-media-stream",
+  "--use-fake-device-for-media-stream",
+  "--allow-file-access-from-files",
+  "--no-sandbox",
+  "--disable-dev-shm-usage",
+];
+
 export default defineConfig({
   testDir: "./e2e",
   timeout: 300000,
@@ -13,17 +21,33 @@ export default defineConfig({
     ignoreHTTPSErrors: true,
     permissions: ["camera", "microphone"],
     video: "retain-on-failure",
-    launchOptions: {
-      args: [
-        "--use-fake-ui-for-media-stream",
-        "--use-fake-device-for-media-stream",
-        "--use-file-for-fake-audio-capture=e2e/resources/stt-test-with-silence.wav",
-        "--allow-file-access-from-files",
-        "--no-sandbox",
-        "--disable-dev-shm-usage",
-      ],
-    },
   },
+  projects: [
+    {
+      name: "livecaptions",
+      testMatch: /livecaptions\.spec\.ts$/,
+      use: {
+        launchOptions: {
+          args: [
+            ...commonLaunchArgs,
+            "--use-file-for-fake-audio-capture=e2e/resources/stt-test-with-silence.wav",
+          ],
+        },
+      },
+    },
+    {
+      name: "livecaptions-memory-usage",
+      testMatch: /livecaptions-memory-usage\.spec\.ts$/,
+      use: {
+        launchOptions: {
+          args: [
+            ...commonLaunchArgs,
+            "--use-file-for-fake-audio-capture=e2e/resources/stt-test.wav",
+          ],
+        },
+      },
+    },
+  ],
   reporter:
     RUN_MODE == "CI"
       ? [

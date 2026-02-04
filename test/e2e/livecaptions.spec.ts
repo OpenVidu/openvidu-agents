@@ -1,7 +1,14 @@
 import { test, expect, Page, ElementHandle } from "@playwright/test";
 import { LocalDeployment } from "./utils/local-deployment";
 import { TESTAPP_URL } from "./config";
-import { downloadFile, execCommand } from "./utils/helper";
+import {
+  downloadFile,
+  execCommand,
+  waitForEvent,
+  waitForEventContentToStartWith,
+  getEventText,
+  countTotalEvents,
+} from "./utils/helper";
 
 const STT_AI_PROVIDERS = [
   {
@@ -184,7 +191,7 @@ function describeProviderTests(
       test.describe(uniqueTestName, () => {
         test.beforeEach(async () => {
           LocalDeployment.stop();
-          await LocalDeployment.start(provider);
+          await LocalDeployment.start("pro", provider);
         });
 
         test.afterEach(async ({}, testInfo) => {
@@ -324,174 +331,6 @@ describeProviderTests("Multi-user STT tests", ({ providerName }) => {
   });
 });
 
-/*
-<mat-expansion-panel>
-  <mat-expansion-panel-header>
-    <span class="mat-content"> EVENT_NAME </span>
-  </mat-expansion-panel-header>
-  <div class="mat-expansion-panel-content-wrapper">
-    <div class="mat-expansion-panel-content">
-      <div class="mat-expansion-panel-body">
-        <div class="event-content">EVENT_CONTENT</div>
-      </div>
-    </div>
-  </div>
-</mat-expansion-panel>
-*/
-async function waitForEvent(
-  page: Page,
-  eventName: string,
-  numEvents: number,
-  user: number,
-  timeout = 5000,
-): Promise<ElementHandle[]> {
-  const selector = `#openvidu-instance-${user} mat-accordion mat-expansion-panel mat-expansion-panel-header span.mat-content:has-text("${eventName}")`;
-  const locator = page.locator(selector);
-  try {
-    await locator.nth(numEvents - 1).waitFor({ timeout, state: "visible" });
-  } catch (error: any) {
-    console.error(
-      `Timeout waiting for ${eventName} events (${numEvents}) in user ${user}:`,
-      error.message,
-    );
-    if (!page.isClosed()) {
-      try {
-        const screenshot = await page.screenshot();
-        const base64Image = screenshot.toString("base64");
-        console.log(
-          `Screenshot at timeout:\ndata:image/png;base64,${base64Image}\n`,
-        );
-      } catch (screenshotError: any) {
-        console.error(`Failed to capture screenshot:`, screenshotError.message);
-      }
-    } else {
-      console.warn(`Page already closed; skipping screenshot`);
-    }
-    throw error;
-  }
-
-  const headerHandles = await locator.elementHandles();
-  const panelElements: ElementHandle[] = [];
-
-  for (let i = 0; i < Math.min(numEvents, headerHandles.length); i++) {
-    const panelHandle = await headerHandles[i].evaluateHandle((header) =>
-      (header as Element).closest("mat-expansion-panel"),
-    );
-    const elementHandle = panelHandle.asElement();
-    if (elementHandle) {
-      panelElements.push(elementHandle);
-    } else {
-      await panelHandle.dispose();
-    }
-  }
-
-  return panelElements;
-}
-
-// Same as waitForEvent but also checks for specific content inside the event
-async function waitForEventContentToStartWith(
-  page: Page,
-  eventName: string,
-  eventContent: string,
-  numEvents: number,
-  user: number,
-  timeout = 5000,
-): Promise<ElementHandle[]> {
-  const selector = `#openvidu-instance-${user} mat-accordion mat-expansion-panel mat-expansion-panel-header span.mat-content:has-text("${eventName}")`;
-  const locator = page.locator(selector);
-  const deadline = Date.now() + timeout;
-
-  while (Date.now() < deadline) {
-    if (page.isClosed()) {
-      console.warn(`Page is closed, exiting waitForEventContentToStartWith`);
-      break;
-    }
-
-    const remaining = Math.max(deadline - Date.now(), 0);
-    const headerCount = await locator.count();
-    if (headerCount < numEvents) {
-      if (remaining === 0) {
-        break;
-      }
-      await page.waitForTimeout(Math.min(remaining, 200));
-      continue;
-    }
-
-    const headerHandles = await locator.elementHandles();
-    const matchingPanels: ElementHandle[] = [];
-
-    for (const headerHandle of headerHandles) {
-      const panelHandle = await headerHandle.evaluateHandle((header) =>
-        (header as Element).closest("mat-expansion-panel"),
-      );
-      await headerHandle.dispose();
-      const elementHandle = panelHandle.asElement();
-      if (!elementHandle) {
-        await panelHandle.dispose();
-        continue;
-      }
-
-      const text = await getEventText(elementHandle);
-
-      if (text.startsWith(eventContent)) {
-        console.log(
-          `Found ${eventName} event for user ${user} starting with "${eventContent}": ${text}`,
-        );
-        matchingPanels.push(elementHandle);
-        if (matchingPanels.length === numEvents) {
-          return matchingPanels;
-        }
-      } else {
-        await elementHandle.dispose();
-      }
-    }
-
-    for (const panel of matchingPanels) {
-      await panel.dispose();
-    }
-
-    await page.waitForTimeout(
-      Math.min(Math.max(deadline - Date.now(), 0), 200),
-    );
-  }
-
-  if (!page.isClosed()) {
-    try {
-      const screenshot = await page.screenshot();
-      const base64Image = screenshot.toString("base64");
-      console.log(
-        `Screenshot at timeout for ${eventName} starting with "${eventContent}":\ndata:image/png;base64,${base64Image}\n`,
-      );
-    } catch (screenshotError: any) {
-      console.error(
-        `Failed to capture screenshot for ${eventName}:`,
-        screenshotError.message,
-      );
-    }
-  } else {
-    console.warn("Page already closed; skipping screenshot");
-  }
-
-  throw new Error(
-    `Timeout waiting for ${eventName} event contents (${numEvents}) for user ${user} starting with "${eventContent}"`,
-  );
-}
-
-async function getEventText(elementHandle: ElementHandle): Promise<string> {
-  try {
-    const text = await elementHandle.evaluate((el) => {
-      const contentElement = (el as Element).querySelector(
-        ".mat-expansion-panel-body .event-content",
-      );
-      return contentElement ? contentElement.textContent : null;
-    });
-    return text ? text.trim() : "";
-  } catch (error: any) {
-    console.error(`Error getting text for event:`, error.message);
-    return "";
-  }
-}
-
 function checkLevenshteinDistance(
   providerName: string,
   transcribedText: string,
@@ -526,19 +365,4 @@ function getLevenshteinDistance(
     .trim()
     .toLowerCase();
   return levenshtein.get(transcribedText, expectedText);
-}
-
-async function countTotalEvents(
-  page: Page,
-  eventName: string,
-  user: number,
-): Promise<number> {
-  const selector = `#openvidu-instance-${user} mat-accordion mat-expansion-panel mat-expansion-panel-header span.mat-content:has-text("${eventName}")`;
-  try {
-    const elements = await page.$$(selector);
-    return elements.length;
-  } catch (error: any) {
-    console.error(`Error counting events for ${eventName}:`, error.message);
-    return 0;
-  }
 }

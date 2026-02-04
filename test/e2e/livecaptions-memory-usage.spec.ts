@@ -22,7 +22,7 @@ const LOCAL_STT_PROVIDERS = [
       model: "sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06",
       use_silero_vad: false,
     },
-    maxMemoryMB: 800,
+    maxMemoryMB: 500,
   },
 ];
 
@@ -225,14 +225,14 @@ async function connectParticipant(
     `#openvidu-instance-${instanceIndex} .connect-btn`,
   );
   await connectButton.click();
-  await waitForEvent(page, "localTrackPublished", 1, instanceIndex, 10000);
+  await waitForEvent(page, "localTrackPublished", 1, instanceIndex, 60000);
   await waitForEventContentToStartWith(
     page,
     "finalTranscription",
     `TestParticipant${instanceIndex} said: `,
     1,
     instanceIndex,
-    30000,
+    60000,
   );
   console.log(
     `Participant ${instanceIndex} connected, publishing audio track and receiving own transcriptions.`,

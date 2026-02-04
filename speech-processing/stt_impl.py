@@ -61,34 +61,112 @@ _vad_load_lock = threading.Lock()
 
 def set_cached_silero_vad(vad_model) -> None:
     global _cached_silero_vad
+    
+    if _cached_silero_vad is not None:
+        return
+
     with _vad_load_lock:
+        if _cached_silero_vad is not None:
+            return
+
         _cached_silero_vad = vad_model
-    logging.info("Cached Silero VAD model set for reuse in STT implementations")
+        logging.info("Cached Silero VAD model set for reuse in STT implementations")
 
 
-def _get_cached_silero_vad():
+def _get_cached_silero_vad(load_if_missing: bool = False):
     global _cached_silero_vad
 
     # If already loaded, return immediately without lock
     if _cached_silero_vad is not None:
-        logging.info("Reusing pre-cached Silero VAD model")
+        logging.debug("Reusing pre-cached Silero VAD model")
         return _cached_silero_vad
 
-    # Need to load the model
-    if silero is not None:
+    # Only load if explicitly requested
+    if load_if_missing and silero is not None:
         with _vad_load_lock:
             # Double-check: another thread may have loaded it while we waited for the lock
             if _cached_silero_vad is not None:
-                logging.info("Silero VAD model was loaded by another thread")
+                logging.debug("Silero VAD model was loaded by another thread")
                 return _cached_silero_vad
 
             logging.info(
-                "Loading Silero VAD model. Will be cached for reuse across all threads"
+                "Loading Silero VAD model on-demand. Will be cached for reuse across all threads"
             )
             _cached_silero_vad = silero.VAD.load()
             return _cached_silero_vad
 
     return None
+
+
+def stt_provider_requires_vad(agent_config) -> bool:
+    try:
+        stt_provider = agent_config.get("live_captions", {}).get("provider")
+    except Exception:
+        return False
+
+    if stt_provider is None:
+        return False
+
+    # Scenario 1: Check if vosk/sherpa uses use_silero_vad=true
+    # These providers support streaming natively, but may use VAD wrapper
+    if stt_provider in ("vosk", "sherpa"):
+        config_manager = ConfigManager(agent_config, f"live_captions.{stt_provider}")
+        use_silero_vad = config_manager.configured_boolean_value("use_silero_vad")
+        if use_silero_vad is True:
+            logging.info(
+                f"Provider '{stt_provider}' has use_silero_vad=true - VAD needed for wrapper"
+            )
+            return True
+        # vosk/sherpa support streaming natively, so no VAD needed
+        logging.info(
+            f"Provider '{stt_provider}' supports streaming natively - VAD not needed"
+        )
+        return False
+
+    # Scenario 2: Check streaming capability from STTCapabilities
+    supports_streaming = _check_provider_streaming_capability(agent_config, stt_provider)
+    if not supports_streaming:
+        logging.info(
+            f"Provider '{stt_provider}' does not support streaming - VAD needed for StreamAdapter"
+        )
+        return True
+
+    logging.info(f"Provider '{stt_provider}' supports streaming - VAD not needed")
+    return False
+
+
+def _check_provider_streaming_capability(agent_config, stt_provider: str) -> bool:
+    try:
+        if stt_provider not in STT_PROVIDERS:
+            logging.warning(
+                f"Unknown provider '{stt_provider}' - assuming streaming capability"
+            )
+            return True
+
+        provider_config = STT_PROVIDERS[stt_provider]
+        if provider_config.impl_function is None:
+            # Registry not initialized yet - assume streaming to avoid unnecessary VAD loading
+            logging.warning(
+                f"STT registry not initialized - assuming '{stt_provider}' supports streaming"
+            )
+            return True
+
+        # Create instance and check capabilities
+        stt_instance = provider_config.impl_function(agent_config)
+        streaming = stt_instance.capabilities.streaming
+        logging.debug(
+            f"Provider '{stt_provider}' capabilities.streaming = {streaming}"
+        )
+        return streaming
+
+    except Exception as e:
+        # Can't instantiate (missing credentials, etc.) - assume streaming capability
+        # If wrong, VAD will be loaded on-demand when actually needed
+        logging.debug(
+            f"Could not check {stt_provider} capabilities: {e}. "
+            f"Assuming streaming capability - VAD will be loaded on-demand if needed."
+        )
+        return True
 
 
 # ######################################
@@ -862,7 +940,7 @@ def get_vosk_stt_impl(agent_config) -> stt.STT:
         logging.info(
             "vosk.use_silero_vad=true - Using VAD wrapper around Vosk STT. Final transcripts will be forced by Silero VAD detection"
         )
-        vad_model = _get_cached_silero_vad()
+        vad_model = _get_cached_silero_vad(load_if_missing=True)
         return VADTriggeredSTT(stt_impl=base_stt, vad_impl=vad_model)
     elif use_silero_vad is True and silero is None:
         logging.warning(
@@ -979,7 +1057,7 @@ def get_sherpa_stt_impl(agent_config) -> stt.STT:
         logging.info(
             "sherpa.use_silero_vad=true - Using VAD wrapper around sherpa STT. Final transcripts will be forced by Silero VAD detection"
         )
-        vad_model = _get_cached_silero_vad()
+        vad_model = _get_cached_silero_vad(load_if_missing=True)
         return VADTriggeredSTT(
             stt_impl=base_stt,
             vad_impl=vad_model,

@@ -4,6 +4,10 @@ import os
 import signal
 import sys
 
+# Configure basic logging early so preload messages are visible
+# cli.run_app() will reconfigure this with proper formatting later
+logging.basicConfig(level=logging.INFO)
+
 from livekit.agents import (
     AgentServer,
     AutoSubscribe,
@@ -12,8 +16,6 @@ from livekit.agents import (
     JobProcess,
     cli,
     stt,
-    llm,
-    WorkerType,
     WorkerPermissions,
     Agent,
     AgentSession,
@@ -21,15 +23,16 @@ from livekit.agents import (
     RoomInputOptions,
     RoomIO,
     utils,
-    StopResponse,
 )
+from livekit.agents.worker import ServerType
 from livekit import rtc
 from livekit.plugins import silero
 
-from stt_impl import get_stt_impl, set_cached_silero_vad
+from stt_impl import get_stt_impl, set_cached_silero_vad, stt_provider_requires_vad
 from openviduagentutils.openvidu_agent import OpenViduAgent
 from openviduagentutils.config_manager import ConfigManager
 from livekit.agents.types import NotGiven
+
 
 # ######################################
 # TODO: use turn detection when required
@@ -238,7 +241,11 @@ class MultiUserTranscriber:
                 self._vad_model = userdata.get("vad")
 
         if self._vad_model is None:
-            self._vad_model = silero.VAD.load()
+            # Fallback: use the module-level cached VAD, loading on-demand if needed
+            # This handles edge cases where VAD is required at runtime but wasn't preloaded
+            from stt_impl import _get_cached_silero_vad
+
+            self._vad_model = _get_cached_silero_vad(load_if_missing=True)
 
         return self._vad_model
 
@@ -408,9 +415,18 @@ async def entrypoint(ctx: JobContext):
 
 
 def prewarm(proc: JobProcess):
-    proc.userdata["vad"] = silero.VAD.load()
-    # Share the prewarmed VAD model for use_silero_vad feature
-    set_cached_silero_vad(proc.userdata["vad"])
+    # Reuse the preloaded Silero VAD model from the main process, if it was preloaded.
+    # VAD is only preloaded when the STT provider requires it (non-streaming or use_silero_vad=true)
+    from stt_impl import _get_cached_silero_vad
+
+    cached_vad = _get_cached_silero_vad()
+    if cached_vad is not None:
+        proc.userdata["vad"] = cached_vad
+        logging.debug("Using preloaded Silero VAD model in prewarm")
+    else:
+        # VAD not preloaded - this is expected when provider doesn't need VAD
+        # Don't load it here to save memory. It will be loaded on-demand if needed.
+        logging.debug("Silero VAD not preloaded - will be loaded on-demand if needed")
 
     # ######################################
     # TODO: use turn detection when required
@@ -418,6 +434,26 @@ def prewarm(proc: JobProcess):
     # Turn detector models will be preloaded in the first entrypoint call
     # because they require job context to initialize
     # proc.userdata["turn_detectors"] = {}
+
+
+def _preload_silero_vad() -> None:
+    """Preload Silero VAD model into memory for sharing across threads.
+
+    When using JobExecutorType.THREAD, all agent threads share the same process memory.
+    This function loads the Silero VAD model once at startup so all subsequent uses
+    reuse the cached model via stt_impl's internal cache.
+    """
+    try:
+        logging.info("Preloading Silero VAD model for shared thread-based execution...")
+        vad_model = silero.VAD.load()
+        set_cached_silero_vad(vad_model)
+        logging.info(
+            "Silero VAD model preloaded successfully. Will be shared across all agent threads"
+        )
+    except Exception as e:
+        logging.warning(
+            f"Failed to preload Silero VAD model: {e}. Model will be loaded on first use."
+        )
 
 
 def _preload_vosk_model(agent_config) -> None:
@@ -457,9 +493,18 @@ def _preload_sherpa_model(agent_config) -> None:
             logging.info("Preloading sherpa model for shared thread-based execution...")
             # Creating an STT instance triggers recognizer loading into the cache
             stt_impl = get_stt_impl(agent_config)
+
+            # If wrapped in VADTriggeredSTT, get the underlying sherpa STT
+            from vad_stt_wrapper import VADTriggeredSTT
+
+            if isinstance(stt_impl, VADTriggeredSTT):
+                sherpa_stt = stt_impl._stt
+            else:
+                sherpa_stt = stt_impl
+
             # Force model loading by ensuring the recognizer is created
             # The _ensure_recognizer() method loads the model into _RecognizerCache
-            asyncio.run(stt_impl._ensure_recognizer())
+            asyncio.run(sherpa_stt._ensure_recognizer())
             logging.info(
                 "sherpa model preloaded successfully. Will be shared across all agent threads"
             )
@@ -511,8 +556,8 @@ if __name__ == "__main__":
         load_threshold=load_threshold,
         max_retry=sys.maxsize,
         drain_timeout=sys.maxsize,
-        # Vosk models may require sizable memory
-        job_memory_warn_mb=1024,
+        # Local models may require sizable memory
+        job_memory_warn_mb=2048,
         permissions=WorkerPermissions(
             # no need to publish tracks
             can_publish=False,
@@ -530,27 +575,30 @@ if __name__ == "__main__":
     if agent_config["live_captions"]["processing"] == "manual":
         server._agent_name = agent_name
 
-    # Set worker type (ROOM = one agent per room)
-    server._server_type = WorkerType.ROOM
-
     # Register the entrypoint
-    @server.rtc_session()
+    @server.rtc_session(type=ServerType.ROOM)
     async def main_entrypoint(ctx: JobContext):
+        # Add custom log context fields
+        ctx.log_context_fields = {
+            "worker_id": ctx.worker_id,
+            "room_name": ctx.room.name,
+        }
         await entrypoint(ctx)
+
+    # Preload local models into memory before starting the server
+    # This ensures all thread-based agents share the same model instance
+    if stt_provider_requires_vad(agent_config):
+        _preload_silero_vad()
+    else:
+        logging.info("Skipping Silero VAD preload. Not needed for configured provider")
+    _preload_vosk_model(agent_config)
+    _preload_sherpa_model(agent_config)
 
     # Set up prewarm function
     server.setup_fnc = prewarm
 
-    # Preload local STT models into memory before starting the server
-    # This ensures all thread-based agents share the same model instance
-    _preload_vosk_model(agent_config)
-    _preload_sherpa_model(agent_config)
-
     logging.info(
         f"Starting agent {agent_name} with processing configured to {agent_config['live_captions']['processing']}"
-    )
-    logging.info(
-        "Using JobExecutorType.THREAD for shared Vosk model memory across all agents"
     )
 
     # Redirect signal SIGQUIT as SIGTERM to allow graceful shutdown using livekit/agents mechanism

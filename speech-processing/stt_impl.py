@@ -1289,8 +1289,9 @@ def get_stt_impl(agent_config) -> stt.STT:
             f"The required plugin '{plugin_name}' is not installed. "
             f"Available providers in this container: {', '.join(sorted(available_providers)) or 'none'}. "
             f"Please use the correct Docker image for your desired provider "
-            f"(e.g., openvidu/agent-speech-processing-cloud:main for cloud providers, "
-            f"openvidu/agent-speech-processing-vosk:main for vosk)."
+            f"(e.g., openvidu/agent-speech-processing-cloud for cloud providers, "
+            f"openvidu/agent-speech-processing-vosk for vosk, "
+            f"openvidu/agent-speech-processing-sherpa for sherpa)."
         )
 
     logging.info(f"Using {stt_provider} as STT provider")

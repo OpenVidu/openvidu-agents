@@ -51,13 +51,13 @@ jobs:
       - name: Download model files from GitHub Releases
         working-directory: ./speech-processing
         run: |
-          echo "Downloading Vosk models from latest release..."
-          curl -L -o vosk-models.tar.gz https://github.com/OpenVidu/openvidu-agents/releases/latest/download/vosk-models.tar.gz
+          echo "Downloading Vosk models from stt-local-models release..."
+          curl -L -o vosk-models.tar.gz https://github.com/OpenVidu/openvidu-agents/releases/download/stt-local-models-1.0/vosk-models.tar.gz
           tar -xzf vosk-models.tar.gz
           rm vosk-models.tar.gz
           
-          echo "Downloading Sherpa-ONNX models from latest release..."
-          curl -L -o sherpa-onnx-streaming-models.tar.gz https://github.com/OpenVidu/openvidu-agents/releases/latest/download/sherpa-onnx-streaming-models.tar.gz
+          echo "Downloading Sherpa-ONNX models from stt-local-models release..."
+          curl -L -o sherpa-onnx-streaming-models.tar.gz https://github.com/OpenVidu/openvidu-agents/releases/download/stt-local-models-1.0/sherpa-onnx-streaming-models.tar.gz
           tar -xzf sherpa-onnx-streaming-models.tar.gz
           rm sherpa-onnx-streaming-models.tar.gz
           

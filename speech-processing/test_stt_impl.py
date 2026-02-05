@@ -32,6 +32,7 @@ from stt_impl import (
     get_cartesia_stt_impl,
     get_soniox_stt_impl,
     get_nvidia_stt_impl,
+    get_elevenlabs_stt_impl,
     get_vosk_stt_impl,
     get_sherpa_stt_impl,
     get_stt_impl,
@@ -1025,6 +1026,97 @@ class TestSTTImplementations(unittest.TestCase):
         ):
             result = get_stt_impl(config)
             self.assertEqual(result, "nvidia_stt_instance")
+            mock_impl.assert_called_once_with(config)
+
+    # ElevenLabs STT Tests
+    @patch("livekit.plugins.elevenlabs.STT")
+    def test_get_elevenlabs_stt_impl_success(self, mock_elevenlabs_stt):
+        # Arrange
+        config = {
+            "live_captions": {
+                "elevenlabs": {
+                    "api_key": "test_elevenlabs_key",
+                    "language_code": "en",
+                    "model_id": "scribe_v1",
+                    "base_url": "https://custom.api.elevenlabs.io",
+                    "sample_rate": 16000,
+                    "tag_audio_events": True,
+                    "include_timestamps": False,
+                }
+            }
+        }
+        mock_elevenlabs_stt.return_value = "elevenlabs_stt_instance"
+
+        # Act
+        result = get_elevenlabs_stt_impl(config)
+
+        # Assert
+        self.assertEqual(result, "elevenlabs_stt_instance")
+        mock_elevenlabs_stt.assert_called_once_with(
+            api_key="test_elevenlabs_key",
+            language_code="en",
+            model_id="scribe_v1",
+            base_url="https://custom.api.elevenlabs.io",
+            sample_rate=16000,
+            tag_audio_events=True,
+            include_timestamps=False,
+        )
+
+    @patch("livekit.plugins.elevenlabs.STT")
+    def test_get_elevenlabs_stt_impl_minimal_config(self, mock_elevenlabs_stt):
+        # Arrange - Only api_key provided (mandatory)
+        config = {
+            "live_captions": {
+                "elevenlabs": {
+                    "api_key": "test_elevenlabs_key",
+                }
+            }
+        }
+        mock_elevenlabs_stt.return_value = "elevenlabs_stt_instance"
+
+        # Act
+        result = get_elevenlabs_stt_impl(config)
+
+        # Assert
+        self.assertEqual(result, "elevenlabs_stt_instance")
+        mock_elevenlabs_stt.assert_called_once_with(
+            api_key="test_elevenlabs_key",
+        )
+
+    def test_get_elevenlabs_stt_impl_missing_api_key(self):
+        # Arrange
+        config = {"live_captions": {"elevenlabs": {}}}
+
+        # Act & Assert
+        with self.assertRaises(ValueError) as context:
+            get_elevenlabs_stt_impl(config)
+
+        self.assertIn("Wrong ElevenLabs credentials", str(context.exception))
+
+    def test_get_elevenlabs_stt_impl_none_api_key(self):
+        # Arrange
+        config = {"live_captions": {"elevenlabs": {"api_key": None}}}
+
+        # Act & Assert
+        with self.assertRaises(ValueError) as context:
+            get_elevenlabs_stt_impl(config)
+
+        self.assertIn("Wrong ElevenLabs credentials", str(context.exception))
+
+    def test_get_stt_impl_elevenlabs(self):
+        config = {"live_captions": {"provider": "elevenlabs"}}
+        mock_impl = MagicMock(return_value="elevenlabs_stt_instance")
+
+        with patch.dict(
+            "stt_impl.STT_PROVIDERS",
+            {
+                "elevenlabs": stt_impl.STT_PROVIDERS["elevenlabs"]._replace(
+                    impl_function=mock_impl
+                )
+            },
+        ):
+            result = get_stt_impl(config)
+            self.assertEqual(result, "elevenlabs_stt_instance")
             mock_impl.assert_called_once_with(config)
 
     # Master get_stt_impl Tests

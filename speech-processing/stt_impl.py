@@ -44,11 +44,12 @@ clova = _try_import_plugin("clova")
 speechmatics = _try_import_plugin("speechmatics")
 gladia = _try_import_plugin("gladia")
 sarvam = _try_import_plugin("sarvam")
-spitch = _try_import_plugin("spitch")
 mistralai = _try_import_plugin("mistralai")
 cartesia = _try_import_plugin("cartesia")
 soniox = _try_import_plugin("soniox")
+spitch = _try_import_plugin("spitch")
 nvidia = _try_import_plugin("nvidia")
+elevenlabs = _try_import_plugin("elevenlabs")
 vosk = _try_import_plugin("vosk")
 sherpa = _try_import_plugin("sherpa")
 silero = _try_import_plugin("silero")
@@ -61,7 +62,7 @@ _vad_load_lock = threading.Lock()
 
 def set_cached_silero_vad(vad_model) -> None:
     global _cached_silero_vad
-    
+
     if _cached_silero_vad is not None:
         return
 
@@ -124,7 +125,9 @@ def stt_provider_requires_vad(agent_config) -> bool:
         return False
 
     # Scenario 2: Check streaming capability from STTCapabilities
-    supports_streaming = _check_provider_streaming_capability(agent_config, stt_provider)
+    supports_streaming = _check_provider_streaming_capability(
+        agent_config, stt_provider
+    )
     if not supports_streaming:
         logging.info(
             f"Provider '{stt_provider}' does not support streaming - VAD needed for StreamAdapter"
@@ -154,9 +157,7 @@ def _check_provider_streaming_capability(agent_config, stt_provider: str) -> boo
         # Create instance and check capabilities
         stt_instance = provider_config.impl_function(agent_config)
         streaming = stt_instance.capabilities.streaming
-        logging.debug(
-            f"Provider '{stt_provider}' capabilities.streaming = {streaming}"
-        )
+        logging.debug(f"Provider '{stt_provider}' capabilities.streaming = {streaming}")
         return streaming
 
     except Exception as e:
@@ -396,6 +397,11 @@ STT_PROVIDERS = {
     "nvidia": STTProviderConfig(
         impl_function=None,
         plugin_module="livekit.plugins.nvidia",
+        plugin_class="STT",
+    ),
+    "elevenlabs": STTProviderConfig(
+        impl_function=None,
+        plugin_module="livekit.plugins.elevenlabs",
         plugin_class="STT",
     ),
     "vosk": STTProviderConfig(
@@ -877,6 +883,71 @@ def get_sarvam_stt_impl(agent_config) -> stt.STT:
     )
 
 
+def get_mistralai_stt_impl(agent_config) -> stt.STT:
+    config_manager = ConfigManager(agent_config, "live_captions.mistralai")
+    wrong_credentials = (
+        "Wrong MistralAI credentials. live_captions.mistralai.api_key must be set"
+    )
+
+    api_key = config_manager.mandatory_value("api_key", wrong_credentials)
+
+    language = config_manager.configured_string_value("language")
+    model = config_manager.configured_string_value("model")
+
+    kwargs = {
+        k: v
+        for k, v in {"language": language, "model": model}.items()
+        if v is not NOT_PROVIDED
+    }
+
+    return mistralai.STT(api_key=api_key, **kwargs)
+
+
+def get_cartesia_stt_impl(agent_config) -> stt.STT:
+    config_manager = ConfigManager(agent_config, "live_captions.cartesia")
+    wrong_credentials = (
+        "Wrong Cartesia credentials. live_captions.cartesia.api_key must be set"
+    )
+
+    api_key = config_manager.mandatory_value("api_key", wrong_credentials)
+
+    language = config_manager.configured_string_value("language")
+    model = config_manager.configured_string_value("model")
+
+    kwargs = {
+        k: v
+        for k, v in {"language": language, "model": model}.items()
+        if v is not NOT_PROVIDED
+    }
+
+    return cartesia.STT(api_key=api_key, **kwargs)
+
+
+def get_soniox_stt_impl(agent_config) -> stt.STT:
+    config_manager = ConfigManager(agent_config, "live_captions.soniox")
+    wrong_credentials = (
+        "Wrong Soniox credentials. live_captions.soniox.api_key must be set"
+    )
+
+    api_key = config_manager.mandatory_value("api_key", wrong_credentials)
+
+    model = config_manager.configured_string_value("model")
+    language_hints = config_manager.configured_list_value("language_hints", str)
+    context = config_manager.configured_string_value("context")
+
+    kwargs = {
+        k: v
+        for k, v in {
+            "model": model,
+            "language_hints": language_hints,
+            "context": context,
+        }.items()
+        if v is not NOT_PROVIDED
+    }
+
+    return soniox.STT(api_key=api_key, params=soniox.STTOptions(**kwargs))
+
+
 def get_spitch_stt_impl(agent_config) -> stt.STT:
     config_manager = ConfigManager(agent_config, "live_captions.spitch")
     wrong_credentials = (
@@ -892,6 +963,75 @@ def get_spitch_stt_impl(agent_config) -> stt.STT:
     kwargs = {k: v for k, v in {"language": language}.items() if v is not NOT_PROVIDED}
 
     return spitch.STT(**kwargs)
+
+
+def get_nvidia_stt_impl(agent_config) -> stt.STT:
+    config_manager = ConfigManager(agent_config, "live_captions.nvidia")
+
+    api_key = config_manager.configured_string_value("api_key")
+    server = config_manager.configured_string_value("server")
+    use_ssl = config_manager.configured_boolean_value("use_ssl")
+
+    # If server is defined, it takes precedence (self-hosted scenario)
+    # If api_key is empty and server is not defined, raise an error
+    if api_key is NOT_PROVIDED and server is NOT_PROVIDED:
+        raise ValueError(
+            "Wrong NVIDIA configuration. Either live_captions.nvidia.api_key must be set "
+            "(for NVIDIA cloud) or live_captions.nvidia.server must be set (for self-hosted Riva NIM)."
+        )
+
+    model = config_manager.configured_string_value("model")
+    function_id = config_manager.configured_string_value("function_id")
+    punctuate = config_manager.configured_boolean_value("punctuate")
+    language_code = config_manager.configured_string_value("language_code")
+    sample_rate = config_manager.configured_numeric_value("sample_rate")
+
+    kwargs = {
+        k: v
+        for k, v in {
+            "api_key": api_key,
+            "model": model,
+            "function_id": function_id,
+            "punctuate": punctuate,
+            "language_code": language_code,
+            "sample_rate": sample_rate,
+            "server": server,
+            "use_ssl": use_ssl,
+        }.items()
+        if v is not NOT_PROVIDED
+    }
+
+    return nvidia.STT(**kwargs)
+
+
+def get_elevenlabs_stt_impl(agent_config) -> stt.STT:
+    config_manager = ConfigManager(agent_config, "live_captions.elevenlabs")
+    wrong_credentials = (
+        "Wrong ElevenLabs credentials. live_captions.elevenlabs.api_key must be set"
+    )
+
+    api_key = config_manager.mandatory_value("api_key", wrong_credentials)
+    model_id = config_manager.configured_string_value("model_id")
+    language_code = config_manager.configured_string_value("language_code")
+    base_url = config_manager.configured_string_value("base_url")
+    sample_rate = config_manager.configured_numeric_value("sample_rate")
+    tag_audio_events = config_manager.configured_boolean_value("tag_audio_events")
+    include_timestamps = config_manager.configured_boolean_value("include_timestamps")
+
+    kwargs = {
+        k: v
+        for k, v in {
+            "model_id": model_id,
+            "language_code": language_code,
+            "base_url": base_url,
+            "sample_rate": sample_rate,
+            "tag_audio_events": tag_audio_events,
+            "include_timestamps": include_timestamps,
+        }.items()
+        if v is not NOT_PROVIDED
+    }
+
+    return elevenlabs.STT(api_key=api_key, **kwargs)
 
 
 def get_vosk_stt_impl(agent_config) -> stt.STT:
@@ -1075,110 +1215,6 @@ def get_sherpa_stt_impl(agent_config) -> stt.STT:
     return base_stt
 
 
-def get_mistralai_stt_impl(agent_config) -> stt.STT:
-    config_manager = ConfigManager(agent_config, "live_captions.mistralai")
-    wrong_credentials = (
-        "Wrong MistralAI credentials. live_captions.mistralai.api_key must be set"
-    )
-
-    api_key = config_manager.mandatory_value("api_key", wrong_credentials)
-
-    language = config_manager.configured_string_value("language")
-    model = config_manager.configured_string_value("model")
-
-    kwargs = {
-        k: v
-        for k, v in {"language": language, "model": model}.items()
-        if v is not NOT_PROVIDED
-    }
-
-    return mistralai.STT(api_key=api_key, **kwargs)
-
-
-def get_cartesia_stt_impl(agent_config) -> stt.STT:
-    config_manager = ConfigManager(agent_config, "live_captions.cartesia")
-    wrong_credentials = (
-        "Wrong Cartesia credentials. live_captions.cartesia.api_key must be set"
-    )
-
-    api_key = config_manager.mandatory_value("api_key", wrong_credentials)
-
-    language = config_manager.configured_string_value("language")
-    model = config_manager.configured_string_value("model")
-
-    kwargs = {
-        k: v
-        for k, v in {"language": language, "model": model}.items()
-        if v is not NOT_PROVIDED
-    }
-
-    return cartesia.STT(api_key=api_key, **kwargs)
-
-
-def get_soniox_stt_impl(agent_config) -> stt.STT:
-    config_manager = ConfigManager(agent_config, "live_captions.soniox")
-    wrong_credentials = (
-        "Wrong Soniox credentials. live_captions.soniox.api_key must be set"
-    )
-
-    api_key = config_manager.mandatory_value("api_key", wrong_credentials)
-
-    model = config_manager.configured_string_value("model")
-    language_hints = config_manager.configured_list_value("language_hints", str)
-    context = config_manager.configured_string_value("context")
-
-    kwargs = {
-        k: v
-        for k, v in {
-            "model": model,
-            "language_hints": language_hints,
-            "context": context,
-        }.items()
-        if v is not NOT_PROVIDED
-    }
-
-    return soniox.STT(api_key=api_key, params=soniox.STTOptions(**kwargs))
-
-
-def get_nvidia_stt_impl(agent_config) -> stt.STT:
-    config_manager = ConfigManager(agent_config, "live_captions.nvidia")
-
-    api_key = config_manager.configured_string_value("api_key")
-    server = config_manager.configured_string_value("server")
-    use_ssl = config_manager.configured_boolean_value("use_ssl")
-
-    # If server is defined, it takes precedence (self-hosted scenario)
-    # If api_key is empty and server is not defined, raise an error
-    if api_key is NOT_PROVIDED and server is NOT_PROVIDED:
-        raise ValueError(
-            "Wrong NVIDIA configuration. Either live_captions.nvidia.api_key must be set "
-            "(for NVIDIA cloud) or live_captions.nvidia.server must be set (for self-hosted Riva NIM)."
-        )
-
-    model = config_manager.configured_string_value("model")
-    function_id = config_manager.configured_string_value("function_id")
-    punctuate = config_manager.configured_boolean_value("punctuate")
-    language_code = config_manager.configured_string_value("language_code")
-    sample_rate = config_manager.configured_numeric_value("sample_rate")
-
-    kwargs = {
-        k: v
-        for k, v in {
-            "api_key": api_key,
-            "model": model,
-            "function_id": function_id,
-            "punctuate": punctuate,
-            "language_code": language_code,
-            "sample_rate": sample_rate,
-            "server": server,
-            "use_ssl": use_ssl,
-        }.items()
-        if v is not NOT_PROVIDED
-    }
-
-    return nvidia.STT(**kwargs)
-
-
 # Initialize the registry with implementation functions
 def _initialize_stt_registry():
     """Initialize the STT provider registry with implementation functions.
@@ -1205,8 +1241,9 @@ def _initialize_stt_registry():
         "mistralai": get_mistralai_stt_impl,
         "cartesia": get_cartesia_stt_impl,
         "soniox": get_soniox_stt_impl,
-        "nvidia": get_nvidia_stt_impl,
         "spitch": get_spitch_stt_impl,
+        "nvidia": get_nvidia_stt_impl,
+        "elevenlabs": get_elevenlabs_stt_impl,
         "vosk": get_vosk_stt_impl,
         "sherpa": get_sherpa_stt_impl,
     }

@@ -1,4 +1,7 @@
 
 # Model files (stored in GitHub Releases)
-vosk-models/
-sherpa-onnx-streaming-models/
+# Ignore all files in these directories, but keep the README.md
+vosk-models/*
+!vosk-models/README.md
+sherpa-onnx-streaming-models/*
+!sherpa-onnx-streaming-models/README.md

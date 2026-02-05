@@ -48,20 +48,9 @@ jobs:
         with:
           ref: ${{ inputs.ref-openvidu-agents || github.sha }}
 
-      - name: Download model files from GitHub Releases
+      - name: Download STT model files
         working-directory: ./speech-processing
-        run: |
-          echo "Downloading Vosk models from stt-local-models release..."
-          curl -L -o vosk-models.tar.gz https://github.com/OpenVidu/openvidu-agents/releases/download/stt-local-models-1.0/vosk-models.tar.gz
-          tar -xzf vosk-models.tar.gz
-          rm vosk-models.tar.gz
-          
-          echo "Downloading Sherpa-ONNX models from stt-local-models release..."
-          curl -L -o sherpa-onnx-streaming-models.tar.gz https://github.com/OpenVidu/openvidu-agents/releases/download/stt-local-models-1.0/sherpa-onnx-streaming-models.tar.gz
-          tar -xzf sherpa-onnx-streaming-models.tar.gz
-          rm sherpa-onnx-streaming-models.tar.gz
-          
-          echo "Models downloaded and extracted successfully"
+        run: ./download-models.sh
 
       - name: Checkout OpenVidu/openvidu
         uses: actions/checkout@v4

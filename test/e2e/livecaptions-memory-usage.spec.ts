@@ -16,6 +16,7 @@ const LOCAL_STT_PROVIDERS = [
       use_silero_vad: false,
     },
     maxMemoryMB: 1500,
+    maxTracks: 5, // Vosk has a limit of 5 simultaneous tracks
   },
   {
     sherpa: {
@@ -289,8 +290,15 @@ test.describe("Memory usage tests for local STT providers", () => {
         console.log(`Baseline memory: ${formatBytes(baselineMemory)}`);
 
         // Step 2: Generate random schedule for participant creation
+        // Respect maxTracks limit if defined for this provider
+        const maxTracks = provider.maxTracks;
+        const defaultTotalTracks = TOTAL_ROOMS * TOTAL_PUBLISHERS_PER_ROOM;
+        const totalTracks = maxTracks
+          ? Math.min(maxTracks, defaultTotalTracks)
+          : defaultTotalTracks;
+
         console.log(
-          `Step 2: Generating random schedule for ${TOTAL_ROOMS} rooms over ${ROOM_CREATION_TIMESPAN_SECONDS} seconds...`,
+          `Step 2: Generating random schedule for ${totalTracks} tracks over ${ROOM_CREATION_TIMESPAN_SECONDS} seconds...`,
         );
 
         interface ParticipantTask {
@@ -301,17 +309,23 @@ test.describe("Memory usage tests for local STT providers", () => {
 
         const tasks: ParticipantTask[] = [];
         let instanceIndex = 0;
+        let tracksCreated = 0;
 
-        // Generate tasks for each room with random publishers
+        // Generate tasks for each room with random publishers, respecting maxTracks limit
         for (let roomIndex = 0; roomIndex < TOTAL_ROOMS; roomIndex++) {
+          if (tracksCreated >= totalTracks) break;
+
           const roomName = `memory-test-room-${roomIndex}`;
 
           for (let p = 0; p < TOTAL_PUBLISHERS_PER_ROOM; p++) {
+            if (tracksCreated >= totalTracks) break;
+
             tasks.push({
               instanceIndex: instanceIndex++,
               roomName,
               delayMs: 0, // Will be assigned below
             });
+            tracksCreated++;
           }
         }
 

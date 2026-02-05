@@ -50,8 +50,19 @@ RUN --mount=type=secret,id=github_token \
         pip install --no-cache-dir -r requirements-vosk.txt; \
     fi
 
-# Copy the pre-compiled libvosk.so binary from the build context
-COPY vosk-models/libvosk.so /opt/venv/lib/python3.12/site-packages/vosk/libvosk.so
+COPY vosk-models ./vosk-models
+
+# Validate libvosk.so exists and copy it to the correct location
+RUN if [ ! -f vosk-models/libvosk.so ]; then \
+        echo "" >&2; \
+        echo "ERROR: vosk-models/libvosk.so binary not found!" >&2; \
+        echo "" >&2; \
+        echo "Please run the following command before building:" >&2; \
+        echo "  ./download-models.sh" >&2; \
+        echo "" >&2; \
+        exit 1; \
+    fi && \
+    cp vosk-models/libvosk.so /opt/venv/lib/python3.12/site-packages/vosk/libvosk.so
 
 # =============================================================================
 # STAGE 2: Final - Clean image
@@ -62,8 +73,19 @@ FROM ${BASE_IMAGE}
 COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Copy Vosk models for offline speech recognition
+# Copy vosk models for offline speech recognition
 COPY vosk-models ./vosk-models
+
+# Validate that the copied models directory contains actual model files (not just README.md and libvosk.so)
+RUN if [ $(find vosk-models -mindepth 1 ! -name 'README.md' ! -name 'libvosk.so' | wc -l) -eq 0 ]; then \
+        echo "" >&2; \
+        echo "ERROR: vosk-models directory contains no model files!" >&2; \
+        echo "" >&2; \
+        echo "Please run the following command before building:" >&2; \
+        echo "  ./download-models.sh" >&2; \
+        echo "" >&2; \
+        exit 1; \
+    fi
 
 # Pre-download any ML models or files the agent needs (VAD, turn detector)
 RUN python main.py download-files

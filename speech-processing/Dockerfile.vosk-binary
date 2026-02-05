@@ -113,8 +113,19 @@ FROM ${BASE_IMAGE}
 COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Copy Vosk models for offline speech recognition
+# Copy vosk models for offline speech recognition
 COPY vosk-models ./vosk-models
+
+# Validate that the copied models directory contains actual model files (not just README.md)
+RUN if [ $(find vosk-models -mindepth 1 ! -name 'README.md' | wc -l) -eq 0 ]; then \
+        echo "" >&2; \
+        echo "ERROR: vosk-models directory contains no model files!" >&2; \
+        echo "" >&2; \
+        echo "Please run the following command before building:" >&2; \
+        echo "  ./download-models.sh" >&2; \
+        echo "" >&2; \
+        exit 1; \
+    fi
 
 # Pre-download any ML models or files the agent needs (VAD, turn detector)
 RUN python main.py download-files

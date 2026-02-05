@@ -64,6 +64,17 @@ ENV PATH="/opt/venv/bin:$PATH"
 # Copy sherpa models for offline streaming speech recognition
 COPY sherpa-onnx-streaming-models ./sherpa-onnx-streaming-models
 
+# Validate that the copied models directory contains actual model files (not just README.md)
+RUN if [ $(find sherpa-onnx-streaming-models -mindepth 1 ! -name 'README.md' | wc -l) -eq 0 ]; then \
+        echo "" >&2; \
+        echo "ERROR: sherpa-onnx-streaming-models directory contains no model files!" >&2; \
+        echo "" >&2; \
+        echo "Please run the following command before building:" >&2; \
+        echo "  ./download-models.sh" >&2; \
+        echo "" >&2; \
+        exit 1; \
+    fi
+
 # Pre-download any ML models or files the agent needs (VAD, turn detector)
 RUN python main.py download-files
 

@@ -15,8 +15,8 @@ const LOCAL_STT_PROVIDERS = [
       model: "vosk-model-en-us-0.22-lgraph",
       use_silero_vad: false,
     },
-    maxMemoryMB: 1500,
-    maxTracks: 5, // Vosk has a limit of 5 simultaneous tracks
+    maxMemoryMB: 1600,
+    maxTracks: 5,
   },
   {
     sherpa: {
@@ -29,6 +29,7 @@ const LOCAL_STT_PROVIDERS = [
 
 // Configuration
 const ROOM_CREATION_TIMESPAN_SECONDS = 25; // Time window to create all rooms
+const DISCONNECT_RECONNECT_TIMESPAN_SECONDS = 40; // Time window for random disconnect/reconnect operations
 const TOTAL_ROOMS = 4;
 const TOTAL_PUBLISHERS_PER_ROOM = 2;
 const MEMORY_CHECK_WAIT_SECONDS = 5; // Additional wait after room creation
@@ -240,6 +241,20 @@ async function connectParticipant(
   );
 }
 
+/**
+ * Disconnect a participant by its instance index
+ */
+async function disconnectParticipant(
+  page: Page,
+  instanceIndex: number,
+): Promise<void> {
+  const disconnectButton = page.locator(
+    `#openvidu-instance-${instanceIndex} .disconnect-btn`,
+  );
+  await disconnectButton.click();
+  console.log(`Participant ${instanceIndex} disconnected.`);
+}
+
 test.beforeAll(async () => {
   const fs = require("fs");
   const path = require("path");
@@ -401,15 +416,150 @@ test.describe("Memory usage tests for local STT providers", () => {
         );
         await sleep(MEMORY_CHECK_WAIT_SECONDS);
 
-        // Step 6: Check final memory usage
-        console.log("Step 6: Checking final memory usage...");
+        // Step 6: Check memory after initial connections
+        console.log("Step 6: Checking memory after initial connections...");
+        const afterConnectionStats = getContainerMemoryStats(containerName);
+        const afterConnectionMemory = afterConnectionStats.usedBytes;
+        console.log(
+          `Memory after initial connections: ${formatBytes(afterConnectionMemory)}`,
+        );
+
+        // Step 7: Random disconnect/reconnect phase
+        console.log(
+          `Step 7: Starting random disconnect/reconnect phase for ${DISCONNECT_RECONNECT_TIMESPAN_SECONDS} seconds...`,
+        );
+
+        // Track which participants are currently connected
+        const connectedParticipants = new Set<number>(
+          tasks.map((task) => task.instanceIndex),
+        );
+        const allParticipants = tasks.map((task) => task.instanceIndex);
+
+        // Generate random disconnect/reconnect events
+        const numEvents = totalTracks * Math.max(DISCONNECT_RECONNECT_TIMESPAN_SECONDS/10, 2);
+        const eventDelays = generateRandomDelays(
+          numEvents,
+          DISCONNECT_RECONNECT_TIMESPAN_SECONDS,
+        );
+
+        const churnStartTime = Date.now();
+
+        for (let i = 0; i < numEvents; i++) {
+          const elapsedMs = Date.now() - churnStartTime;
+          const waitMs = Math.max(0, eventDelays[i] - elapsedMs);
+
+          if (waitMs > 0) {
+            await sleep(waitMs / 1000);
+          }
+
+          // Randomly decide whether to disconnect or connect
+          const connectedArray = Array.from(connectedParticipants);
+          const disconnectedArray = allParticipants.filter(
+            (p) => !connectedParticipants.has(p),
+          );
+
+          const canDisconnect = connectedArray.length > 0;
+          const canConnect =
+            disconnectedArray.length > 0 &&
+            connectedParticipants.size < totalTracks;
+
+          if (canDisconnect && (!canConnect || Math.random() < 0.5)) {
+            // Disconnect a random connected participant
+            const participantToDisconnect =
+              connectedArray[Math.floor(Math.random() * connectedArray.length)];
+            try {
+              await disconnectParticipant(page, participantToDisconnect);
+              connectedParticipants.delete(participantToDisconnect);
+              console.log(
+                `  Disconnected participant ${participantToDisconnect}. Active tracks: ${connectedParticipants.size}/${totalTracks}`,
+              );
+            } catch (error: any) {
+              console.error(
+                `Error disconnecting participant ${participantToDisconnect}: ${error.message}`,
+              );
+            }
+          } else if (canConnect) {
+            // Connect a random disconnected participant
+            const participantToConnect =
+              disconnectedArray[
+                Math.floor(Math.random() * disconnectedArray.length)
+              ];
+            try {
+              await connectParticipant(page, participantToConnect);
+              connectedParticipants.add(participantToConnect);
+              console.log(
+                `  Connected participant ${participantToConnect}. Active tracks: ${connectedParticipants.size}/${totalTracks}`,
+              );
+            } catch (error: any) {
+              console.error(
+                `Error connecting participant ${participantToConnect}: ${error.message}`,
+              );
+            }
+          }
+        }
+
+        // Wait for remaining time in the churn timespan
+        const churnElapsed = Date.now() - churnStartTime;
+        const remainingChurnTime =
+          DISCONNECT_RECONNECT_TIMESPAN_SECONDS * 1000 - churnElapsed;
+        if (remainingChurnTime > 0) {
+          console.log(
+            `Waiting ${(remainingChurnTime / 1000).toFixed(2)}s for churn timespan to complete...`,
+          );
+          await sleep(remainingChurnTime / 1000);
+        }
+
+        // Step 8: Reconnect all disconnected participants to reach maximum capacity
+        console.log(
+          "Step 8: Reconnecting all disconnected participants to reach maximum capacity...",
+        );
+        const disconnectedArray = allParticipants.filter(
+          (p) => !connectedParticipants.has(p),
+        );
+
+        if (disconnectedArray.length > 0) {
+          console.log(
+            `Reconnecting ${disconnectedArray.length} disconnected participant(s)...`,
+          );
+          for (const participantToReconnect of disconnectedArray) {
+            try {
+              await connectParticipant(page, participantToReconnect);
+              connectedParticipants.add(participantToReconnect);
+              console.log(
+                `  Reconnected participant ${participantToReconnect}. Active tracks: ${connectedParticipants.size}/${totalTracks}`,
+              );
+            } catch (error: any) {
+              console.error(
+                `Error reconnecting participant ${participantToReconnect}: ${error.message}`,
+              );
+            }
+          }
+        } else {
+          console.log("All participants already connected.");
+        }
+
+        console.log(
+          `Final active tracks before memory check: ${connectedParticipants.size}/${totalTracks}`,
+        );
+
+        // Step 9: Wait for memory to settle after final reconnections
+        console.log(
+          `Step 9: Waiting ${MEMORY_CHECK_WAIT_SECONDS} seconds for memory to settle...`,
+        );
+        await sleep(MEMORY_CHECK_WAIT_SECONDS);
+
+        // Step 10: Check final memory usage
+        console.log("Step 10: Checking final memory usage after churn...");
         const finalStats = getContainerMemoryStats(containerName);
         const finalMemory = finalStats.usedBytes;
         const finalMemoryMB = finalMemory / (1024 * 1024);
         const maxMemoryBytes = maxMemoryMB * 1024 * 1024;
 
         console.log(`Baseline memory: ${formatBytes(baselineMemory)}`);
-        console.log(`Final memory: ${formatBytes(finalMemory)}`);
+        console.log(
+          `After connections: ${formatBytes(afterConnectionMemory)}`,
+        );
+        console.log(`Final memory (after churn): ${formatBytes(finalMemory)}`);
         console.log(`Maximum allowed for ${providerName}: ${maxMemoryMB} MiB`);
 
         // Assert memory usage does not exceed absolute limit

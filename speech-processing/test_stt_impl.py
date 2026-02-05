@@ -33,6 +33,7 @@ from stt_impl import (
     get_soniox_stt_impl,
     get_nvidia_stt_impl,
     get_elevenlabs_stt_impl,
+    get_simplismart_stt_impl,
     get_vosk_stt_impl,
     get_sherpa_stt_impl,
     get_stt_impl,
@@ -1117,6 +1118,99 @@ class TestSTTImplementations(unittest.TestCase):
         ):
             result = get_stt_impl(config)
             self.assertEqual(result, "elevenlabs_stt_instance")
+            mock_impl.assert_called_once_with(config)
+
+    # SimpliSmart STT Tests
+    @patch("livekit.plugins.simplismart.STT")
+    def test_get_simplismart_stt_impl_success(self, mock_simplismart_stt):
+        # Arrange
+        config = {
+            "live_captions": {
+                "simplismart": {
+                    "api_key": "test_simplismart_key",
+                    "model": "openai/whisper-large-v3-turbo",
+                    "language": "en",
+                    "task": "transcribe",
+                    "without_timestamps": True,
+                    "min_speech_duration_ms": 100,
+                    "temperature": 0.0,
+                    "multilingual": False,
+                }
+            }
+        }
+        mock_simplismart_stt.return_value = "simplismart_stt_instance"
+
+        # Act
+        result = get_simplismart_stt_impl(config)
+
+        # Assert
+        self.assertEqual(result, "simplismart_stt_instance")
+        mock_simplismart_stt.assert_called_once_with(
+            api_key="test_simplismart_key",
+            model="openai/whisper-large-v3-turbo",
+            language="en",
+            task="transcribe",
+            without_timestamps=True,
+            min_speech_duration_ms=100,
+            temperature=0.0,
+            multilingual=False,
+        )
+
+    @patch("livekit.plugins.simplismart.STT")
+    def test_get_simplismart_stt_impl_minimal_config(self, mock_simplismart_stt):
+        # Arrange - Only api_key provided (mandatory)
+        config = {
+            "live_captions": {
+                "simplismart": {
+                    "api_key": "test_simplismart_key",
+                }
+            }
+        }
+        mock_simplismart_stt.return_value = "simplismart_stt_instance"
+
+        # Act
+        result = get_simplismart_stt_impl(config)
+
+        # Assert
+        self.assertEqual(result, "simplismart_stt_instance")
+        mock_simplismart_stt.assert_called_once_with(
+            api_key="test_simplismart_key",
+        )
+
+    def test_get_simplismart_stt_impl_missing_api_key(self):
+        # Arrange
+        config = {"live_captions": {"simplismart": {}}}
+
+        # Act & Assert
+        with self.assertRaises(ValueError) as context:
+            get_simplismart_stt_impl(config)
+
+        self.assertIn("Wrong SimpliSmart credentials", str(context.exception))
+
+    def test_get_simplismart_stt_impl_none_api_key(self):
+        # Arrange
+        config = {"live_captions": {"simplismart": {"api_key": None}}}
+
+        # Act & Assert
+        with self.assertRaises(ValueError) as context:
+            get_simplismart_stt_impl(config)
+
+        self.assertIn("Wrong SimpliSmart credentials", str(context.exception))
+
+    def test_get_stt_impl_simplismart(self):
+        config = {"live_captions": {"provider": "simplismart"}}
+        mock_impl = MagicMock(return_value="simplismart_stt_instance")
+
+        with patch.dict(
+            "stt_impl.STT_PROVIDERS",
+            {
+                "simplismart": stt_impl.STT_PROVIDERS["simplismart"]._replace(
+                    impl_function=mock_impl
+                )
+            },
+        ):
+            result = get_stt_impl(config)
+            self.assertEqual(result, "simplismart_stt_instance")
             mock_impl.assert_called_once_with(config)
 
     # Master get_stt_impl Tests

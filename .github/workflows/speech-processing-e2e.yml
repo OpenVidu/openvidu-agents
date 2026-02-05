@@ -130,6 +130,7 @@ jobs:
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
           SPITCH_API_KEY: ${{ secrets.SPITCH_API_KEY }}
           ELEVEN_API_KEY: ${{ secrets.ELEVEN_API_KEY }}
+          SIMPLISMART_API_KEY: ${{ secrets.SIMPLISMART_API_KEY }}
           # FAL_API_KEY: ${{ secrets.FAL_API_KEY }}
           # CLOVA_API_KEY: ${{ secrets.CLOVA_API_KEY }}
 

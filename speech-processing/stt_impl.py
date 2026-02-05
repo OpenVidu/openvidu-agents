@@ -50,6 +50,7 @@ soniox = _try_import_plugin("soniox")
 spitch = _try_import_plugin("spitch")
 nvidia = _try_import_plugin("nvidia")
 elevenlabs = _try_import_plugin("elevenlabs")
+simplismart = _try_import_plugin("simplismart")
 vosk = _try_import_plugin("vosk")
 sherpa = _try_import_plugin("sherpa")
 silero = _try_import_plugin("silero")
@@ -402,6 +403,11 @@ STT_PROVIDERS = {
     "elevenlabs": STTProviderConfig(
         impl_function=None,
         plugin_module="livekit.plugins.elevenlabs",
+        plugin_class="STT",
+    ),
+    "simplismart": STTProviderConfig(
+        impl_function=None,
+        plugin_module="livekit.plugins.simplismart",
         plugin_class="STT",
     ),
     "vosk": STTProviderConfig(
@@ -1034,6 +1040,38 @@ def get_elevenlabs_stt_impl(agent_config) -> stt.STT:
     return elevenlabs.STT(api_key=api_key, **kwargs)
 
 
+def get_simplismart_stt_impl(agent_config) -> stt.STT:
+    config_manager = ConfigManager(agent_config, "live_captions.simplismart")
+    wrong_credentials = (
+        "Wrong SimpliSmart credentials. live_captions.simplismart.api_key must be set"
+    )
+
+    api_key = config_manager.mandatory_value("api_key", wrong_credentials)
+    model = config_manager.configured_string_value("model")
+    language = config_manager.configured_string_value("language")
+    task = config_manager.configured_string_value("task")
+    without_timestamps = config_manager.configured_boolean_value("without_timestamps")
+    min_speech_duration_ms = config_manager.configured_numeric_value("min_speech_duration_ms")
+    temperature = config_manager.configured_numeric_value("temperature")
+    multilingual = config_manager.configured_boolean_value("multilingual")
+
+    kwargs = {
+        k: v
+        for k, v in {
+            "model": model,
+            "language": language,
+            "task": task,
+            "without_timestamps": without_timestamps,
+            "min_speech_duration_ms": min_speech_duration_ms,
+            "temperature": temperature,
+            "multilingual": multilingual,
+        }.items()
+        if v is not NOT_PROVIDED
+    }
+
+    return simplismart.STT(api_key=api_key, **kwargs)
+
+
 def get_vosk_stt_impl(agent_config) -> stt.STT:
     config_manager = ConfigManager(agent_config, "live_captions.vosk")
 
@@ -1244,6 +1282,7 @@ def _initialize_stt_registry():
         "spitch": get_spitch_stt_impl,
         "nvidia": get_nvidia_stt_impl,
         "elevenlabs": get_elevenlabs_stt_impl,
+        "simplismart": get_simplismart_stt_impl,
         "vosk": get_vosk_stt_impl,
         "sherpa": get_sherpa_stt_impl,
     }

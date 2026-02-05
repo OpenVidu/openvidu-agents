@@ -103,6 +103,11 @@ const STT_AI_PROVIDERS = [
     },
   },
   {
+    simplismart: {
+      api_key: process.env.SIMPLISMART_API_KEY,
+    },
+  },
+  {
     vosk: {
       model: "vosk-model-en-us-0.22-lgraph",
       use_silero_vad: false,

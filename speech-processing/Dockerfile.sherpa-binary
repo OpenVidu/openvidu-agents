@@ -76,67 +76,84 @@ WORKDIR /build
 # Copy Python source files
 COPY main.py stt_impl.py vad_stt_wrapper.py ./
 
-# Create a minimal wrapper script that sets up environment before running main
-# This allows us to handle environment variables and runtime configuration
-RUN cat > agent_wrapper.py << 'EOF'
-#!/usr/bin/env python3
-"""
-Wrapper script for the speech processing agent binary.
-Sets up environment and runtime configuration before launching the main agent.
-"""
-import os
-import sys
+# Copy sherpa models needed for preloading
+# These need to be available during the compilation phase
+COPY sherpa-onnx-streaming-models ./sherpa-onnx-streaming-models
 
-# Ensure environment is properly configured
-if __name__ == "__main__":
-    # Import and run the main module
-    import main
-    # The main module uses sys.argv, so it will handle arguments correctly
-EOF
+# Validate that models are present
+RUN if [ $(find sherpa-onnx-streaming-models -mindepth 1 ! -name 'README.md' | wc -l) -eq 0 ]; then \
+        echo "ERROR: sherpa-onnx-streaming-models directory contains no model files!" >&2; \
+        echo "Please run: ./download-models.sh" >&2; \
+        exit 1; \
+    fi
 
 # Pre-download models and dependencies before compilation
-# This ensures they are available at runtime and can be bundled if needed
+# This ensures they are available at runtime
 ENV PATH="/opt/venv/bin:$PATH"
-RUN python main.py download-files || true
+ENV HF_HOME=/build/.cache/huggingface
+ENV HF_HUB_DISABLE_TELEMETRY=1
+RUN mkdir -p "$HF_HOME" && \
+    python main.py download-files || echo "Note: download-files may fail without full config, continuing..."
 
 # Compile the agent to a standalone binary using Nuitka
 # Key options explained:
 # --standalone: Create a self-contained distribution with all dependencies
-# --onefile: Bundle everything into a single executable (optional, can use --standalone for dist folder)
 # --follow-imports: Include all imported modules
 # --include-package: Explicitly include packages that might be dynamically imported
 # --include-module: Include specific modules
-# --enable-plugin=anti-bloat: Remove unnecessary code
-# --python-flag=no_site: Don't include site-packages at startup (we control imports)
+# --nofollow-import-to: Exclude packages not needed for Sherpa variant
+# --enable-plugin=anti-bloat: Remove unnecessary code (helps reduce size)
 # --python-flag=no_warnings: Suppress Python warnings in the binary
-# --jobs=auto: Use all available CPU cores
-# --lto=yes: Enable link-time optimization for better performance
+# --assume-yes-for-downloads: Auto-download any required dependencies
+# --jobs=auto: Use all available CPU cores for compilation
+# --lto=no: Disable LTO to speed up compilation (can enable for production)
 # --output-dir=/build/dist: Output directory
-# --output-filename=agent: Name of the output binary
+# --show-progress: Show compilation progress
+# --show-modules: Show included modules (useful for debugging)
 RUN python -m nuitka \
     --standalone \
     --follow-imports \
     --include-package=livekit \
     --include-package=livekit.agents \
-    --include-package=livekit.plugins \
+    --include-package=livekit.plugins.sherpa \
+    --include-package=livekit.plugins.silero \
     --include-package=livekit.rtc \
     --include-package=openviduagentutils \
-    --include-package=silero \
     --include-package=asyncio \
+    --include-package=sherpa_onnx \
     --include-module=stt_impl \
     --include-module=vad_stt_wrapper \
+    --nofollow-import-to=livekit.plugins.aws \
+    --nofollow-import-to=livekit.plugins.azure \
+    --nofollow-import-to=livekit.plugins.openai \
+    --nofollow-import-to=livekit.plugins.google \
+    --nofollow-import-to=livekit.plugins.groq \
+    --nofollow-import-to=livekit.plugins.deepgram \
+    --nofollow-import-to=livekit.plugins.assemblyai \
+    --nofollow-import-to=livekit.plugins.fal \
+    --nofollow-import-to=livekit.plugins.clova \
+    --nofollow-import-to=livekit.plugins.speechmatics \
+    --nofollow-import-to=livekit.plugins.gladia \
+    --nofollow-import-to=livekit.plugins.sarvam \
+    --nofollow-import-to=livekit.plugins.mistralai \
+    --nofollow-import-to=livekit.plugins.cartesia \
+    --nofollow-import-to=livekit.plugins.soniox \
+    --nofollow-import-to=livekit.plugins.spitch \
+    --nofollow-import-to=livekit.plugins.nvidia \
+    --nofollow-import-to=livekit.plugins.elevenlabs \
+    --nofollow-import-to=livekit.plugins.vosk \
     --enable-plugin=anti-bloat \
-    --python-flag=no_site \
     --python-flag=no_warnings \
+    --assume-yes-for-downloads \
     --jobs=auto \
-    --lto=yes \
+    --lto=no \
     --output-dir=/build/dist \
-    --output-filename=agent \
+    --show-progress \
     main.py
 
 # Verify the binary was created
 RUN ls -lh /build/dist/main.dist/ && \
-    test -f /build/dist/main.dist/agent && \
+    test -f /build/dist/main.dist/main && \
     echo "Binary compilation successful!"
 
 # =============================================================================
@@ -166,19 +183,12 @@ WORKDIR /app
 # Copy the compiled binary and its dependencies from the compiler stage
 COPY --from=compiler /build/dist/main.dist ./agent_dist
 
-# Copy sherpa models for offline streaming speech recognition
-COPY sherpa-onnx-streaming-models ./sherpa-onnx-streaming-models
+# Copy sherpa models needed at runtime
+# The agent loads these models by path, so they must be present in the final image
+COPY --from=compiler /build/sherpa-onnx-streaming-models ./sherpa-onnx-streaming-models
 
-# Validate that the copied models directory contains actual model files
-RUN if [ $(find sherpa-onnx-streaming-models -mindepth 1 ! -name 'README.md' | wc -l) -eq 0 ]; then \
-        echo "" >&2; \
-        echo "ERROR: sherpa-onnx-streaming-models directory contains no model files!" >&2; \
-        echo "" >&2; \
-        echo "Please run the following command before building:" >&2; \
-        echo "  ./download-models.sh" >&2; \
-        echo "" >&2; \
-        exit 1; \
-    fi
+# Copy the Hugging Face cache if it exists (contains downloaded VAD models)
+COPY --from=compiler /build/.cache/huggingface /app/.cache/huggingface || true
 
 # Prepare Hugging Face cache configuration
 ENV HF_HOME=/app/.cache/huggingface \
@@ -198,5 +208,5 @@ USER appuser
 ENV PYTHONUNBUFFERED=1
 
 # Run the compiled binary
-# The binary name is 'agent' as specified in the Nuitka compilation step
-CMD ["./agent_dist/agent", "start"]
+# The binary name is 'main' (default from Nuitka when compiling main.py)
+CMD ["./agent_dist/main", "start"]

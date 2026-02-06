@@ -2,6 +2,38 @@
 
 AI services for transcribing, translating and summarizing video conference conversations. See [https://openvidu.io/latest/docs/agents/speech-processing/].
 
+## Deployment Options
+
+### Standard Deployment (Python Source Code)
+
+The standard Dockerfiles (`Dockerfile.sherpa`, `Dockerfile.vosk`, etc.) deploy the agent with readable Python source code.
+
+### Secure Binary Deployment (Nuitka)
+
+For enhanced security and code protection, use `Dockerfile.sherpa-binary` which compiles the Python code into a native binary using Nuitka.
+
+**Benefits:**
+- Python source code is not readable in the container
+- Significantly harder to reverse-engineer than standard Python bytecode
+- Similar or better performance compared to interpreted Python
+- Suitable for distributing proprietary code or protecting intellectual property
+
+**Build:**
+```bash
+./build-sherpa-binary.sh
+```
+
+Or manually:
+```bash
+export GITHUB_TOKEN=ghp_your_token_here
+docker build --secret id=github_token,env=GITHUB_TOKEN \
+  -f Dockerfile.sherpa-binary \
+  -t openvidu/agent-speech-processing-sherpa-binary:main \
+  .
+```
+
+For detailed information about the binarization approach, see [BINARIZATION.md](BINARIZATION.md).
+
 ## STT Provider Implementation Guide
 
 This guide explains how to add a new STT provider to the speech-processing agent.

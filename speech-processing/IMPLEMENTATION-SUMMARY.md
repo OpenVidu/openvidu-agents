@@ -209,8 +209,8 @@ docker run --rm -it \
   openvidu/agent-speech-processing-sherpa-binary:main
 
 # Inside container:
-ls -la /app/agent_dist/main  # Binary exists
-file /app/agent_dist/main    # Shows ELF executable
+ls -la /app/agent_dist/main.bin  # Binary exists
+file /app/agent_dist/main.bin    # Shows ELF executable
 ls /app/*.py                 # No Python files!
 ```
 

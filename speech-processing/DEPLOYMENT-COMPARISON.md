@@ -36,9 +36,9 @@ $ docker run --rm -it --entrypoint /bin/bash openvidu/agent-speech-processing-sh
 $ ls /app/*.py
 ls: cannot access '/app/*.py': No such file or directory
 $ ls /app/agent_dist/
-main  # Native binary executable
-$ file /app/agent_dist/main
-/app/agent_dist/main: ELF 64-bit LSB executable, x86-64
+main.bin  # Native binary executable
+$ file /app/agent_dist/main.bin
+/app/agent_dist/main.bin: ELF 64-bit LSB executable, x86-64
 ```
 
 ### Build Process

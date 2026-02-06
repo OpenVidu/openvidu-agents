@@ -96,7 +96,7 @@ Dependencies  with          Binary
 ┌─────────────────────────────────────────┐
 │  Docker Image (Binary)                   │
 │  ┌────────────────────────────────┐    │
-│  │ /app/agent_dist/main  ◄── BINARY   │
+│  │ /app/agent_dist/main.bin  ◄── BINARY   │
 │  │      (ELF executable)              │
 │  │                                     │
 │  │ /app/sherpa-onnx-streaming-models  │
@@ -112,7 +112,7 @@ Dependencies  with          Binary
                     ▼
 ┌─────────────────────────────────────────┐
 │  Runtime Container                       │
-│  ./agent_dist/main start  ◄── Native    │
+│  ./agent_dist/main.bin start  ◄── Native    │
 └─────────────────────────────────────────┘
 ```
 
@@ -206,7 +206,7 @@ Dependencies  with          Binary
 │  • PYTHONUNBUFFERED=1                        │
 ├──────────────────────────────────────────────┤
 │ Entrypoint:                                   │
-│  CMD ["./agent_dist/main", "start"]          │
+│  CMD ["./agent_dist/main.bin", "start"]          │
 ├──────────────────────────────────────────────┤
 │ ✓ NO Python source files                     │
 │ ✓ NO GitHub token                            │
@@ -373,13 +373,13 @@ $ docker run --rm -it \
 appuser@container:/app$ cat main.py
 cat: main.py: No such file or directory  # ✅
 
-appuser@container:/app$ cat agent_dist/main
+appuser@container:/app$ cat agent_dist/main.bin
 �ELF�^@�^@^A^@^@^@^@^@^@^@...  # ← Binary! ✅
 
-appuser@container:/app$ file agent_dist/main
-agent_dist/main: ELF 64-bit LSB executable, x86-64  # ✅
+appuser@container:/app$ file agent_dist/main.bin
+agent_dist/main.bin: ELF 64-bit LSB executable, x86-64  # ✅
 
-appuser@container:/app$ strings agent_dist/main | grep "import"
+appuser@container:/app$ strings agent_dist/main.bin | grep "import"
 # Only see compiled strings, not Python code ✅
 ```
 

@@ -50,7 +50,7 @@ The `Dockerfile.sherpa-binary` uses a multi-stage build process:
   - `--follow-imports`: Includes all imported modules
   - `--include-package`: Explicitly includes packages that might be dynamically imported
   - `--lto=yes`: Enables link-time optimization for better performance
-  - `--jobs=auto`: Uses all CPU cores for faster compilation
+  - `--jobs=$(nproc)`: Uses all CPU cores for faster compilation
 - **Output**: Native binary executable in `/build/dist/main.dist/`
 
 ### Stage 3: Final Runtime Image

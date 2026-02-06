@@ -105,7 +105,7 @@ RUN mkdir -p "$HF_HOME" && \
 # --enable-plugin=anti-bloat: Remove unnecessary code (helps reduce size)
 # --python-flag=no_warnings: Suppress Python warnings in the binary
 # --assume-yes-for-downloads: Auto-download any required dependencies
-# --jobs=auto: Use all available CPU cores for compilation
+# --jobs: Number of parallel compilation jobs (uses all available CPU cores via nproc)
 # --lto=no: Disable LTO to speed up compilation (can enable for production)
 # --output-dir=/build/dist: Output directory
 # --show-progress: Show compilation progress
@@ -145,7 +145,7 @@ RUN python -m nuitka \
     --enable-plugin=anti-bloat \
     --python-flag=no_warnings \
     --assume-yes-for-downloads \
-    --jobs=auto \
+    --jobs=$(nproc) \
     --lto=no \
     --output-dir=/build/dist \
     --show-progress \

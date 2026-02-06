@@ -188,15 +188,17 @@ COPY --from=compiler /build/dist/main.dist ./agent_dist
 COPY --from=compiler /build/sherpa-onnx-streaming-models ./sherpa-onnx-streaming-models
 
 # Copy the Hugging Face cache if it exists (contains downloaded VAD models)
-COPY --from=compiler /build/.cache/huggingface /app/.cache/huggingface || true
+# Using RUN with mount because COPY doesn't support conditional copying
+RUN --mount=type=bind,from=compiler,source=/build/.cache/huggingface,target=/tmp/hf_cache \
+    mkdir -p /app/.cache/huggingface && \
+    if [ -d /tmp/hf_cache ] && [ "$(ls -A /tmp/hf_cache 2>/dev/null)" ]; then \
+        cp -r /tmp/hf_cache/* /app/.cache/huggingface/ || true; \
+    fi
 
 # Prepare Hugging Face cache configuration
 ENV HF_HOME=/app/.cache/huggingface \
     HF_HUB_DISABLE_TELEMETRY=1 \
     HF_HUB_OFFLINE=1
-
-# Ensure the Hugging Face cache directory exists
-RUN mkdir -p "$HF_HOME"
 
 # Change ownership of all app files to the non-privileged user
 RUN chown -R appuser:appuser /app

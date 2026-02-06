@@ -104,7 +104,7 @@ After building, you can verify that the binary was created correctly:
 docker run -it --entrypoint /bin/bash openvidu/agent-speech-processing-sherpa-binary:main
 
 # Inside the container:
-ls -la /app/agent_dist/agent  # The compiled binary
+ls -la /app/agent_dist/main  # The compiled binary
 ls /app/*.py  # Should not exist - no Python source files!
 ```
 

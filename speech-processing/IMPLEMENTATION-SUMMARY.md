@@ -225,6 +225,7 @@ Key compilation options used:
 - `--include-package=openviduagentutils`: Include custom utilities
 - `--nofollow-import-to=livekit.plugins.aws` (etc.): Exclude unused plugins
 - `--enable-plugin=anti-bloat`: Remove unnecessary code
+- `--enable-plugin=numpy`: Required for NumPy compatibility in standalone mode
 - `--jobs=$(nproc)`: Parallel compilation using all available CPU cores
 - `--lto=no`: Disable LTO for faster builds (can enable for production)
 

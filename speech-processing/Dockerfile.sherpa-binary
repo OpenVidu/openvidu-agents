@@ -1,0 +1,216 @@
+# syntax=docker/dockerfile:1.6
+# Dockerfile for sherpa streaming STT with Nuitka binarization
+# Self-contained image with sherpa models for offline streaming speech recognition
+# Python code is compiled into a native binary for enhanced security
+#
+# BUILD INSTRUCTIONS:
+# This Dockerfile requires a GitHub Personal Access Token (PAT) to clone from private repos.
+#
+# Option 1 - Using GITHUB_TOKEN environment variable:
+#   export GITHUB_TOKEN=ghp_your_token_here
+#   docker build --secret id=github_token,env=GITHUB_TOKEN -f Dockerfile.sherpa-binary -t openvidu/agent-speech-processing-sherpa-binary:main .
+#
+# Option 2 - Using a token file:
+#   echo "ghp_your_token_here" > ~/.github_token
+#   docker build --secret id=github_token,src=$HOME/.github_token -f Dockerfile.sherpa-binary -t openvidu/agent-speech-processing-sherpa-binary:main .
+#
+# The token needs 'repo' scope for private repository access.
+# Generate one at: https://github.com/settings/tokens
+
+ARG PYTHON_VERSION=3.12
+ARG BASE_IMAGE=openvidu/agent-speech-processing-base:main
+
+# =============================================================================
+# STAGE 1: Builder - Install dependencies with GitHub token
+# =============================================================================
+FROM python:${PYTHON_VERSION}-slim AS builder
+
+# Install system dependencies needed for compilation
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    python3-dev \
+    git \
+    ccache \
+    patchelf \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create a virtual environment for clean package isolation
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Copy requirements files
+COPY requirements-base.txt requirements-sherpa.txt ./
+
+# Install dependencies using GitHub token for private repo access
+RUN --mount=type=secret,id=github_token \
+    set -e; \
+    if [ -f /run/secrets/github_token ]; then \
+        # 1. Clean the token
+        GITHUB_TOKEN="$(cat /run/secrets/github_token | tr -d '\n' | tr -d ' ')"; \
+        # 2. Use a local config for this command only to keep the image clean
+        git config --global credential.helper store; \
+        # The 'x-access-token' username is specifically required for GitHub PATs
+        echo "https://x-access-token:${GITHUB_TOKEN}@github.com" > ~/.git-credentials; \
+        # 3. Perform the install (including openviduagentutils and livekit-plugins-sherpa)
+        pip install --no-cache-dir -r requirements-sherpa.txt; \
+        # 4. Cleanup configuration
+        rm ~/.git-credentials; \
+        git config --global --unset credential.helper; \
+    else \
+        echo "WARNING: No github_token secret provided. Attempting install without authentication..."; \
+        pip install --no-cache-dir -r requirements-sherpa.txt; \
+    fi
+
+# Install Nuitka for compilation
+RUN pip install --no-cache-dir nuitka==2.5.6 ordered-set zstandard
+
+# =============================================================================
+# STAGE 2: Nuitka Compilation - Compile Python code to native binary
+# =============================================================================
+FROM builder AS compiler
+
+# Set working directory for compilation
+WORKDIR /build
+
+# Copy Python source files
+COPY main.py stt_impl.py vad_stt_wrapper.py ./
+
+# Copy sherpa models needed for preloading
+# These need to be available during the compilation phase
+COPY sherpa-onnx-streaming-models ./sherpa-onnx-streaming-models
+
+# Validate that models are present
+RUN if [ $(find sherpa-onnx-streaming-models -mindepth 1 ! -name 'README.md' | wc -l) -eq 0 ]; then \
+        echo "ERROR: sherpa-onnx-streaming-models directory contains no model files!" >&2; \
+        echo "Please run: ./download-models.sh" >&2; \
+        exit 1; \
+    fi
+
+# Pre-download models and dependencies before compilation
+# This ensures they are available at runtime
+ENV PATH="/opt/venv/bin:$PATH"
+ENV HF_HOME=/build/.cache/huggingface
+ENV HF_HUB_DISABLE_TELEMETRY=1
+RUN mkdir -p "$HF_HOME" && \
+    python main.py download-files || echo "Note: download-files may fail without full config, continuing..."
+
+# Compile the agent to a standalone binary using Nuitka
+# Key options explained:
+# --standalone: Create a self-contained distribution with all dependencies
+# --follow-imports: Include all imported modules
+# --include-package: Explicitly include packages that might be dynamically imported
+# --include-module: Include specific modules
+# --nofollow-import-to: Exclude packages not needed for Sherpa variant
+# --enable-plugin=anti-bloat: Remove unnecessary code (helps reduce size)
+# --enable-plugin=numpy: Required for NumPy compatibility in standalone mode
+# --python-flag=no_warnings: Suppress Python warnings in the binary
+# --assume-yes-for-downloads: Auto-download any required dependencies
+# --jobs: Number of parallel compilation jobs (uses all available CPU cores via nproc)
+# --lto=no: Disable LTO to speed up compilation (can enable for production)
+# --output-dir=/build/dist: Output directory
+# --show-progress: Show compilation progress
+# --show-modules: Show included modules (useful for debugging)
+RUN python -m nuitka \
+    --standalone \
+    --follow-imports \
+    --include-package=livekit \
+    --include-package=livekit.agents \
+    --include-package=livekit.plugins.sherpa \
+    --include-package=livekit.plugins.silero \
+    --include-package=livekit.rtc \
+    --include-package=openviduagentutils \
+    --include-package=asyncio \
+    --include-package=sherpa_onnx \
+    --include-module=stt_impl \
+    --include-module=vad_stt_wrapper \
+    --nofollow-import-to=livekit.plugins.aws \
+    --nofollow-import-to=livekit.plugins.azure \
+    --nofollow-import-to=livekit.plugins.openai \
+    --nofollow-import-to=livekit.plugins.google \
+    --nofollow-import-to=livekit.plugins.groq \
+    --nofollow-import-to=livekit.plugins.deepgram \
+    --nofollow-import-to=livekit.plugins.assemblyai \
+    --nofollow-import-to=livekit.plugins.fal \
+    --nofollow-import-to=livekit.plugins.clova \
+    --nofollow-import-to=livekit.plugins.speechmatics \
+    --nofollow-import-to=livekit.plugins.gladia \
+    --nofollow-import-to=livekit.plugins.sarvam \
+    --nofollow-import-to=livekit.plugins.mistralai \
+    --nofollow-import-to=livekit.plugins.cartesia \
+    --nofollow-import-to=livekit.plugins.soniox \
+    --nofollow-import-to=livekit.plugins.spitch \
+    --nofollow-import-to=livekit.plugins.nvidia \
+    --nofollow-import-to=livekit.plugins.elevenlabs \
+    --nofollow-import-to=livekit.plugins.vosk \
+    --enable-plugin=anti-bloat \
+    --enable-plugin=numpy \
+    --python-flag=no_warnings \
+    --assume-yes-for-downloads \
+    --jobs=$(nproc) \
+    --lto=no \
+    --output-dir=/build/dist \
+    --show-progress \
+    main.py
+
+# Verify the binary was created
+RUN ls -lh /build/dist/main.dist/ && \
+    test -f /build/dist/main.dist/main.bin && \
+    echo "Binary compilation successful!"
+
+# =============================================================================
+# STAGE 3: Final Runtime Image - Minimal image with only the binary
+# =============================================================================
+FROM python:${PYTHON_VERSION}-slim
+
+# Install minimal runtime dependencies
+# Only include libraries that the compiled binary needs to run
+RUN apt-get update && apt-get install -y \
+    libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create a non-privileged user
+ARG UID=10001
+RUN adduser \
+    --disabled-password \
+    --gecos "" \
+    --home "/app" \
+    --shell "/sbin/nologin" \
+    --uid "${UID}" \
+    appuser
+
+# Set working directory
+WORKDIR /app
+
+# Copy the compiled binary and its dependencies from the compiler stage
+COPY --from=compiler /build/dist/main.dist ./agent_dist
+
+# Copy sherpa models needed at runtime
+# The agent loads these models by path, so they must be present in the final image
+COPY --from=compiler /build/sherpa-onnx-streaming-models ./sherpa-onnx-streaming-models
+
+# Copy the Hugging Face cache if it exists (contains downloaded VAD models)
+# Using RUN with mount because COPY doesn't support conditional copying
+RUN --mount=type=bind,from=compiler,source=/build/.cache/huggingface,target=/tmp/hf_cache \
+    mkdir -p /app/.cache/huggingface && \
+    if [ -d /tmp/hf_cache ] && [ "$(ls -A /tmp/hf_cache 2>/dev/null)" ]; then \
+        cp -r /tmp/hf_cache/* /app/.cache/huggingface/ || true; \
+    fi
+
+# Prepare Hugging Face cache configuration
+ENV HF_HOME=/app/.cache/huggingface \
+    HF_HUB_DISABLE_TELEMETRY=1 \
+    HF_HUB_OFFLINE=1
+
+# Change ownership of all app files to the non-privileged user
+RUN chown -R appuser:appuser /app
+
+# Switch to the non-privileged user for all subsequent operations
+USER appuser
+
+# Keeps Python from buffering stdout and stderr
+ENV PYTHONUNBUFFERED=1
+
+# Run the compiled binary
+# The binary name is 'main.bin' (Nuitka output from compiling main.py in standalone mode)
+CMD ["./agent_dist/main.bin", "start"]

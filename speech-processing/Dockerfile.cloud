@@ -2,48 +2,11 @@
 # Dockerfile for cloud-based STT providers
 
 ARG BASE_IMAGE=openvidu/agent-speech-processing-base:main
-
-# =============================================================================
-# STAGE 1: Python builder - Install Python dependencies
-# =============================================================================
-FROM ${BASE_IMAGE} AS builder
-
-# Create a virtual environment for clean package isolation
-RUN python -m venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
-
-# Copy cloud requirements
-COPY requirements-base.txt requirements-cloud.txt ./
-
-# Install dependencies using GitHub token for private repo access
-# The token is used here and the entire stage is thrown away - no cleanup needed
-RUN --mount=type=secret,id=github_token \
-    set -e; \
-    if [ -f /run/secrets/github_token ]; then \
-        # 1. Clean the token
-        GITHUB_TOKEN="$(cat /run/secrets/github_token | tr -d '\n' | tr -d ' ')"; \
-        # 2. Use a local config for this command only to keep the image clean
-        git config --global credential.helper store; \
-        # The 'x-access-token' username is specifically required for GitHub PATs
-        echo "https://x-access-token:${GITHUB_TOKEN}@github.com" > ~/.git-credentials; \
-        # 3. Perform the install
-        pip install --no-cache-dir -r requirements-cloud.txt; \
-        # 4. Cleanup configuration
-        rm ~/.git-credentials; \
-        git config --global --unset credential.helper; \
-    else \
-        echo "WARNING: No github_token secret provided. Attempting install without authentication..."; \
-        pip install --no-cache-dir -r requirements-cloud.txt; \
-    fi
-
-# =============================================================================
-# STAGE 2: Final - Clean image
-# =============================================================================
 FROM ${BASE_IMAGE}
 
-# Copy the virtual environment with all installed packages from builder
-COPY --from=builder /opt/venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
+# Copy cloud requirements and install dependencies
+COPY requirements-base.txt requirements-cloud.txt ./
+RUN pip install --no-cache-dir -r requirements-cloud.txt
 
 # Pre-download any ML models or files the agent needs
 # This ensures the container is ready to run immediately without downloading
@@ -52,7 +15,7 @@ RUN python main.py download-files
 
 # Change ownership of all app files to the non-privileged user
 # This ensures the application can read/write files as needed
-RUN chown -R appuser:appuser /app /opt/venv
+RUN chown -R appuser:appuser /app
 
 # Switch to the non-privileged user for all subsequent operations
 # This improves security by not running as root
@@ -64,34 +27,3 @@ ENV HF_HUB_OFFLINE=1
 # Run the application
 # The "start" command tells the worker to connect to LiveKit and begin waiting for jobs.
 CMD ["python", "main.py", "start"]
-
-# TODO: REVERT TO THE BELLOW CONTENT WHEN OFFICIAL livekit-plugins-spitch IS FIXED
-# # syntax=docker/dockerfile:1
-# # Dockerfile for cloud-based STT providers
-
-# ARG BASE_IMAGE=openvidu/agent-speech-processing-base:main
-# FROM ${BASE_IMAGE}
-
-# # Copy cloud requirements and install dependencies
-# COPY requirements-base.txt requirements-cloud.txt ./
-# RUN pip install --no-cache-dir -r requirements-cloud.txt
-
-# # Pre-download any ML models or files the agent needs
-# # This ensures the container is ready to run immediately without downloading
-# # dependencies at runtime, which improves startup time and reliability
-# RUN python main.py download-files
-
-# # Change ownership of all app files to the non-privileged user
-# # This ensures the application can read/write files as needed
-# RUN chown -R appuser:appuser /app
-
-# # Switch to the non-privileged user for all subsequent operations
-# # This improves security by not running as root
-# USER appuser
-
-# # After downloading, run in offline mode at runtime
-# ENV HF_HUB_OFFLINE=1
-
-# # Run the application
-# # The "start" command tells the worker to connect to LiveKit and begin waiting for jobs.
-# CMD ["python", "main.py", "start"]

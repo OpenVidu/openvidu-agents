@@ -1,0 +1,20 @@
+# Installation requirements for livekit-plugins-vosk
+# 
+# This file handles the special installation order needed for vosk:
+# 1. Install vosk from PyPI to get pre-compiled libvosk.so binaries
+# 2. Reinstall vosk Python bindings from GitHub to get latest API (SetEndpointerMode, etc.)
+# 3. Install the plugin itself (current directory)
+#
+# Usage:
+#   pip install -r requirements.txt
+
+# Step 1: Install vosk from PyPI for libvosk.so binary
+vosk==0.3.45
+
+# Step 2: Install Python bindings from GitHub (latest API)
+# Note: pip will handle these two lines together when processing the requirements file
+git+https://github.com/alphacep/vosk-api.git@625e44c62607a3b48fec6d72a30118448909e83f#subdirectory=python
+
+# Step 3: Install this plugin (current directory)
+# Note: The "." refers to the directory containing this requirements.txt file
+.

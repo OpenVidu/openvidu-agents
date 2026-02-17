@@ -76,11 +76,10 @@ jobs:
         run: |
           cd speech-processing
           docker build --no-cache -f Dockerfile.base -t openvidu/agent-speech-processing-base:main .
-          export GITHUB_TOKEN=${{ secrets.OPENVIDU_PAT_REPOSITORY_AGENTS_READ_ACCESS }}
-          # TODO: Replace below line when official livekit-plugins-spitch is fixed
           docker build --no-cache -f Dockerfile.cloud -t openvidu/agent-speech-processing-cloud:main .
           ./build-vosk.sh --no-cache
           cd ../openvidu-agents-pro/speech-processing
+          export GITHUB_TOKEN=${{ secrets.OPENVIDU_PAT_REPOSITORY_AGENTS_READ_ACCESS }}
           ./build-sherpa.sh --no-cache
 
       - name: Install openvidu-testapp dependencies

@@ -2,11 +2,12 @@
 # Build script for openvidu/agent-speech-processing-vosk
 #
 # Usage:
-#   ./build-vosk.sh [--no-cache] [--tag TAG] [--local-only]
+#   ./build-vosk.sh [--no-cache] [--tag TAG] [--local-only] [--push]
 # Flags:
 #   --no-cache: Do not use Docker build cache
 #   --tag TAG: Specify a custom Docker tag (default: main)
 #   --local-only: Build only for local platform (no multi-arch, no buildx)
+#   --push: Push the multi-arch image to registry (only valid without --local-only)
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PUBLIC_REPO="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -17,6 +18,7 @@ PLATFORMS="linux/amd64,linux/arm64"
 NO_CACHE=""
 TAG="${TAG:-main}"
 LOCAL_ONLY=false
+PUSH=false
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -37,13 +39,23 @@ while [[ $# -gt 0 ]]; do
             LOCAL_ONLY=true
             shift
             ;;
+        --push)
+            PUSH=true
+            shift
+            ;;
         *)
             echo "[ERROR] Unknown option: $1"
-            echo "Usage: $0 [--no-cache] [--tag TAG] [--local-only]"
+            echo "Usage: $0 [--no-cache] [--tag TAG] [--local-only] [--push]"
             exit 1
             ;;
     esac
 done
+
+# Validate flags
+if [[ "$LOCAL_ONLY" == "true" && "$PUSH" == "true" ]]; then
+    echo "[ERROR] Cannot use --push with --local-only"
+    exit 1
+fi
 
 # Check for Vosk models
 if [[ ! -d "$PUBLIC_REPO/speech-processing/vosk-models" ]]; then
@@ -99,15 +111,24 @@ else
 
     # Build for multiple platforms (stored in buildx cache, not loaded into Docker)
     echo "Building for multiple platforms: $PLATFORMS"
-    echo "Note: Image will be stored in buildx cache (not loaded into local Docker)"
-    docker buildx build --platform "$PLATFORMS" $NO_CACHE -t "$IMAGE_NAME:$TAG" -f "$SCRIPT_DIR/Dockerfile.vosk" "$SCRIPT_DIR"
+    if [[ "$PUSH" == "true" ]]; then
+        echo "Will push to registry after build"
+        docker buildx build --platform "$PLATFORMS" $NO_CACHE -t "$IMAGE_NAME:$TAG" -f "$SCRIPT_DIR/Dockerfile.vosk" --push "$SCRIPT_DIR"
+    else
+        echo "Note: Image will be stored in buildx cache (not loaded into local Docker)"
+        docker buildx build --platform "$PLATFORMS" $NO_CACHE -t "$IMAGE_NAME:$TAG" -f "$SCRIPT_DIR/Dockerfile.vosk" "$SCRIPT_DIR"
+    fi
     
     if [[ $? -eq 0 ]]; then
         echo ""
         echo "=== Build Complete ==="
         echo "Image: $IMAGE_NAME:$TAG"
         echo "Platforms: $PLATFORMS"
-        echo "Image is stored in buildx cache and ready for push"
+        if [[ "$PUSH" == "true" ]]; then
+            echo "Image has been pushed to registry"
+        else
+            echo "Image is stored in buildx cache (run with --push flag to upload to registry)"
+        fi
         echo ""
     fi
 fi

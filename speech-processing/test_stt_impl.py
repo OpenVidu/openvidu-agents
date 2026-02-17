@@ -9,8 +9,7 @@ import sys
 
 sys.path.append(".")  # Adjust as needed for your project structure
 from azure.cognitiveservices.speech.enums import ProfanityOption
-from livekit.plugins.speechmatics.types import TranscriptionConfig
-from livekit.plugins.soniox import STTOptions as sonioxSTTOptions
+from livekit.plugins.soniox import STTOptions as SonioxSTTOptions
 
 # Import the module containing the functions we want to test
 import stt_impl
@@ -658,32 +657,27 @@ class TestSTTImplementations(unittest.TestCase):
         self.assertEqual(result, "speechmatics_stt_instance")
         mock_speechmatics_stt.assert_called_once()
 
-        # Check the TranscriptionConfig
+        # Check the kwargs passed to STT constructor (individual parameters, not transcription_config)
         call_args = mock_speechmatics_stt.call_args[1]
-        config_obj = call_args["transcription_config"]
-        self.assertIsInstance(config_obj, TranscriptionConfig)
-        self.assertEqual(config_obj.operating_point, "enhanced")
-        self.assertEqual(config_obj.language, "fr")
-        self.assertEqual(config_obj.output_locale, "fr-FR")
-        self.assertEqual(config_obj.punctuation_overrides, {"period": "full stop"})
+        self.assertEqual(call_args["api_key"], "test_speechmatics_key")
+        self.assertEqual(call_args["language"], "fr")
+        self.assertEqual(call_args["operating_point"], "enhanced")
+        self.assertEqual(call_args["output_locale"], "fr-FR")
+        self.assertEqual(call_args["punctuation_overrides"], {"period": "full stop"})
         self.assertEqual(
-            config_obj.additional_vocab,
+            call_args["additional_vocab"],
             [
                 {"content": "financial crisis"},
                 {"content": "gnocchi", "sounds_like": ["nyohki", "nokey", "nochi"]},
                 {"content": "CEO", "sounds_like": ["C.E.O."]},
             ],
         )
-        self.assertEqual(config_obj.enable_partials, False)
-        self.assertEqual(config_obj.max_delay, 1.0)
-        self.assertEqual(config_obj.max_delay_mode, "fixed")
-        self.assertEqual(config_obj.speaker_diarization_config["max_speakers"], 2)
-        self.assertEqual(
-            config_obj.speaker_diarization_config["speaker_sensitivity"], 0.5
-        )
-        self.assertEqual(
-            config_obj.speaker_diarization_config["prefer_current_speakers"], True
-        )
+        self.assertEqual(call_args["include_partials"], False)
+        self.assertEqual(call_args["max_delay"], 1.0)
+        self.assertEqual(call_args["enable_diarization"], True)
+        self.assertEqual(call_args["max_speakers"], 2)
+        self.assertEqual(call_args["speaker_sensitivity"], 0.5)
+        self.assertEqual(call_args["prefer_current_speaker"], True)
 
     def test_get_speechmatics_stt_impl_missing_api_key(self):
         # Arrange
@@ -895,7 +889,7 @@ class TestSTTImplementations(unittest.TestCase):
         self.assertEqual(result, "soniox_stt_instance")
         mock_soniox_stt.assert_called_once()
 
-        # Check the TranscriptionConfig
+        # Check the STTOptions
         call_args = mock_soniox_stt.call_args[1]
         config_obj = call_args["params"]
 
@@ -904,7 +898,7 @@ class TestSTTImplementations(unittest.TestCase):
             params=config_obj,
         )
 
-        self.assertIsInstance(config_obj, sonioxSTTOptions)
+        self.assertIsInstance(config_obj, SonioxSTTOptions)
         self.assertEqual(config_obj.model, "premium")
         self.assertEqual(config_obj.language_hints, ["en", "es"])
         self.assertEqual(config_obj.context, "This is the context")
@@ -1856,7 +1850,10 @@ class TestSTTImplementations(unittest.TestCase):
         with self.assertRaises(ValueError) as context:
             get_sherpa_stt_impl(config)
 
-        self.assertIn("Wrong sherpa configuration. live_captions.sherpa.model must be set", str(context.exception))
+        self.assertIn(
+            "Wrong sherpa configuration. live_captions.sherpa.model must be set",
+            str(context.exception),
+        )
 
     @patch("livekit.plugins.sherpa.STT")
     def test_get_sherpa_stt_impl_bilingual_model(self, mock_sherpa_stt):

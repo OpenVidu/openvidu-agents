@@ -793,8 +793,6 @@ def get_clova_stt_impl(agent_config) -> stt.STT:
 
 
 def get_speechmatics_stt_impl(agent_config) -> stt.STT:
-    from livekit.plugins.speechmatics.types import TranscriptionConfig
-
     config_manager = ConfigManager(agent_config, "live_captions.speechmatics")
     wrong_credentials = (
         "Wrong Speechmatics credentials. live_captions.speechmatics.api_key must be set"
@@ -805,10 +803,9 @@ def get_speechmatics_stt_impl(agent_config) -> stt.STT:
     operating_point = config_manager.optional_string_value(
         "operating_point", "enhanced"
     )
-    enable_partials = config_manager.configured_boolean_value("enable_partials")
+    include_partials = config_manager.configured_boolean_value("enable_partials")
     output_locale = config_manager.configured_string_value("output_locale")
     max_delay = config_manager.configured_numeric_value("max_delay")
-    max_delay_mode = config_manager.configured_string_value("max_delay_mode")
     punctuation_overrides = config_manager.configured_dict_value(
         "punctuation_overrides"
     )
@@ -823,19 +820,29 @@ def get_speechmatics_stt_impl(agent_config) -> stt.STT:
             "language": language,
             "operating_point": operating_point,
             "output_locale": output_locale,
-            "enable_partials": enable_partials,
+            "include_partials": include_partials,
             "max_delay": max_delay,
-            "max_delay_mode": max_delay_mode,
             "punctuation_overrides": punctuation_overrides,
             "additional_vocab": additional_vocab,
-            "speaker_diarization_config": speaker_diarization_config,
         }.items()
         if v is not NOT_PROVIDED
     }
 
-    return speechmatics.STT(
-        api_key=api_key, transcription_config=TranscriptionConfig(**kwargs)
-    )
+    # Flatten speaker_diarization_config into individual parameters
+    if speaker_diarization_config is not NOT_PROVIDED:
+        kwargs["enable_diarization"] = True
+        if "max_speakers" in speaker_diarization_config:
+            kwargs["max_speakers"] = speaker_diarization_config["max_speakers"]
+        if "speaker_sensitivity" in speaker_diarization_config:
+            kwargs["speaker_sensitivity"] = speaker_diarization_config[
+                "speaker_sensitivity"
+            ]
+        if "prefer_current_speakers" in speaker_diarization_config:
+            kwargs["prefer_current_speaker"] = speaker_diarization_config[
+                "prefer_current_speakers"
+            ]
+
+    return speechmatics.STT(api_key=api_key, **kwargs)
 
 
 def get_gladia_stt_impl(agent_config) -> stt.STT:
@@ -1051,7 +1058,9 @@ def get_simplismart_stt_impl(agent_config) -> stt.STT:
     language = config_manager.configured_string_value("language")
     task = config_manager.configured_string_value("task")
     without_timestamps = config_manager.configured_boolean_value("without_timestamps")
-    min_speech_duration_ms = config_manager.configured_numeric_value("min_speech_duration_ms")
+    min_speech_duration_ms = config_manager.configured_numeric_value(
+        "min_speech_duration_ms"
+    )
     temperature = config_manager.configured_numeric_value("temperature")
     multilingual = config_manager.configured_boolean_value("multilingual")
 

@@ -1,4 +1,4 @@
-name: OpenVidu Agents Unit Tests
+name: OpenVidu Agents CE Unit Tests
 
 on:
     push:

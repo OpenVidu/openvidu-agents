@@ -4,4 +4,4 @@
 -r requirements-base.txt
 
 # Cloud STT plugins
-livekit-agents[aws,azure,google,groq,openai,deepgram,assemblyai,fal,clova,speechmatics,gladia,sarvam,mistralai,cartesia,soniox,spitch,nvidia,elevenlabs,simplismart]>=1.4.1
+livekit-agents[aws,azure,google,groq,openai,deepgram,assemblyai,fal,clova,speechmatics,gladia,sarvam,mistralai,cartesia,soniox,spitch,nvidia,elevenlabs,simplismart]>=1.4.2

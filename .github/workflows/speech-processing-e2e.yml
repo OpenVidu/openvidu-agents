@@ -58,7 +58,7 @@ jobs:
           repository: OpenVidu/openvidu-agents-pro
           ref: ${{ inputs.ref-openvidu-agents-pro || 'main' }}
           token: ${{ secrets.OPENVIDU_GITHUB_TOKEN }}
-          path: openvidu-agents-pro
+          path: ../openvidu-agents-pro
 
       - name: Download STT model files
         working-directory: ./speech-processing
@@ -78,7 +78,7 @@ jobs:
           docker build --no-cache -f Dockerfile.base -t openvidu/agent-speech-processing-base:main .
           docker build --no-cache -f Dockerfile.cloud -t openvidu/agent-speech-processing-cloud:main .
           ./build-vosk.sh --no-cache --local-only
-          cd ../openvidu-agents-pro/speech-processing
+          cd ../../openvidu-agents-pro/speech-processing
           export GITHUB_TOKEN=${{ secrets.OPENVIDU_PAT_REPOSITORY_AGENTS_READ_ACCESS }}
           ./build-sherpa.sh --no-cache --local-only
 

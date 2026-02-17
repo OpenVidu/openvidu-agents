@@ -6,6 +6,10 @@ on:
         description: "Branch, tag or commit SHA to checkout in repository OpenVidu/openvidu-agents"
         required: false
         default: ""
+      ref-openvidu-agents-pro:
+        description: "Branch, tag or commit SHA to checkout in repository OpenVidu/openvidu-agents-pro"
+        required: false
+        default: ""
       ref-openvidu-local-deployment:
         description: "Branch, tag or commit SHA to checkout in repository OpenVidu/openvidu-local-deployment. Defaults to 'development'"
         type: string
@@ -17,7 +21,7 @@ on:
         required: false
         default: "master"
       docker-tag-agent-speech-processing:
-        description: "Docker tag for agent-speech-processing contanier. If not provided, the container will be built from the repository sources"
+        description: "Docker tag for all agent-speech-processing containers. If not provided, the containers will be built from the repository sources"
         type: string
         required: false
       rtc-engine:
@@ -48,6 +52,14 @@ jobs:
         with:
           ref: ${{ inputs.ref-openvidu-agents || github.sha }}
 
+      - name: Checkout OpenVidu/openvidu-agents-pro
+        uses: actions/checkout@v4
+        with:
+          repository: OpenVidu/openvidu-agents-pro
+          ref: ${{ inputs.ref-openvidu-agents-pro || 'main' }}
+          token: ${{ secrets.OPENVIDU_GITHUB_TOKEN }}
+          path: openvidu-agents-pro
+
       - name: Download STT model files
         working-directory: ./speech-processing
         run: ./download-models.sh
@@ -59,17 +71,17 @@ jobs:
           ref: ${{ inputs.ref-openvidu || 'master' }}
           path: openvidu
 
-      - name: Build agent-speech-processing Docker container
+      - name: Build agent containers [-cloud, -vosk, -sherpa]
         if: inputs.docker-tag-agent-speech-processing == ''
         run: |
           cd speech-processing
           docker build --no-cache -f Dockerfile.base -t openvidu/agent-speech-processing-base:main .
           export GITHUB_TOKEN=${{ secrets.OPENVIDU_PAT_REPOSITORY_AGENTS_READ_ACCESS }}
           # TODO: Replace below line when official livekit-plugins-spitch is fixed
-          # docker build --no-cache -f Dockerfile.cloud -t openvidu/agent-speech-processing-cloud:main .
-          docker build --secret id=github_token,env=GITHUB_TOKEN --no-cache -f Dockerfile.cloud -t openvidu/agent-speech-processing-cloud:main .
-          docker build --secret id=github_token,env=GITHUB_TOKEN --no-cache -f Dockerfile.vosk -t openvidu/agent-speech-processing-vosk:main .
-          docker build --secret id=github_token,env=GITHUB_TOKEN --no-cache -f Dockerfile.sherpa -t openvidu/agent-speech-processing-sherpa:main .
+          docker build --no-cache -f Dockerfile.cloud -t openvidu/agent-speech-processing-cloud:main .
+          ./build-vosk.sh --no-cache
+          cd ../openvidu-agents-pro/speech-processing
+          ./build-sherpa.sh --no-cache
 
       - name: Install openvidu-testapp dependencies
         working-directory: ./openvidu/openvidu-testapp

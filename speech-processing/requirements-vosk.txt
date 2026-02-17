@@ -1,6 +1,2 @@
-# Requirements for Vosk offline STT
-
 -r requirements-base.txt
-
-# Vosk plugin for offline speech recognition
-livekit-plugins-vosk @ git+https://github.com/OpenVidu/agents.git#egg=livekit-plugins-vosk&subdirectory=livekit-plugins/livekit-plugins-vosk
+./livekit-plugins-vosk

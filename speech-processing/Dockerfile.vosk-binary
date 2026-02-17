@@ -68,6 +68,9 @@ ENV PATH="/opt/venv/bin:$PATH"
 # Copy vosk requirements
 COPY requirements-base.txt requirements-vosk.txt ./
 
+# Copy livekit-plugins-vosk directory before installing
+COPY livekit-plugins-vosk ./livekit-plugins-vosk
+
 # Install base requirements first
 RUN pip install --no-cache-dir -r requirements-base.txt
 
@@ -84,25 +87,8 @@ RUN pip install --no-cache-dir --force-reinstall --no-deps \
 # Restore the compiled libvosk.so (Python reinstall removed it)
 COPY --from=vosk-builder /opt/vosk-api/src/libvosk.so /opt/venv/lib/python3.12/site-packages/vosk/
 
-# Install livekit-plugins-vosk from GitHub using GitHub token for private repo access
-RUN --mount=type=secret,id=github_token \
-    set -e; \
-    if [ -f /run/secrets/github_token ]; then \
-        # 1. Clean the token
-        GITHUB_TOKEN="$(cat /run/secrets/github_token | tr -d '\n' | tr -d ' ')"; \
-        # 2. Use a local config for this command only to keep the image clean
-        git config --global credential.helper store; \
-        # The 'x-access-token' username is specifically required for GitHub PATs
-        echo "https://x-access-token:${GITHUB_TOKEN}@github.com" > ~/.git-credentials; \
-        # 3. Perform the install
-        pip install --no-cache-dir -r requirements-vosk.txt; \
-        # 4. Cleanup configuration
-        rm ~/.git-credentials; \
-        git config --global --unset credential.helper; \
-    else \
-        echo "WARNING: No github_token secret provided. Attempting install without authentication..."; \
-        pip install --no-cache-dir -r requirements-vosk.txt; \
-    fi
+# Install livekit-plugins-vosk from local directory
+RUN pip install --no-cache-dir -r requirements-vosk.txt
 
 # =============================================================================
 # STAGE 3: Final - Clean image with no trace of secrets
@@ -110,11 +96,11 @@ RUN --mount=type=secret,id=github_token \
 FROM ${BASE_IMAGE}
 
 # Copy the virtual environment with all installed packages from builder
-COPY --from=builder /opt/venv /opt/venv
+COPY --from=builder --chown=appuser:appuser /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 # Copy vosk models for offline speech recognition
-COPY vosk-models ./vosk-models
+COPY --chown=appuser:appuser vosk-models ./vosk-models
 
 # Validate that the copied models directory contains actual model files (not just README.md)
 RUN if [ $(find vosk-models -mindepth 1 ! -name 'README.md' | wc -l) -eq 0 ]; then \
@@ -128,10 +114,8 @@ RUN if [ $(find vosk-models -mindepth 1 ! -name 'README.md' | wc -l) -eq 0 ]; th
     fi
 
 # Pre-download any ML models or files the agent needs (VAD, turn detector)
-RUN python main.py download-files
-
-# Change ownership of all app files to the non-privileged user
-RUN chown -R appuser:appuser /app /opt/venv
+RUN python main.py download-files && \
+    chown -R appuser:appuser /app/.cache
 
 # Switch to the non-privileged user for all subsequent operations
 USER appuser

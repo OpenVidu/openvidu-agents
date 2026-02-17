@@ -77,10 +77,10 @@ jobs:
           cd speech-processing
           docker build --no-cache -f Dockerfile.base -t openvidu/agent-speech-processing-base:main .
           docker build --no-cache -f Dockerfile.cloud -t openvidu/agent-speech-processing-cloud:main .
-          ./build-vosk.sh --no-cache
+          ./build-vosk.sh --no-cache --local-only
           cd ../openvidu-agents-pro/speech-processing
           export GITHUB_TOKEN=${{ secrets.OPENVIDU_PAT_REPOSITORY_AGENTS_READ_ACCESS }}
-          ./build-sherpa.sh --no-cache
+          ./build-sherpa.sh --no-cache --local-only
 
       - name: Install openvidu-testapp dependencies
         working-directory: ./openvidu/openvidu-testapp

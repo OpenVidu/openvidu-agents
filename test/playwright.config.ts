@@ -47,6 +47,15 @@ export default defineConfig({
         },
       },
     },
+    {
+      name: "livecaptions-wrong-license",
+      testMatch: /livecaptions-wrong-license\.spec\.ts$/,
+      use: {
+        launchOptions: {
+          args: commonLaunchArgs,
+        },
+      },
+    },
   ],
   reporter:
     RUN_MODE == "CI"

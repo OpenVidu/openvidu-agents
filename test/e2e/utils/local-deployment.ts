@@ -25,7 +25,11 @@ export class LocalDeployment {
     return `${this.getLocalDeploymentPath()}/agent-speech-processing.yaml`;
   }
 
-  static async start(edition: DeploymentEdition, provider: any) {
+  static async start(
+    edition: DeploymentEdition,
+    provider: any,
+    customLicense?: string,
+  ) {
     this.edition = edition;
     console.log(
       "Configuring local deployment with agent-speech-processing live_captions provider " +
@@ -34,7 +38,7 @@ export class LocalDeployment {
     console.log(`Using deployment edition: ${this.edition}`);
     console.log(`Deployment path: ${this.getLocalDeploymentPath()}`);
 
-    this.configureProvider(provider);
+    this.configureProvider(provider, customLicense);
 
     console.log("Restarting local deployment...");
     const dockerComposeFile = this.getDockerComposeFile();
@@ -57,7 +61,7 @@ export class LocalDeployment {
     execCommand(`docker compose -f ${dockerComposeFile} down -v`);
   }
 
-  private static configureProvider(provider: any) {
+  private static configureProvider(provider: any, customLicense?: string) {
     const providerName = Object.keys(provider)[0];
 
     // Parse with specific options to preserve comments
@@ -80,7 +84,7 @@ export class LocalDeployment {
       doc.set("docker_image", "openvidu/agent-speech-processing-vosk:main");
     } else if (providerName === "sherpa") {
       doc.set("docker_image", "openvidu/agent-speech-processing-sherpa:main");
-      this.setOpenViduProLicenseInOperatorService();
+      this.setOpenViduProLicenseInOperatorService(customLicense);
     } else {
       doc.set("docker_image", "openvidu/agent-speech-processing-cloud:main");
     }
@@ -88,7 +92,9 @@ export class LocalDeployment {
     this.writeYamlFile(agentSpeechProcessingFile, doc);
   }
 
-  private static setOpenViduProLicenseInOperatorService() {
+  private static setOpenViduProLicenseInOperatorService(
+    customLicense?: string,
+  ) {
     const dockerComposeFile = this.getDockerComposeFile();
     const yamlContent = fs.readFileSync(dockerComposeFile, "utf8");
     const doc = yaml.parseDocument(yamlContent, {
@@ -98,9 +104,10 @@ export class LocalDeployment {
     const operatorService = doc.getIn(["services", "operator"]) as any;
     if (operatorService) {
       let env = operatorService.get("environment");
+      const licenseValue = customLicense || "${OPENVIDU_PRO_LICENSE:-}";
 
       if (yaml.isSeq(env)) {
-        const licenseEntry = "OPENVIDU_PRO_LICENSE=${OPENVIDU_PRO_LICENSE:-}";
+        const licenseEntry = `OPENVIDU_PRO_LICENSE=${licenseValue}`;
 
         // Find and replace if exists, otherwise add
         const index = env.items.findIndex((item) => {
@@ -113,10 +120,13 @@ export class LocalDeployment {
         } else {
           env.add(licenseEntry);
         }
+      } else if (yaml.isMap(env)) {
+        // Environment is a mapping: {KEY: value, ...}
+        env.set("OPENVIDU_PRO_LICENSE", licenseValue);
       } else {
         // No environment defined, create as mapping
         env = new yaml.YAMLMap();
-        env.set("OPENVIDU_PRO_LICENSE", "${OPENVIDU_PRO_LICENSE:-}");
+        env.set("OPENVIDU_PRO_LICENSE", licenseValue);
         operatorService.set("environment", env);
       }
     }

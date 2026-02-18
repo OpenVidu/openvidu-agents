@@ -1,2 +1,2 @@
 openviduagentutils @ git+https://github.com/OpenVidu/openvidu-agents#egg=openviduagentutils&subdirectory=openviduagentutils
-livekit-agents>=1.2.6
+livekit-agents>=1.4.2

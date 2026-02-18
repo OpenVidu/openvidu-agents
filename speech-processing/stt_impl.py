@@ -22,13 +22,35 @@ AVAILABLE_PLUGINS = {}
 # Try importing each plugin - if it fails, mark as unavailable
 def _try_import_plugin(plugin_name: str):
     """Try to import a plugin module. Returns the module if successful, None otherwise."""
+    import importlib
+
+    # First try the standard livekit.plugins path
     try:
-        module = __import__(f"livekit.plugins.{plugin_name}", fromlist=[plugin_name])
+        module = importlib.import_module(f"livekit.plugins.{plugin_name}")
         AVAILABLE_PLUGINS[plugin_name] = module
         return module
-    except (ImportError, ModuleNotFoundError) as e:
-        logging.info(f"Plugin '{plugin_name}' not available in this container: {e}")
-        return None
+    except (ImportError, ModuleNotFoundError):
+        pass
+
+    # For sherpa also try the unified package path
+    if plugin_name == "sherpa":
+        # Try relative import first
+        try:
+            module = importlib.import_module(".sherpa", package="openvidu_unified")
+            AVAILABLE_PLUGINS[plugin_name] = module
+            return module
+        except (ImportError, ModuleNotFoundError):
+            pass
+        # Try absolute import as fallback
+        try:
+            module = importlib.import_module("openvidu_unified.sherpa")
+            AVAILABLE_PLUGINS[plugin_name] = module
+            return module
+        except (ImportError, ModuleNotFoundError):
+            pass
+
+    logging.info(f"Plugin '{plugin_name}' not available in this container")
+    return None
 
 
 # Import all potentially available plugins
@@ -1214,7 +1236,8 @@ def get_sherpa_stt_impl(agent_config) -> stt.STT:
 
     # Handle decoding_method enum conversion
     if decoding_method is not NOT_PROVIDED:
-        from livekit.plugins.sherpa import DecodingMethod
+        # Use the sherpa module loaded by _try_import_plugin (supports both livekit.plugins.sherpa and openvidu_unified.sherpa)
+        DecodingMethod = sherpa.DecodingMethod
 
         if decoding_method == "greedy_search":
             kwargs["decoding_method"] = DecodingMethod.GREEDY_SEARCH
@@ -1223,7 +1246,8 @@ def get_sherpa_stt_impl(agent_config) -> stt.STT:
 
     # Handle recognizer_type enum conversion
     if recognizer_type_str is not NOT_PROVIDED:
-        from livekit.plugins.sherpa import RecognizerType
+        # Use the sherpa module loaded by _try_import_plugin (supports both livekit.plugins.sherpa and openvidu_unified.sherpa)
+        RecognizerType = sherpa.RecognizerType
 
         recognizer_type_map = {
             "transducer": RecognizerType.TRANSDUCER,

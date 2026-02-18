@@ -9,6 +9,54 @@
 #   --local-only: Build only for local platform (no multi-arch, no buildx)
 #   --push: Push the multi-arch image to registry (only valid without --local-only)
 
+set -e
+
+# Help function
+show_help() {
+    cat << EOF
+Build script for openvidu/agent-speech-processing-vosk
+
+USAGE:
+    $0 [OPTIONS]
+
+OPTIONS:
+    --help, -h
+        Display this help message and exit
+
+    --no-cache
+        Do not use Docker build cache. Forces a complete rebuild of all layers.
+
+    --tag TAG
+        Specify a custom Docker tag (default: main)
+        Example: --tag v2.0.0
+
+    --local-only
+        Build only for the local platform architecture (no multi-arch build).
+        Uses 'docker buildx build --load' to load the image into local Docker.
+        Faster for local development and testing.
+
+    --push
+        Push the multi-arch image to the Docker registry after building.
+        Cannot be used with --local-only.
+        Requires appropriate Docker registry authentication.
+
+EXAMPLES:
+    # Build for local testing
+    $0 --local-only
+
+    # Build and push multi-arch image with custom tag
+    $0 --tag v2.0.0 --push
+
+    # Force rebuild without cache
+    $0 --no-cache --local-only
+
+    # Build multi-arch image without pushing (stored in buildx cache)
+    $0
+
+EOF
+    exit 0
+}
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PUBLIC_REPO="$(cd "$SCRIPT_DIR/.." && pwd)"
 IMAGE_NAME="openvidu/agent-speech-processing-vosk"
@@ -23,6 +71,9 @@ PUSH=false
 # Parse arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
+        --help|-h)
+            show_help
+            ;;
         --no-cache)
             NO_CACHE="--no-cache"
             shift
@@ -45,7 +96,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         *)
             echo "[ERROR] Unknown option: $1"
-            echo "Usage: $0 [--no-cache] [--tag TAG] [--local-only] [--push]"
+            echo "Use --help for usage information"
             exit 1
             ;;
     esac

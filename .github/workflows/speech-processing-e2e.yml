@@ -119,7 +119,7 @@ jobs:
           npm run test:e2e
         env:
           RUN_MODE: CI
-          LOCAL_DEPLOYMENT_BASE_PATH: ../openvidu-local-deployment
+          LOCAL_DEPLOYMENT_BASE_PATH: ../../openvidu-local-deployment
           PLAYWRIGHT_BROWSERS_PATH: /tmp/ms-playwright
           OPENVIDU_PRO_LICENSE: ${{ secrets.OPENVIDU_PRO_LICENSE }}
           AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}

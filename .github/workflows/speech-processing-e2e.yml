@@ -121,6 +121,7 @@ jobs:
           RUN_MODE: CI
           LOCAL_DEPLOYMENT_BASE_PATH: ../openvidu-local-deployment
           PLAYWRIGHT_BROWSERS_PATH: /tmp/ms-playwright
+          OPENVIDU_PRO_LICENSE: ${{ secrets.OPENVIDU_PRO_LICENSE }}
           AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
           AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}

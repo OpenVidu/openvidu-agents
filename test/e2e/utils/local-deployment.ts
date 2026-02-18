@@ -34,6 +34,30 @@ export class LocalDeployment {
     console.log(`Using deployment edition: ${this.edition}`);
     console.log(`Deployment path: ${this.getLocalDeploymentPath()}`);
 
+    this.configureProvider(provider);
+
+    console.log("Restarting local deployment...");
+    const dockerComposeFile = this.getDockerComposeFile();
+    execCommand(`docker compose -f ${dockerComposeFile} up -d`);
+    let statusCode: string;
+
+    // Check that container "ready-check" exited with code 0
+    do {
+      await sleep(1);
+      statusCode = execCommand(
+        "docker inspect ready-check -f {{.State.Status}}:{{.State.ExitCode}}",
+      );
+    } while (statusCode !== "exited:0");
+    console.log("Local deployment started");
+  }
+
+  static stop() {
+    console.log("Stopping local deployment...");
+    const dockerComposeFile = this.getDockerComposeFile();
+    execCommand(`docker compose -f ${dockerComposeFile} down -v`);
+  }
+
+  private static configureProvider(provider: any) {
     const providerName = Object.keys(provider)[0];
 
     // Parse with specific options to preserve comments
@@ -56,11 +80,54 @@ export class LocalDeployment {
       doc.set("docker_image", "openvidu/agent-speech-processing-vosk:main");
     } else if (providerName === "sherpa") {
       doc.set("docker_image", "openvidu/agent-speech-processing-sherpa:main");
+      this.setOpenViduProLicenseInOperatorService();
     } else {
       doc.set("docker_image", "openvidu/agent-speech-processing-cloud:main");
     }
 
-    const output = doc.toString({
+    this.writeYamlFile(agentSpeechProcessingFile, doc);
+  }
+
+  private static setOpenViduProLicenseInOperatorService() {
+    const dockerComposeFile = this.getDockerComposeFile();
+    const yamlContent = fs.readFileSync(dockerComposeFile, "utf8");
+    const doc = yaml.parseDocument(yamlContent, {
+      keepSourceTokens: true,
+      prettyErrors: true,
+    });
+    const operatorService = doc.getIn(["services", "operator"]) as any;
+    if (operatorService) {
+      let env = operatorService.get("environment");
+
+      if (yaml.isSeq(env)) {
+        const licenseEntry = "OPENVIDU_PRO_LICENSE=${OPENVIDU_PRO_LICENSE:-}";
+
+        // Find and replace if exists, otherwise add
+        const index = env.items.findIndex((item) => {
+          const value = yaml.isScalar(item) ? String(item.value) : String(item);
+          return value.startsWith("OPENVIDU_PRO_LICENSE=");
+        });
+
+        if (index >= 0) {
+          env.set(index, licenseEntry);
+        } else {
+          env.add(licenseEntry);
+        }
+      } else {
+        // No environment defined, create as mapping
+        env = new yaml.YAMLMap();
+        env.set("OPENVIDU_PRO_LICENSE", "${OPENVIDU_PRO_LICENSE:-}");
+        operatorService.set("environment", env);
+      }
+    }
+    this.writeYamlFile(dockerComposeFile, doc);
+  }
+
+  private static writeYamlFile(
+    filePath: string,
+    document: yaml.Document.Parsed,
+  ) {
+    const output = document.toString({
       lineWidth: 0,
       minContentWidth: 0,
       indent: 2,
@@ -73,26 +140,6 @@ export class LocalDeployment {
       singleQuote: null,
       verifyAliasOrder: true,
     });
-    fs.writeFileSync(agentSpeechProcessingFile, output, "utf8");
-
-    console.log("Restarting local deployment...");
-    const dockerComposeFile = this.getDockerComposeFile();
-    execCommand(`docker compose -f ${dockerComposeFile} up -d`);
-    let statusCode: string;
-
-    // Check that container "ready-check" exited with code 0
-    do {
-      await sleep(1);
-      statusCode = execCommand(
-        "docker inspect ready-check -f {{.State.Status}}:{{.State.ExitCode}}",
-      );
-    } while (statusCode !== "exited:0");
-    console.log("Local deployment started");
-  }
-
-  static stop() {
-    console.log("Stopping local deployment...");
-    const dockerComposeFile = this.getDockerComposeFile();
-    execCommand(`docker compose -f ${dockerComposeFile} down -v`);
+    fs.writeFileSync(filePath, output, "utf8");
   }
 }

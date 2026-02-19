@@ -17,7 +17,8 @@ Included by default are:
 Example of this folder structure after downloading and extracting models:
 
 └── vosk-models
-    ├── libvosk.so
+    ├── libvosk-amd64.so
+    ├── libvosk-arm64.so
     ├── README.md
     ├── vosk-model-en-us-0.22-lgraph
     ├── vosk-model-small-cn-0.22

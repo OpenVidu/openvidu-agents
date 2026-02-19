@@ -3,13 +3,18 @@
 # Self-contained image with Vosk models for offline speech recognition
 # No external API calls required: all processing happens locally
 #
-# This Dockerfile compiles libvosk.so from source to get the latest version (not available in PyPI)
+# This Dockerfile compiles libvosk-{TARGETARCH}.so from source for the target architecture
 #
 # BUILD INSTRUCTIONS:
 # This Dockerfile requires a GitHub Personal Access Token (PAT) with 'repo' scope to clone from private repos.
 #
+# For AMD64 architecture:
 #   export GITHUB_TOKEN=ghp_your_token_here
-#   docker build --secret id=github_token,env=GITHUB_TOKEN -f Dockerfile.vosk -t openvidu/agent-speech-processing-vosk:main .
+#   docker build --platform linux/amd64 --secret id=github_token,env=GITHUB_TOKEN -f Dockerfile.vosk-binary -t openvidu/agent-speech-processing-vosk:main-amd64 .
+#
+# For ARM64 architecture:
+#   export GITHUB_TOKEN=ghp_your_token_here
+#   docker build --platform linux/arm64 --secret id=github_token,env=GITHUB_TOKEN -f Dockerfile.vosk-binary -t openvidu/agent-speech-processing-vosk:main-arm64 .
 
 ARG BASE_IMAGE=openvidu/agent-speech-processing-base:main
 
@@ -17,6 +22,9 @@ ARG BASE_IMAGE=openvidu/agent-speech-processing-base:main
 # STAGE 1: Build Vosk/Kaldi from source
 # =============================================================================
 FROM debian:12-slim AS vosk-builder
+
+# Build argument to determine target architecture (automatically set by Docker)
+ARG TARGETARCH
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y \
@@ -42,7 +50,13 @@ WORKDIR /opt
 RUN git clone -b vosk --single-branch --depth=1 https://github.com/alphacep/kaldi
 
 WORKDIR /opt/kaldi/tools
-RUN make openfst cub && \
+# Build openfst - for ARM64 we override openfst_add_CXXFLAGS to remove x86-specific SSE flags
+RUN if [ "$TARGETARCH" = "arm64" ]; then \
+        make openfst openfst_add_CXXFLAGS="-g -O3"; \
+    else \
+        make openfst; \
+    fi && \
+    make cub && \
     ./extras/install_openblas_clapack.sh
 
 WORKDIR /opt/kaldi/src
@@ -56,10 +70,16 @@ RUN git clone --depth=1 https://github.com/alphacep/vosk-api
 WORKDIR /opt/vosk-api/src
 RUN KALDI_ROOT=/opt/kaldi make -j $(nproc)
 
+# Rename the compiled library to indicate target architecture (amd64 or arm64)
+RUN mv /opt/vosk-api/src/libvosk.so /opt/vosk-api/src/libvosk-${TARGETARCH}.so
+
 # =============================================================================
 # STAGE 2: Python builder - Install Python dependencies with GitHub token
 # =============================================================================
 FROM ${BASE_IMAGE} AS builder
+
+# Build argument to determine target architecture
+ARG TARGETARCH
 
 # Create a virtual environment for clean package isolation
 RUN python -m venv /opt/venv
@@ -77,15 +97,15 @@ RUN pip install --no-cache-dir -r requirements-base.txt
 # Install vosk Python package from PyPI (for Python code structure)
 RUN pip install --no-cache-dir vosk==0.3.45
 
-# Copy compiled libvosk.so from vosk-builder stage
-COPY --from=vosk-builder /opt/vosk-api/src/libvosk.so /opt/venv/lib/python3.12/site-packages/vosk/
+# Copy compiled libvosk-{TARGETARCH}.so from vosk-builder stage and name it as libvosk.so for Python to use
+COPY --from=vosk-builder /opt/vosk-api/src/libvosk-${TARGETARCH}.so /opt/venv/lib/python3.12/site-packages/vosk/libvosk.so
 
 # Install Python bindings from GitHub to get latest __init__.py with SetEndpointerMode
 RUN pip install --no-cache-dir --force-reinstall --no-deps \
     git+https://github.com/alphacep/vosk-api.git@625e44c62607a3b48fec6d72a30118448909e83f#subdirectory=python
 
-# Restore the compiled libvosk.so (Python reinstall removed it)
-COPY --from=vosk-builder /opt/vosk-api/src/libvosk.so /opt/venv/lib/python3.12/site-packages/vosk/
+# Restore the compiled libvosk-{TARGETARCH}.so as libvosk.so (Python reinstall removed it)
+COPY --from=vosk-builder /opt/vosk-api/src/libvosk-${TARGETARCH}.so /opt/venv/lib/python3.12/site-packages/vosk/libvosk.so
 
 # Install livekit-plugins-vosk from local directory
 RUN pip install --no-cache-dir -r requirements-vosk.txt

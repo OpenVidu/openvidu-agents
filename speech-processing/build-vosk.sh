@@ -5,12 +5,13 @@
 #   2. openvidu/agent-speech-processing-vosk (base + default language models)
 #
 # Usage:
-#   ./build-vosk.sh [--no-cache] [--tag TAG] [--local-only] [--push]
+#   ./build-vosk.sh [--no-cache] [--local-only] [--push] [--tag TAG] [--parent-base-image IMAGE] 
 # Flags:
 #   --no-cache: Do not use Docker build cache
-#   --tag TAG: Specify a custom Docker tag (default: main)
 #   --local-only: Build only for local platform (no multi-arch, no buildx)
 #   --push: Push the multi-arch image to registry (only valid without --local-only)
+#   --tag TAG: Specify a custom Docker tag (default: main)
+#   --parent-base-image IMAGE: Override the parent base image (default: openvidu/agent-speech-processing-base:TAG)
 
 set -e
 
@@ -29,10 +30,6 @@ OPTIONS:
     --no-cache
         Do not use Docker build cache. Forces a complete rebuild of all layers.
 
-    --tag TAG
-        Specify a custom Docker tag (default: main)
-        Example: --tag v2.0.0
-
     --local-only
         Build only for the local platform architecture (no multi-arch build).
         Uses 'docker buildx build --load' to load the image into local Docker.
@@ -43,12 +40,21 @@ OPTIONS:
         Cannot be used with --local-only.
         Requires appropriate Docker registry authentication.
 
+    --tag TAG
+        Specify a custom Docker tag (default: main)
+        Example: --tag 3.3.0
+
+    --parent-base-image IMAGE
+        Override the parent base image used by Dockerfile.vosk-base.
+        Defaults to openvidu/agent-speech-processing-base:<TAG>.
+        Example: --parent-base-image docker.io/openvidu/agent-speech-processing-base:3.3.0
+
 EXAMPLES:
     # Build for local testing
     $0 --local-only
 
     # Build and push multi-arch image with custom tag
-    $0 --tag v2.0.0 --push
+    $0 --tag 3.3.0 --push
 
     # Force rebuild without cache
     $0 --no-cache --local-only
@@ -72,6 +78,7 @@ NO_CACHE=""
 TAG="${TAG:-main}"
 LOCAL_ONLY=false
 PUSH=false
+PARENT_BASE_IMAGE_OVERRIDE=""
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -83,6 +90,14 @@ while [[ $# -gt 0 ]]; do
             NO_CACHE="--no-cache"
             shift
             ;;
+        --local-only)
+            LOCAL_ONLY=true
+            shift
+            ;;
+        --push)
+            PUSH=true
+            shift
+            ;;
         --tag)
             if [[ -z "$2" || "$2" == --* ]]; then
                 echo "[ERROR] --tag requires a value"
@@ -91,13 +106,13 @@ while [[ $# -gt 0 ]]; do
             TAG="$2"
             shift 2
             ;;
-        --local-only)
-            LOCAL_ONLY=true
-            shift
-            ;;
-        --push)
-            PUSH=true
-            shift
+        --parent-base-image)
+            if [[ -z "$2" || "$2" == --* ]]; then
+                echo "[ERROR] --parent-base-image requires a value"
+                exit 1
+            fi
+            PARENT_BASE_IMAGE_OVERRIDE="$2"
+            shift 2
             ;;
         *)
             echo "[ERROR] Unknown option: $1"
@@ -132,7 +147,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-PARENT_BASE_IMAGE="$PARENT_BASE_IMAGE_NAME:$TAG"
+PARENT_BASE_IMAGE="${PARENT_BASE_IMAGE_OVERRIDE:-$PARENT_BASE_IMAGE_NAME:$TAG}"
 
 echo ""
 echo "Build configuration:"

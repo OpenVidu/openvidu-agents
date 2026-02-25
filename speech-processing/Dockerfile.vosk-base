@@ -1,0 +1,78 @@
+# syntax=docker/dockerfile:1.6
+# =============================================================================
+# Base Dockerfile for Vosk offline STT: contains everything except language models
+# =============================================================================
+#
+# This Dockerfile uses pre-compiled libvosk-<arch>.so binaries instead of building from source.
+# The binaries should be placed at: vosk-models/libvosk-amd64.so and vosk-models/libvosk-arm64.so
+
+ARG BASE_IMAGE=openvidu/agent-speech-processing-base:main
+
+# =============================================================================
+# STAGE 1: Python builder - Install Python dependencies
+# =============================================================================
+FROM ${BASE_IMAGE} AS builder
+
+# Get target architecture for multi-arch builds
+ARG TARGETARCH
+
+# Create a virtual environment for clean package isolation
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Copy vosk requirements
+COPY requirements-base.txt requirements-vosk.txt ./
+
+# Copy livekit-plugins-vosk directory before installing
+COPY livekit-plugins-vosk ./livekit-plugins-vosk
+
+# Install base requirements first
+RUN pip install --no-cache-dir -r requirements-base.txt
+
+# Install vosk Python package from PyPI (for Python code structure)
+RUN pip install --no-cache-dir vosk==0.3.45
+
+# Install Python bindings from GitHub to get latest __init__.py with SetEndpointerMode
+RUN pip install --no-cache-dir --force-reinstall --no-deps \
+    git+https://github.com/alphacep/vosk-api.git@625e44c62607a3b48fec6d72a30118448909e83f#subdirectory=python
+
+# Install livekit-plugins-vosk from local directory
+RUN pip install --no-cache-dir -r requirements-vosk.txt
+
+# Copy only the pre-compiled libvosk binaries (NOT the language models)
+COPY vosk-models/libvosk-*.so ./vosk-libvosk/
+
+# Validate architecture-specific libvosk-<arch>.so exists and copy it to the correct location
+RUN LIBVOSK_FILE="vosk-libvosk/libvosk-${TARGETARCH}.so" && \
+    if [ ! -f "$LIBVOSK_FILE" ]; then \
+        echo "" >&2; \
+        echo "ERROR: $LIBVOSK_FILE binary not found!" >&2; \
+        echo "" >&2; \
+        echo "Please run the following command before building:" >&2; \
+        echo "  ./download-models.sh" >&2; \
+        echo "" >&2; \
+        exit 1; \
+    fi && \
+    cp "$LIBVOSK_FILE" /opt/venv/lib/python3.12/site-packages/vosk/libvosk.so
+
+# =============================================================================
+# STAGE 2: Final - Clean image (without language models)
+# =============================================================================
+FROM ${BASE_IMAGE}
+
+# Copy the virtual environment with all installed packages from builder
+COPY --from=builder --chown=appuser:appuser /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Pre-download any ML models or files the agent needs (VAD, turn detector)
+RUN python main.py download-files && \
+    chown -R appuser:appuser /app/.cache
+
+# Switch to the non-privileged user for all subsequent operations
+USER appuser
+
+# After downloading, run in offline mode at runtime
+ENV HF_HUB_OFFLINE=1
+
+# Run the application
+CMD ["python", "main.py", "start"]

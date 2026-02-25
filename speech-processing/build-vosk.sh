@@ -1,5 +1,8 @@
 #!/bin/bash
 # Build script for openvidu/agent-speech-processing-vosk
+# Builds two images:
+#   1. openvidu/agent-speech-processing-vosk-base (everything except language models)
+#   2. openvidu/agent-speech-processing-vosk (base + default language models)
 #
 # Usage:
 #   ./build-vosk.sh [--no-cache] [--tag TAG] [--local-only] [--push]
@@ -59,6 +62,8 @@ EOF
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PUBLIC_REPO="$(cd "$SCRIPT_DIR/.." && pwd)"
+PARENT_BASE_IMAGE_NAME="openvidu/agent-speech-processing-base"
+IMAGE_NAME_BASE="openvidu/agent-speech-processing-vosk-base"
 IMAGE_NAME="openvidu/agent-speech-processing-vosk"
 PLATFORMS="linux/amd64,linux/arm64"
 
@@ -127,9 +132,13 @@ cleanup() {
 }
 trap cleanup EXIT
 
+PARENT_BASE_IMAGE="$PARENT_BASE_IMAGE_NAME:$TAG"
+
 echo ""
 echo "Build configuration:"
-echo "  Image: $IMAGE_NAME:$TAG"
+echo "  Parent base image: $PARENT_BASE_IMAGE"
+echo "  Base image: $IMAGE_NAME_BASE:$TAG"
+echo "  Final image: $IMAGE_NAME:$TAG"
 echo "  Local only: $LOCAL_ONLY"
 if [[ "$LOCAL_ONLY" == "true" ]]; then
     echo "  Platform: $(uname -m)"
@@ -137,11 +146,17 @@ else
     echo "  Platforms: $PLATFORMS"
 fi
 
-# Build the Docker image
+# Build the Docker images
 if [[ "$LOCAL_ONLY" == "true" ]]; then
     # Build for local platform only and load into Docker
-    echo "Building for local platform with --load..."
-    docker buildx build --load $NO_CACHE -t "$IMAGE_NAME:$TAG" -f "$SCRIPT_DIR/Dockerfile.vosk" "$SCRIPT_DIR"
+    # Use --builder default to ensure local Docker daemon driver (can access locally-loaded images)
+    echo ""
+    echo "=== Building base image (without models) ==="
+    docker buildx build --builder default --load $NO_CACHE --build-arg BASE_IMAGE="$PARENT_BASE_IMAGE" -t "$IMAGE_NAME_BASE:$TAG" -f "$SCRIPT_DIR/Dockerfile.vosk-base" "$SCRIPT_DIR"
+
+    echo ""
+    echo "=== Building final image (with default models) ==="
+    docker buildx build --builder default --load $NO_CACHE --build-arg BASE_IMAGE="$IMAGE_NAME_BASE:$TAG" -t "$IMAGE_NAME:$TAG" -f "$SCRIPT_DIR/Dockerfile.vosk" "$SCRIPT_DIR"
 else
 
     # Setup buildx builder for multi-platform builds
@@ -164,21 +179,36 @@ else
     echo "Building for multiple platforms: $PLATFORMS"
     if [[ "$PUSH" == "true" ]]; then
         echo "Will push to registry after build"
-        docker buildx build --platform "$PLATFORMS" $NO_CACHE -t "$IMAGE_NAME:$TAG" -f "$SCRIPT_DIR/Dockerfile.vosk" --push "$SCRIPT_DIR"
+
+        echo ""
+        echo "=== Building and pushing base image (without models) ==="
+        docker buildx build --platform "$PLATFORMS" $NO_CACHE --build-arg BASE_IMAGE="$PARENT_BASE_IMAGE" -t "$IMAGE_NAME_BASE:$TAG" -f "$SCRIPT_DIR/Dockerfile.vosk-base" --push "$SCRIPT_DIR"
+
+        echo ""
+        echo "=== Building and pushing final image (with default models) ==="
+        docker buildx build --platform "$PLATFORMS" $NO_CACHE --build-arg BASE_IMAGE="$IMAGE_NAME_BASE:$TAG" -t "$IMAGE_NAME:$TAG" -f "$SCRIPT_DIR/Dockerfile.vosk" --push "$SCRIPT_DIR"
     else
-        echo "Note: Image will be stored in buildx cache (not loaded into local Docker)"
-        docker buildx build --platform "$PLATFORMS" $NO_CACHE -t "$IMAGE_NAME:$TAG" -f "$SCRIPT_DIR/Dockerfile.vosk" "$SCRIPT_DIR"
+        echo "Note: Images will be stored in buildx cache (not loaded into local Docker)"
+
+        echo ""
+        echo "=== Building base image (without models) ==="
+        docker buildx build --platform "$PLATFORMS" $NO_CACHE --build-arg BASE_IMAGE="$PARENT_BASE_IMAGE" -t "$IMAGE_NAME_BASE:$TAG" -f "$SCRIPT_DIR/Dockerfile.vosk-base" "$SCRIPT_DIR"
+
+        echo ""
+        echo "=== Building final image (with default models) ==="
+        docker buildx build --platform "$PLATFORMS" $NO_CACHE --build-arg BASE_IMAGE="$IMAGE_NAME_BASE:$TAG" -t "$IMAGE_NAME:$TAG" -f "$SCRIPT_DIR/Dockerfile.vosk" "$SCRIPT_DIR"
     fi
     
     if [[ $? -eq 0 ]]; then
         echo ""
         echo "=== Build Complete ==="
-        echo "Image: $IMAGE_NAME:$TAG"
+        echo "Base image: $IMAGE_NAME_BASE:$TAG"
+        echo "Final image: $IMAGE_NAME:$TAG"
         echo "Platforms: $PLATFORMS"
         if [[ "$PUSH" == "true" ]]; then
-            echo "Image has been pushed to registry"
+            echo "Images have been pushed to registry"
         else
-            echo "Image is stored in buildx cache (run with --push flag to upload to registry)"
+            echo "Images are stored in buildx cache (run with --push flag to upload to registry)"
         fi
         echo ""
     fi

@@ -1189,6 +1189,7 @@ def get_sherpa_stt_impl(agent_config) -> stt.STT:
     sample_rate = config_manager.configured_numeric_value("sample_rate")
     partial_results = config_manager.configured_boolean_value("partial_results")
     num_threads = config_manager.configured_numeric_value("num_threads")
+    provider = config_manager.configured_string_value("provider")
     recognizer_type_str = config_manager.configured_string_value("recognizer_type")
     decoding_method = config_manager.configured_string_value("decoding_method")
     use_silero_vad = config_manager.configured_boolean_value("use_silero_vad")
@@ -1230,6 +1231,7 @@ def get_sherpa_stt_impl(agent_config) -> stt.STT:
             "sample_rate": sample_rate,
             "partial_results": partial_results,
             "num_threads": num_threads,
+            "provider": provider,
         }.items()
         if v is not NOT_PROVIDED
     }

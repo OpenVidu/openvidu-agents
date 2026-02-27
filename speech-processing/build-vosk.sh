@@ -163,6 +163,13 @@ fi
 
 # Build the Docker images
 if [[ "$LOCAL_ONLY" == "true" ]]; then
+    # Rebuild the parent base image first if --no-cache
+    if [[ -n "$NO_CACHE" && -z "$PARENT_BASE_IMAGE_OVERRIDE" ]]; then
+        echo ""
+        echo "=== Rebuilding parent base image (no-cache) ==="
+        docker build --no-cache -t "$PARENT_BASE_IMAGE_NAME:$TAG" -f "$SCRIPT_DIR/Dockerfile.base" "$SCRIPT_DIR"
+    fi
+
     # Build for local platform only and load into Docker
     # Use --builder default to ensure local Docker daemon driver (can access locally-loaded images)
     echo ""

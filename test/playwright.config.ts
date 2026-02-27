@@ -56,6 +56,18 @@ export default defineConfig({
         },
       },
     },
+    {
+      name: "livecaptions-processing-dispatch",
+      testMatch: /livecaptions-processing-dispatch\.spec\.ts$/,
+      use: {
+        launchOptions: {
+          args: [
+            ...commonLaunchArgs,
+            "--use-file-for-fake-audio-capture=e2e/resources/stt-test-with-silence.wav",
+          ],
+        },
+      },
+    },
   ],
   reporter:
     RUN_MODE == "CI"

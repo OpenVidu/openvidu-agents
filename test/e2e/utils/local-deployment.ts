@@ -4,6 +4,7 @@ import fs from "fs";
 import yaml from "yaml";
 
 type DeploymentEdition = "community" | "pro";
+type Processing = "automatic" | "manual";
 
 const DEFAULT_EDITION: DeploymentEdition =
   (process.env.DEPLOYMENT_EDITION as DeploymentEdition) || "community";
@@ -29,6 +30,7 @@ export class LocalDeployment {
     edition: DeploymentEdition,
     provider: any,
     customLicense?: string,
+    processing?: Processing,
   ) {
     this.edition = edition;
     console.log(
@@ -38,7 +40,7 @@ export class LocalDeployment {
     console.log(`Using deployment edition: ${this.edition}`);
     console.log(`Deployment path: ${this.getLocalDeploymentPath()}`);
 
-    this.configureProvider(provider, customLicense);
+    this.configureProvider(provider, customLicense, processing);
 
     console.log("Restarting local deployment...");
     const dockerComposeFile = this.getDockerComposeFile();
@@ -61,7 +63,11 @@ export class LocalDeployment {
     execCommand(`docker compose -f ${dockerComposeFile} down -v`);
   }
 
-  private static configureProvider(provider: any, customLicense?: string) {
+  private static configureProvider(
+    provider: any,
+    customLicense?: string,
+    processing?: Processing,
+  ) {
     const providerName = Object.keys(provider)[0];
 
     // Parse with specific options to preserve comments
@@ -74,6 +80,9 @@ export class LocalDeployment {
 
     doc.set("enabled", true);
     doc.setIn(["live_captions", "provider"], providerName);
+    if (processing) {
+      doc.setIn(["live_captions", "processing"], processing);
+    }
     const providerConfig = provider[providerName];
     for (const [key, value] of Object.entries(providerConfig)) {
       if (value !== null && value !== undefined && value !== "") {

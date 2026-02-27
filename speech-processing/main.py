@@ -571,12 +571,6 @@ if __name__ == "__main__":
         ),
     )
 
-    # Set agent name for explicit dispatch if configured
-    if agent_config["live_captions"]["processing"] == "manual":
-        server._agent_name = agent_name
-
-    # Register the entrypoint
-    @server.rtc_session(type=ServerType.ROOM)
     async def main_entrypoint(ctx: JobContext):
         # Add custom log context fields
         ctx.log_context_fields = {
@@ -584,6 +578,12 @@ if __name__ == "__main__":
             "room_name": ctx.room.name,
         }
         await entrypoint(ctx)
+
+    # Set agent name for explicit dispatch only in manual processing mode.
+    if agent_config["live_captions"]["processing"] == "manual":
+        server.rtc_session(type=ServerType.ROOM, agent_name=agent_name)(main_entrypoint)
+    else:
+        server.rtc_session(type=ServerType.ROOM)(main_entrypoint)
 
     # Preload local models into memory before starting the server
     # This ensures all thread-based agents share the same model instance

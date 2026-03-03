@@ -5,7 +5,7 @@
 #   2. openvidu/agent-speech-processing-vosk (base + default language models)
 #
 # Usage:
-#   ./build-vosk.sh [--no-cache] [--local-only] [--push] [--tag TAG] [--parent-base-image IMAGE] 
+#   ./build-vosk.sh [--no-cache] [--local-only] [--push] [--tag TAG] [--platform PLATFORM] [--parent-base-image IMAGE] 
 # Flags:
 #   --no-cache: Do not use Docker build cache
 #   --local-only: Build only for local platform (no multi-arch, no buildx)
@@ -43,6 +43,11 @@ OPTIONS:
     --tag TAG
         Specify a custom Docker tag (default: main)
         Example: --tag 3.3.0
+
+    --platform PLATFORM
+        Override the target platform string for multi-arch builds.
+        Defaults to "linux/amd64,linux/arm64".
+        Example: --platform linux/amd64
 
     --parent-base-image IMAGE
         Override the parent base image used by Dockerfile.vosk-base.
@@ -104,6 +109,14 @@ while [[ $# -gt 0 ]]; do
                 exit 1
             fi
             TAG="$2"
+            shift 2
+            ;;
+        --platform)
+            if [[ -z "$2" || "$2" == --* ]]; then
+                echo "[ERROR] --platform requires a value"
+                exit 1
+            fi
+            PLATFORMS="$2"
             shift 2
             ;;
         --parent-base-image)

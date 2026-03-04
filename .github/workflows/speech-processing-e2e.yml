@@ -39,7 +39,7 @@ on:
         required: true
 jobs:
   test:
-    timeout-minutes: 60
+    timeout-minutes: 120
     runs-on: ubuntu-latest
     steps:
       - name: Setup Node

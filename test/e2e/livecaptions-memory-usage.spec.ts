@@ -15,7 +15,7 @@ const LOCAL_STT_PROVIDERS = [
       model: "vosk-model-en-us-0.22-lgraph",
       use_silero_vad: false,
     },
-    maxMemoryMB: 1600,
+    maxMemoryMB: 1800,
     maxTracks: 5,
   },
   {

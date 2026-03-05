@@ -277,7 +277,7 @@ test.describe("Memory usage tests for local STT providers", () => {
     test.describe(providerName, () => {
       test.beforeEach(async () => {
         LocalDeployment.stop();
-        await LocalDeployment.start("community", provider);
+        await LocalDeployment.start("community", provider, undefined, "automatic");
       });
 
       test.afterEach(async ({}, testInfo) => {

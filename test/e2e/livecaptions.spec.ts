@@ -201,7 +201,7 @@ function describeProviderTests(
       test.describe(uniqueTestName, () => {
         test.beforeEach(async () => {
           LocalDeployment.stop();
-          await LocalDeployment.start("pro", provider);
+          await LocalDeployment.start("pro", provider, undefined, "automatic");
         });
 
         test.afterEach(async ({}, testInfo) => {

@@ -102,7 +102,7 @@ test.describe("Wrong license tests", () => {
         use_silero_vad: false,
       },
     };
-    await LocalDeployment.start("pro", sherpaProvider, wrongLicense);
+    await LocalDeployment.start("pro", sherpaProvider, wrongLicense, "automatic");
 
     // Wait a bit for containers to start
     await sleep(5);

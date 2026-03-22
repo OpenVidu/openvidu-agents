@@ -43,18 +43,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Setup Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
           node-version: 24
 
       - name: Checkout OpenVidu/openvidu-agents
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           ref: ${{ inputs.ref-openvidu-agents || github.sha }}
           path: openvidu-agents
 
       - name: Checkout OpenVidu/openvidu-agents-pro
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           repository: OpenVidu/openvidu-agents-pro
           ref: ${{ inputs.ref-openvidu-agents-pro || 'main' }}
@@ -66,7 +66,7 @@ jobs:
         run: ./download-models.sh
 
       - name: Checkout OpenVidu/openvidu
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           repository: OpenVidu/openvidu
           ref: ${{ inputs.ref-openvidu || 'master' }}
@@ -94,13 +94,13 @@ jobs:
       - name: Setup mediasoup-worker
         if: ${{ inputs.rtc-engine == 'mediasoup' }}
         id: setup-mediasoup-worker
-        uses: OpenVidu/actions/setup-mediasoup-worker@main
+        uses: OpenVidu/actions/setup-mediasoup-worker@35d136377813cf9b0b23d12d16d57864ccf3a8c2 # v1.0.2
         with:
           ref-openvidu-pro-mediasoup: ${{ inputs.ref-openvidu-pro-mediasoup }}
           github-token: ${{ secrets.OPENVIDU_GITHUB_TOKEN }}
 
       - name: Setup OpenVidu Local Deployment
-        uses: OpenVidu/actions/start-openvidu-local-deployment@main
+        uses: OpenVidu/actions/start-openvidu-local-deployment@35d136377813cf9b0b23d12d16d57864ccf3a8c2 # v1.0.2
         with:
           ref-openvidu-local-deployment: ${{ inputs.ref-openvidu-local-deployment || 'development' }}
           pre_startup_commands: "sed -i 's|docker_image: docker.io/openvidu/agent-speech-processing-cloud:main|docker_image: docker.io/openvidu/agent-speech-processing-cloud:${{ inputs.docker-tag-agent-speech-processing || 'main' }}|g' agent-speech-processing.yaml"
@@ -148,14 +148,14 @@ jobs:
           # CLOVA_API_KEY: ${{ secrets.CLOVA_API_KEY }}
 
       - name: Publish Test Report
-        uses: ctrf-io/github-test-reporter@v1
+        uses: ctrf-io/github-test-reporter@31e2a2735dd4641c65c2f49eb07e93ce8ec37fff # v1.0.27
         with:
           report-path: "openvidu-agents/test/test-results/ctrf-report.json"
         if: always()
 
       - name: Upload failed test videos
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: test-videos
           path: openvidu-agents/test/test-results/**/*.webm
@@ -163,4 +163,4 @@ jobs:
 
       - name: Clean up
         if: always()
-        uses: OpenVidu/actions/cleanup@main
+        uses: OpenVidu/actions/cleanup@35d136377813cf9b0b23d12d16d57864ccf3a8c2 # v1.0.2

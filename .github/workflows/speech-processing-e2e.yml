@@ -94,13 +94,13 @@ jobs:
       - name: Setup mediasoup-worker
         if: ${{ inputs.rtc-engine == 'mediasoup' }}
         id: setup-mediasoup-worker
-        uses: OpenVidu/actions/setup-mediasoup-worker@9a2f61e73052475bd4572ce2f3a574476a37eae5 # v1.0.8
+        uses: OpenVidu/actions/setup-mediasoup-worker@0b1ad5bceb9cfb061942f9edd8c78f6ed67352dd # v1.0.9
         with:
           ref-openvidu-pro-mediasoup: ${{ inputs.ref-openvidu-pro-mediasoup }}
           github-token: ${{ secrets.OPENVIDU_GITHUB_TOKEN }}
 
       - name: Setup OpenVidu Local Deployment
-        uses: OpenVidu/actions/start-openvidu-local-deployment@9a2f61e73052475bd4572ce2f3a574476a37eae5 # v1.0.8
+        uses: OpenVidu/actions/start-openvidu-local-deployment@0b1ad5bceb9cfb061942f9edd8c78f6ed67352dd # v1.0.9
         with:
           ref-openvidu-local-deployment: ${{ inputs.ref-openvidu-local-deployment || 'development' }}
           pre_startup_commands: "sed -i 's|docker_image: docker.io/openvidu/agent-speech-processing-cloud:main|docker_image: docker.io/openvidu/agent-speech-processing-cloud:${{ inputs.docker-tag-agent-speech-processing || 'main' }}|g' agent-speech-processing.yaml"
@@ -163,4 +163,4 @@ jobs:
 
       - name: Clean up
         if: always()
-        uses: OpenVidu/actions/cleanup@9a2f61e73052475bd4572ce2f3a574476a37eae5 # v1.0.8
+        uses: OpenVidu/actions/cleanup@0b1ad5bceb9cfb061942f9edd8c78f6ed67352dd # v1.0.9

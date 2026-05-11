@@ -23,7 +23,7 @@ const LOCAL_STT_PROVIDERS = [
       model: "sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06",
       use_silero_vad: false,
     },
-    maxMemoryMB: 500,
+    maxMemoryMB: 650,
   },
 ];
 

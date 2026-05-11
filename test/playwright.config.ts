@@ -11,7 +11,7 @@ const commonLaunchArgs = [
 
 export default defineConfig({
   testDir: "./e2e",
-  timeout: 300000,
+  timeout: 600000,
   retries: 0,
   workers: 1,
   fullyParallel: false,

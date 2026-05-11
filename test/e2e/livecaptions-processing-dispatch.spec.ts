@@ -65,7 +65,7 @@ async function connectWithTokenDispatch(room: string) {
   const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
     identity: `token-participant-${Date.now()}`,
   });
-  at.addGrant({ roomJoin: true, room });
+  at.addGrant({ roomJoin: true, roomCreate: true, room });
   at.roomConfig = new RoomConfiguration({
     agents: [new RoomAgentDispatch({ agentName: AGENT_NAME })],
   });

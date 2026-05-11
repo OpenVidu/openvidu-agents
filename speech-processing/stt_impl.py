@@ -815,6 +815,8 @@ def get_clova_stt_impl(agent_config) -> stt.STT:
 
 
 def get_speechmatics_stt_impl(agent_config) -> stt.STT:
+    from livekit.plugins.speechmatics.stt import OperatingPoint
+
     config_manager = ConfigManager(agent_config, "live_captions.speechmatics")
     wrong_credentials = (
         "Wrong Speechmatics credentials. live_captions.speechmatics.api_key must be set"
@@ -822,9 +824,10 @@ def get_speechmatics_stt_impl(agent_config) -> stt.STT:
 
     api_key = config_manager.mandatory_value("api_key", wrong_credentials)
     language = config_manager.optional_string_value("language", "en")
-    operating_point = config_manager.optional_string_value(
+    operating_point_str = config_manager.optional_string_value(
         "operating_point", "enhanced"
     )
+    operating_point = OperatingPoint(operating_point_str)
     include_partials = config_manager.configured_boolean_value("enable_partials")
     output_locale = config_manager.configured_string_value("output_locale")
     max_delay = config_manager.configured_numeric_value("max_delay")

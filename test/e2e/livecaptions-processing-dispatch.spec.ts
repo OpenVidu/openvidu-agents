@@ -5,7 +5,6 @@ import {
   type AgentDispatch,
 } from "livekit-server-sdk";
 import { Room, dispose } from "@livekit/rtc-node";
-import { RoomAgentDispatch, RoomConfiguration } from "@livekit/protocol";
 import { LocalDeployment } from "./utils/local-deployment";
 import { TESTAPP_URL } from "./config";
 import { downloadFile, execCommand, waitForEvent } from "./utils/helper";
@@ -66,9 +65,9 @@ async function connectWithTokenDispatch(room: string) {
     identity: `token-participant-${Date.now()}`,
   });
   at.addGrant({ roomJoin: true, roomCreate: true, room });
-  at.roomConfig = new RoomConfiguration({
-    agents: [new RoomAgentDispatch({ agentName: AGENT_NAME })],
-  });
+  at.roomConfig = {
+    agents: [{ agentName: AGENT_NAME }],
+  } as any;
 
   const token = await at.toJwt();
 

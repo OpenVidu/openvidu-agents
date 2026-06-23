@@ -5,11 +5,11 @@
     "test:e2e": "playwright test"
   },
   "devDependencies": {
-    "@livekit/rtc-node": "^0.13.27",
-    "@playwright/test": "^1.60.0",
-    "@types/node": "^25.7.0",
+    "@livekit/rtc-node": "^0.13.29",
+    "@playwright/test": "^1.61.0",
+    "@types/node": "26.0.0",
     "fast-levenshtein": "^3.0.0",
-    "livekit-server-sdk": "^2.15.2",
+    "livekit-server-sdk": "^2.15.5",
     "playwright-ctrf-json-reporter": "^0.0.29",
     "ts-node": "10.9.2",
     "typescript": "6.0.3"

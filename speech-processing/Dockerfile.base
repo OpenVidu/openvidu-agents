@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # Base Dockerfile for speech-processing agents
 
-ARG PYTHON_VERSION=3.12
+ARG PYTHON_VERSION=3.13
 FROM python:${PYTHON_VERSION}-slim AS base
 
 # Keeps Python from buffering stdout and stderr to avoid situations where

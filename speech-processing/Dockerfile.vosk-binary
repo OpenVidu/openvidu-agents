@@ -98,14 +98,14 @@ RUN pip install --no-cache-dir -r requirements-base.txt
 RUN pip install --no-cache-dir vosk==0.3.45
 
 # Copy compiled libvosk-{TARGETARCH}.so from vosk-builder stage and name it as libvosk.so for Python to use
-COPY --from=vosk-builder /opt/vosk-api/src/libvosk-${TARGETARCH}.so /opt/venv/lib/python3.12/site-packages/vosk/libvosk.so
+COPY --from=vosk-builder /opt/vosk-api/src/libvosk-${TARGETARCH}.so /opt/venv/lib/python3.13/site-packages/vosk/libvosk.so
 
 # Install Python bindings from GitHub to get latest __init__.py with SetEndpointerMode
 RUN pip install --no-cache-dir --force-reinstall --no-deps \
     git+https://github.com/alphacep/vosk-api.git@3bc886a6c48b30d9ee01f30a5b459a6fe31c4e11#subdirectory=python
 
 # Restore the compiled libvosk-{TARGETARCH}.so as libvosk.so (Python reinstall removed it)
-COPY --from=vosk-builder /opt/vosk-api/src/libvosk-${TARGETARCH}.so /opt/venv/lib/python3.12/site-packages/vosk/libvosk.so
+COPY --from=vosk-builder /opt/vosk-api/src/libvosk-${TARGETARCH}.so /opt/venv/lib/python3.13/site-packages/vosk/libvosk.so
 
 # Install livekit-plugins-vosk from local directory
 RUN pip install --no-cache-dir -r requirements-vosk.txt

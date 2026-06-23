@@ -53,7 +53,7 @@ RUN LIBVOSK_FILE="vosk-libvosk/libvosk-${TARGETARCH}.so" && \
         echo "" >&2; \
         exit 1; \
     fi && \
-    cp "$LIBVOSK_FILE" /opt/venv/lib/python3.12/site-packages/vosk/libvosk.so
+    cp "$LIBVOSK_FILE" /opt/venv/lib/python3.13/site-packages/vosk/libvosk.so
 
 # =============================================================================
 # STAGE 2: Final - Clean image (without language models)

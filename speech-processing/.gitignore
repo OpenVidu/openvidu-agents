@@ -5,3 +5,4 @@ vosk-models/*
 !vosk-models/README.md
 sherpa-onnx-streaming-models/*
 !sherpa-onnx-streaming-models/README.md
+/livekit-plugins-vosk/

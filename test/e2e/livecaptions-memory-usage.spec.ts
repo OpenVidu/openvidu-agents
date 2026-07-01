@@ -13,7 +13,7 @@ interface SttProviderConfig {
   [providerName: string]: any;
   maxMemoryMB: number;
   maxTracks?: number;
-  maxMemoryAfterTeardownMB?: number; // Override the global formula for teardown leak detection
+  maxMemoryAfterTeardownMB: number;
 }
 
 const LOCAL_STT_PROVIDERS: SttProviderConfig[] = [
@@ -24,6 +24,7 @@ const LOCAL_STT_PROVIDERS: SttProviderConfig[] = [
     },
     maxMemoryMB: 1500,
     maxTracks: 8,
+    maxMemoryAfterTeardownMB: 350,
   },
   {
     sherpa: {
@@ -61,8 +62,10 @@ const CLOUD_STT_PROVIDERS: SttProviderConfig[] = [
       speech_region: process.env.AZURE_SPEECH_REGION,
     },
     // Cloud providers offload transcription, so the local container footprint
-    // is small. This limit may need calibration against real measurements.
+    // is small. These limits may need calibration against real measurements.
     maxMemoryMB: 600,
+    maxTracks: 12,
+    maxMemoryAfterTeardownMB: 300,
   },
 ];
 
@@ -77,14 +80,13 @@ const MEMORY_STABILITY_CHECK_INTERVAL_MS = 1500;
 const MEMORY_STABILITY_THRESHOLD_PERCENT = 5; // Memory is stable if change is less than this percent
 const MEMORY_STABILITY_CHECKS = 3; // Number of consecutive stable checks required
 
-// Leak detection (teardown phase): after destroying everything, memory and CPU
-// should return close to their idle baseline. Allocators rarely release memory
-// back to the OS exactly, so a tolerance above baseline is allowed.
+// Leak detection (teardown phase): after destroying everything, CPU should
+// return close to its idle baseline, and memory must drop below each provider's
+// explicit maxMemoryAfterTeardownMB cap (allocators rarely release memory back
+// to the OS exactly, so the cap sits above the idle baseline).
 const LEAK_SETTLE_MAX_WAIT_MS = 120000; // Max time to wait for return to baseline
 const LEAK_SETTLE_CHECK_INTERVAL_MS = 2000;
 const LEAK_SETTLE_STABLE_CHECKS = 3; // Consecutive checks at baseline required
-const MEMORY_LEAK_TOLERANCE_PERCENT = 15; // Allowed memory above baseline after teardown
-const MEMORY_LEAK_TOLERANCE_MB = 100;
 const CPU_IDLE_TOLERANCE_PERCENT = 5; // Allowed CPU above baseline after teardown
 
 interface MemoryStats {
@@ -255,23 +257,17 @@ interface LeakCheckResult {
 }
 
 /**
- * After teardown, wait until the container's memory and CPU drop back to their
- * idle baseline (within the configured tolerances). Used to detect leaks.
+ * After teardown, wait until the container's CPU drops back to its idle
+ * baseline and its memory drops below the provider's explicit teardown cap.
+ * Used to detect leaks.
  */
 async function waitForResourcesToReturnToBaseline(
   containerName: string,
   baselineMemoryBytes: number,
   baselineCpuPercent: number,
+  memoryThreshold: number,
   maxWaitMs: number = LEAK_SETTLE_MAX_WAIT_MS,
-  overrideMemoryThresholdBytes?: number,
 ): Promise<LeakCheckResult> {
-  const memoryThreshold =
-    overrideMemoryThresholdBytes ??
-    baselineMemoryBytes +
-      Math.max(
-        baselineMemoryBytes * (MEMORY_LEAK_TOLERANCE_PERCENT / 100),
-        MEMORY_LEAK_TOLERANCE_MB * 1024 * 1024,
-      );
   const cpuThreshold = baselineCpuPercent + CPU_IDLE_TOLERANCE_PERCENT;
 
   console.log(
@@ -829,15 +825,14 @@ function registerProviderMemoryTest(provider: SttProviderConfig) {
       console.log(
         "Step 12: Waiting for agent memory and CPU to return to idle baseline (leak check)...",
       );
-      const overrideMemoryThresholdBytes = provider.maxMemoryAfterTeardownMB
-        ? provider.maxMemoryAfterTeardownMB * 1024 * 1024
-        : undefined;
+      const memoryThresholdBytes =
+        provider.maxMemoryAfterTeardownMB * 1024 * 1024;
       const settled = await waitForResourcesToReturnToBaseline(
         containerName,
         baselineMemory,
         baselineCpu,
+        memoryThresholdBytes,
         LEAK_SETTLE_MAX_WAIT_MS,
-        overrideMemoryThresholdBytes,
       );
 
       console.log(
@@ -853,7 +848,7 @@ function registerProviderMemoryTest(provider: SttProviderConfig) {
             `Resources did not return to idle baseline after destroying all tracks, participants, agents and rooms.\n` +
             `Idle baseline: memory ${formatBytes(baselineMemory)}, CPU ${baselineCpu.toFixed(2)}%\n` +
             `After teardown: memory ${formatBytes(settled.memoryBytes)}, CPU ${settled.cpuPercent.toFixed(2)}%\n` +
-            `Allowed: memory up to max(${MEMORY_LEAK_TOLERANCE_PERCENT}%, ${MEMORY_LEAK_TOLERANCE_MB} MiB) above baseline, CPU up to baseline + ${CPU_IDLE_TOLERANCE_PERCENT}%`,
+            `Allowed: memory up to ${provider.maxMemoryAfterTeardownMB} MiB, CPU up to baseline + ${CPU_IDLE_TOLERANCE_PERCENT}%`,
         );
       }
 

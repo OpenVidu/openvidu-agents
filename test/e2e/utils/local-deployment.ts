@@ -11,6 +11,8 @@ const DEFAULT_EDITION: DeploymentEdition =
 const LOCAL_DEPLOYMENT_BASE_PATH =
   process.env.LOCAL_DEPLOYMENT_BASE_PATH || "../../openvidu-local-deployment";
 
+const ALL_EDITIONS: DeploymentEdition[] = ["community", "pro"];
+
 export class LocalDeployment {
   private static edition: DeploymentEdition = DEFAULT_EDITION;
 
@@ -57,10 +59,23 @@ export class LocalDeployment {
     console.log("Local deployment started");
   }
 
+  /**
+   * Stop the active OpenVidu local deployment, regardless of its edition.
+   */
   static stop() {
     console.log("Stopping local deployment...");
-    const dockerComposeFile = this.getDockerComposeFile();
-    execCommand(`docker compose -f ${dockerComposeFile} down -v`);
+    const previousEdition = this.edition;
+    try {
+      for (const edition of ALL_EDITIONS) {
+        this.edition = edition;
+        const dockerComposeFile = this.getDockerComposeFile();
+        if (fs.existsSync(dockerComposeFile)) {
+          execCommand(`docker compose -f ${dockerComposeFile} down -v`);
+        }
+      }
+    } finally {
+      this.edition = previousEdition;
+    }
   }
 
   private static configureProvider(

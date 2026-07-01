@@ -6,11 +6,11 @@
     "test:e2e:memory": "playwright test --project=livecaptions-memory-usage"
   },
   "devDependencies": {
-    "@livekit/rtc-node": "^0.13.29",
-    "@playwright/test": "^1.61.0",
-    "@types/node": "26.0.0",
+    "@livekit/rtc-node": "^0.13.30",
+    "@playwright/test": "^1.61.1",
+    "@types/node": "26.1.0",
     "fast-levenshtein": "^3.0.0",
-    "livekit-server-sdk": "^2.15.5",
+    "livekit-server-sdk": "^2.16.0",
     "playwright-ctrf-json-reporter": "^0.0.29",
     "ts-node": "10.9.2",
     "typescript": "6.0.3"

@@ -1,9 +1,12 @@
-import { execSync, spawn } from "child_process";
+import { execSync, spawn, type ExecSyncOptions } from "child_process";
 import { Page, ElementHandle } from "@playwright/test";
 
-export const execCommand = (command: string): string => {
+export const execCommand = (
+  command: string,
+  options?: ExecSyncOptions,
+): string => {
   try {
-    return execSync(command).toString().trim();
+    return execSync(command, options).toString().trim();
   } catch (error) {
     console.error(`Error executing command: ${command}`);
     console.error(error);

@@ -6,16 +6,18 @@ import {
 } from "livekit-server-sdk";
 import { Room, dispose } from "@livekit/rtc-node";
 import { LocalDeployment } from "./utils/local-deployment";
-import { TESTAPP_URL } from "./config";
+import {
+  TESTAPP_URL,
+  LIVEKIT_URL_HTTP,
+  LIVEKIT_URL_RTC,
+  LIVEKIT_API_KEY,
+  LIVEKIT_API_SECRET,
+} from "./config";
 import { downloadFile, execCommand, waitForEvent } from "./utils/helper";
 
 const PROVIDER = {
   vosk: { model: "vosk-model-en-us-0.22-lgraph", use_silero_vad: false },
 };
-const LIVEKIT_URL_HTTP = "http://localhost:7880";
-const LIVEKIT_URL_RTC = "ws://localhost:7880";
-const LIVEKIT_API_KEY = "devkey";
-const LIVEKIT_API_SECRET = "secret";
 const AGENT_NAME = "speech-processing";
 
 const dispatchClient = new AgentDispatchClient(

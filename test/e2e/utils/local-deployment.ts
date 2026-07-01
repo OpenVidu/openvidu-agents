@@ -1,6 +1,7 @@
 import { execCommand, sleep } from "./helper";
 
 import fs from "fs";
+import path from "path";
 import yaml from "yaml";
 
 type DeploymentEdition = "community" | "pro";
@@ -9,7 +10,8 @@ type Processing = "automatic" | "manual";
 const DEFAULT_EDITION: DeploymentEdition =
   (process.env.DEPLOYMENT_EDITION as DeploymentEdition) || "community";
 const LOCAL_DEPLOYMENT_BASE_PATH =
-  process.env.LOCAL_DEPLOYMENT_BASE_PATH || "../../openvidu-local-deployment";
+  process.env.LOCAL_DEPLOYMENT_BASE_PATH ||
+  path.resolve(__dirname, "../../../../openvidu-local-deployment");
 
 const ALL_EDITIONS: DeploymentEdition[] = ["community", "pro"];
 
@@ -28,6 +30,27 @@ export class LocalDeployment {
     return `${this.getLocalDeploymentPath()}/agent-speech-processing.yaml`;
   }
 
+  private static configureLanPrivateIp() {
+    let scriptCommand: string;
+    switch (process.platform) {
+      case "linux":
+        scriptCommand = "sh configure_lan_private_ip_linux.sh";
+        break;
+      case "darwin":
+        scriptCommand = "sh configure_lan_private_ip_macos.sh";
+        break;
+      case "win32":
+        scriptCommand = "configure_lan_private_ip_windows.bat";
+        break;
+      default:
+        throw new Error(
+          `Unsupported platform '${process.platform}' for LAN private IP configuration`,
+        );
+    }
+    console.log(`Configuring LAN private IP (${scriptCommand})...`);
+    execCommand(scriptCommand, { cwd: this.getLocalDeploymentPath() });
+  }
+
   static async start(
     edition: DeploymentEdition,
     provider: any,
@@ -42,6 +65,7 @@ export class LocalDeployment {
     console.log(`Using deployment edition: ${this.edition}`);
     console.log(`Deployment path: ${this.getLocalDeploymentPath()}`);
 
+    this.configureLanPrivateIp();
     this.configureProvider(provider, customLicense, processing);
 
     console.log("Restarting local deployment...");

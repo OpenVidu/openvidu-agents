@@ -1,6 +1,12 @@
 import { test, Page, Locator } from "@playwright/test";
+import { RoomServiceClient } from "livekit-server-sdk";
 import { LocalDeployment } from "./utils/local-deployment";
-import { TESTAPP_URL } from "./config";
+import {
+  TESTAPP_URL,
+  LIVEKIT_URL_HTTP,
+  LIVEKIT_API_KEY,
+  LIVEKIT_API_SECRET,
+} from "./config";
 import {
   downloadFile,
   execCommand,
@@ -8,6 +14,14 @@ import {
   waitForEvent,
   waitForEventContentToStartWith,
 } from "./utils/helper";
+
+// LiveKit server API, used to force-tear-down rooms and participants during the
+// leak-check teardown (see Step 11).
+const roomServiceClient = new RoomServiceClient(
+  LIVEKIT_URL_HTTP,
+  LIVEKIT_API_KEY,
+  LIVEKIT_API_SECRET,
+);
 
 interface SttProviderConfig {
   [providerName: string]: any;
@@ -802,22 +816,46 @@ function registerProviderMemoryTest(provider: SttProviderConfig) {
         `✓ Memory usage is within acceptable limits (${finalMemoryMB.toFixed(2)} MiB < ${maxMemoryMB} MiB)`,
       );
 
-      // Step 11: Tear everything down
+      // Step 11: Tear everything down from the server side via the LiveKit server API
       console.log(
-        "Step 11: Disconnecting all participants to destroy tracks, rooms and agents...",
+        "Step 11: Removing all participants via the LiveKit server API...",
       );
-      for (const participant of Array.from(connectedParticipants)) {
-        try {
-          await disconnectParticipant(page, participant);
-          connectedParticipants.delete(participant);
-        } catch (error: any) {
-          console.error(
-            `Error disconnecting participant ${participant}: ${error.message}`,
-          );
+      const rooms = await roomServiceClient.listRooms();
+      for (const room of rooms) {
+        const participants = await roomServiceClient.listParticipants(
+          room.name,
+        );
+        for (const participant of participants) {
+          try {
+            await roomServiceClient.removeParticipant(
+              room.name,
+              participant.identity,
+            );
+            console.log(
+              `  Removed participant "${participant.identity}" from room "${room.name}"`,
+            );
+          } catch (error: any) {
+            console.error(
+              `Error removing participant "${participant.identity}" from room "${room.name}": ${error.message}`,
+            );
+          }
         }
       }
+
+      // Ensure no room stays active: delete any that are still listed
+      const remainingRooms = await roomServiceClient.listRooms();
+      for (const room of remainingRooms) {
+        try {
+          await roomServiceClient.deleteRoom(room.name);
+          console.log(`  Deleted room "${room.name}"`);
+        } catch (error: any) {
+          console.error(`Error deleting room "${room.name}": ${error.message}`);
+        }
+      }
+
+      connectedParticipants.clear();
       console.log(
-        `All participants disconnected. Active tracks: ${connectedParticipants.size}/${totalTracks}`,
+        `All participants and rooms removed. Active tracks: ${connectedParticipants.size}/${totalTracks}`,
       );
 
       // Step 12: Wait for the agent container to return to its idle baseline.

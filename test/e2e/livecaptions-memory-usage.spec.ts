@@ -401,19 +401,37 @@ async function isParticipantConnected(
 }
 
 /**
+ * Trigger a button inside an instance panel with a direct DOM click event.
+ */
+async function dispatchInstanceButtonClick(
+  page: Page,
+  instanceIndex: number,
+  buttonClass: string,
+): Promise<void> {
+  await page
+    .locator(`#openvidu-instance-${instanceIndex} ${buttonClass}`)
+    .dispatchEvent("click");
+}
+
+/**
  * Connect a participant by its instance index
  */
 async function connectParticipant(
   page: Page,
   instanceIndex: number,
 ): Promise<void> {
-  if (await isParticipantConnected(page, instanceIndex)) {
-    return;
+  // Dispatch the connect click, retrying until the UI reflects the connected
+  // state, in case the saturated page dropped the first event.
+  const deadline = Date.now() + PARTICIPANT_ACTION_TIMEOUT_MS;
+  while (!(await isParticipantConnected(page, instanceIndex))) {
+    if (Date.now() > deadline) {
+      throw new Error(
+        `Participant ${instanceIndex} did not start connecting within ${PARTICIPANT_ACTION_TIMEOUT_MS}ms`,
+      );
+    }
+    await dispatchInstanceButtonClick(page, instanceIndex, ".connect-btn");
+    await sleep(0.5);
   }
-  const connectButton = page.locator(
-    `#openvidu-instance-${instanceIndex} .connect-btn`,
-  );
-  await connectButton.click({ timeout: PARTICIPANT_ACTION_TIMEOUT_MS });
   await waitForEvent(page, "localTrackPublished", 1, instanceIndex, 60000);
   await waitForEventContentToStartWith(
     page,
@@ -435,13 +453,17 @@ async function disconnectParticipant(
   page: Page,
   instanceIndex: number,
 ): Promise<void> {
-  if (!(await isParticipantConnected(page, instanceIndex))) {
-    return;
+  // Dispatch the disconnect click, retrying until the UI reflects the disconnected state
+  const deadline = Date.now() + PARTICIPANT_ACTION_TIMEOUT_MS;
+  while (await isParticipantConnected(page, instanceIndex)) {
+    if (Date.now() > deadline) {
+      throw new Error(
+        `Participant ${instanceIndex} did not disconnect within ${PARTICIPANT_ACTION_TIMEOUT_MS}ms`,
+      );
+    }
+    await dispatchInstanceButtonClick(page, instanceIndex, ".disconnect-btn");
+    await sleep(0.5);
   }
-  const disconnectButton = page.locator(
-    `#openvidu-instance-${instanceIndex} .disconnect-btn`,
-  );
-  await disconnectButton.click({ timeout: PARTICIPANT_ACTION_TIMEOUT_MS });
   console.log(`Participant ${instanceIndex} disconnected.`);
 }
 

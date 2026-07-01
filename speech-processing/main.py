@@ -1,8 +1,13 @@
 import asyncio
+import ctypes
+import ctypes.util
+import gc
 import logging
 import os
 import signal
 import sys
+import threading
+import time
 
 # Configure basic logging early so preload messages are visible
 # cli.run_app() will reconfigure this with proper formatting later
@@ -22,16 +27,69 @@ from livekit.agents import (
     RoomOutputOptions,
     RoomInputOptions,
     RoomIO,
-    utils,
 )
 from livekit.agents.worker import ServerType
 from livekit import rtc
 from livekit.plugins import silero
 
-from stt_impl import get_stt_impl, set_cached_silero_vad, stt_provider_requires_vad
+from stt_impl import (
+    get_stt_impl,
+    set_cached_silero_vad,
+    clear_cached_silero_vad,
+    stt_provider_requires_vad,
+    _get_cached_silero_vad,
+)
+from vad_stt_wrapper import VADTriggeredSTT
 from openviduagentutils.openvidu_agent import OpenViduAgent
 from openviduagentutils.config_manager import ConfigManager
 from livekit.agents.types import NotGiven
+
+
+def _resolve_malloc_trim():
+    """Resolve glibc's malloc_trim, or None if unavailable.
+
+    malloc_trim is a glibc extension (present in this agent's Debian-based image).
+    On other libc implementations it won't exist and we degrade gracefully to a
+    plain gc.collect() in _release_memory_to_os().
+    """
+    try:
+        libc = ctypes.CDLL(ctypes.util.find_library("c") or "libc.so.6")
+        malloc_trim = libc.malloc_trim
+        malloc_trim.argtypes = [ctypes.c_size_t]
+        malloc_trim.restype = ctypes.c_int
+        return malloc_trim
+    except (OSError, AttributeError):
+        logging.warning(
+            "malloc_trim not available; freed memory may not be returned to the OS"
+        )
+        return None
+
+
+_malloc_trim = _resolve_malloc_trim()
+
+# Maps room name → MultiUserTranscriber.  Populated in entrypoint() and consumed
+# by session_end() so that sessions are closed BEFORE room.disconnect() is called.
+_transcribers: dict[str, "MultiUserTranscriber"] = {}
+
+# Grace period in seconds before the Silero VAD model is evicted after all sessions
+# close. Mirrors VOSK_MODEL_IDLE_EVICT_DELAY_S so both models are released together.
+_VAD_IDLE_EVICT_DELAY_S = float(os.environ.get("VAD_MODEL_IDLE_EVICT_DELAY_S", "15"))
+
+
+def _release_memory_to_os() -> None:
+    """Return memory freed by finished jobs/sessions back to the operating system.
+
+    Closing an AgentSession drops its STT recognizer, but the underlying native
+    memory is only returned to glibc's allocator free lists, not to the kernel, so
+    the container RSS stays pinned at its high-water mark. Because all jobs run as
+    threads in a single long-lived process (JobExecutorType.THREAD), that memory is
+    never reclaimed by process exit either. We force a garbage collection so the
+    recognizer's finalizer runs, then call malloc_trim() to hand the now-free heap
+    pages back to the OS. Meant to be run in an executor to avoid blocking the loop.
+    """
+    gc.collect()
+    if _malloc_trim is not None:
+        _malloc_trim(0)
 
 
 # ######################################
@@ -84,26 +142,98 @@ class MultiUserTranscriber:
     def __init__(self, ctx: JobContext, agent_config: object):
         self.ctx = ctx
         self.agent_config = agent_config
-        self._sessions: dict[str, AgentSession] = {}
+        # Maps participant_identity → (AgentSession, stt_impl, room_io).
+        # stt_impl is stored so force_close_all() can be called on it when
+        # sess.aclose() times out. room_io is stored so we can call room_io.aclose()
+        # explicitly after sess.aclose(): AgentSession.aclose() only closes room_io
+        # when the session created it internally (via session.start(room=…)); since
+        # we create RoomIO externally and pass it agent_session=, we must close it.
+        self._sessions: dict[str, tuple[AgentSession, stt.STT | None, RoomIO]] = {}
         self._tasks: set[asyncio.Task] = set()
         self._pending_sessions: set[str] = set()
         self._vad_model = None
+        # Idle VAD eviction — mirrors the vosk plugin's idle model eviction.
+        # When all sessions close, a timer is started. If no new session arrives
+        # before it fires, the shared Silero VAD model is dropped so gc/malloc_trim
+        # can return its native memory to the OS.
+        self._vad_idle_timer: threading.Timer | None = None
+        self._vad_idle_lock = threading.Lock()
+        self._aclose_started = False
 
     def start(self):
         self.ctx.room.on("participant_connected", self.on_participant_connected)
         self.ctx.room.on("participant_disconnected", self.on_participant_disconnected)
 
     async def aclose(self):
-        await utils.aio.cancel_and_wait(*self._tasks)
+        if self._aclose_started:
+            logging.debug("[aclose] already in progress, skipping")
+            return
+        self._aclose_started = True
+        logging.debug("[aclose] starting")
+        with self._vad_idle_lock:
+            if self._vad_idle_timer is not None:
+                self._vad_idle_timer.cancel()
+                self._vad_idle_timer = None
 
-        await asyncio.gather(
-            *[self._close_session(session) for session in self._sessions.values()]
-        )
+        # Await ongoing tasks with a timeout instead of cancelling them:
+        # _close_session tasks MUST complete to release STT/VAD resources.
+        # _start_session tasks will either complete or be abandoned after the timeout.
+        if self._tasks:
+            logging.debug(f"[aclose] waiting for {len(self._tasks)} task(s)")
+            _, pending = await asyncio.wait(list(self._tasks), timeout=10.0)
+            if pending:
+                logging.warning(
+                    f"[aclose] {len(pending)} task(s) still running after 10s timeout, continuing"
+                )
+
+        # Close sessions that never received a disconnect event
+        if self._sessions:
+            items = list(self._sessions.items())
+            self._sessions.clear()
+            logging.debug(
+                f"[aclose] Closing {len(items)} remaining session(s) "
+                f"with no prior disconnect event"
+            )
+            await asyncio.gather(
+                *[
+                    self._close_session(sess, stt_impl, room_io)
+                    for _, (sess, stt_impl, room_io) in items
+                ],
+                return_exceptions=True,
+            )
+            # Drop the stt_impl references held by `items` immediately.  Combined with
+            # the `stt_impl = None` inside _close_session, this ensures all
+            # VADTriggeredSTT objects are released before the gc pass below.
+            del items
 
         self.ctx.room.off("participant_connected", self.on_participant_connected)
         self.ctx.room.off("participant_disconnected", self.on_participant_disconnected)
 
+        # Any sessions closed above bypassed on_participant_disconnected, so the
+        # eviction timer was never set via the normal on_close_done → schedule path.
+        # Clear any pending session and schedule eviction explicitly.
+        self._pending_sessions.clear()
+        self._schedule_vad_eviction_if_idle()
+
+        # Final gc+malloc_trim pass now that all of this transcriber's sessions are
+        # closed. This catches the race where the module-level eviction timer fired
+        # (clearing _cached_silero_vad) *before* our sessions dropped their
+        # VADTriggeredSTT references. _schedule_vad_eviction_if_idle() would have
+        # returned early (no VAD in cache, no timer scheduled), so without this call
+        # the freed but still-allocated pages would never be returned to the OS.
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, _release_memory_to_os)
+
+        logging.debug("[aclose] done")
+
     def on_participant_connected(self, participant: rtc.RemoteParticipant):
+        # A new participant is connecting — cancel any pending VAD model eviction so
+        # the model stays loaded for the incoming session.
+        with self._vad_idle_lock:
+            if self._vad_idle_timer is not None:
+                self._vad_idle_timer.cancel()
+                self._vad_idle_timer = None
+
         if (
             participant.identity in self._sessions
             or participant.identity in self._pending_sessions
@@ -117,7 +247,8 @@ class MultiUserTranscriber:
 
         def on_task_done(task: asyncio.Task):
             try:
-                self._sessions[participant.identity] = task.result()
+                sess, stt_impl, room_io = task.result()
+                self._sessions[participant.identity] = (sess, stt_impl, room_io)
             finally:
                 self._tasks.discard(task)
                 self._pending_sessions.discard(participant.identity)
@@ -128,15 +259,24 @@ class MultiUserTranscriber:
     def on_participant_disconnected(self, participant: rtc.RemoteParticipant):
         self._pending_sessions.discard(participant.identity)
 
-        if (session := self._sessions.pop(participant.identity, None)) is None:
+        entry = self._sessions.pop(participant.identity, None)
+        if entry is None:
             return
+        session, stt_impl, room_io = entry
 
         logging.info(f"closing session for {participant.identity}")
-        task = asyncio.create_task(self._close_session(session))
+        task = asyncio.create_task(self._close_session(session, stt_impl, room_io))
         self._tasks.add(task)
-        task.add_done_callback(lambda _: self._tasks.discard(task))
 
-    async def _start_session(self, participant: rtc.RemoteParticipant) -> AgentSession:
+        def on_close_done(_task: asyncio.Task):
+            self._tasks.discard(_task)
+            self._schedule_vad_eviction_if_idle()
+
+        task.add_done_callback(on_close_done)
+
+    async def _start_session(
+        self, participant: rtc.RemoteParticipant
+    ) -> tuple[AgentSession, stt.STT | None, RoomIO]:
         if participant.identity in self._sessions:
             return self._sessions[participant.identity]
 
@@ -227,11 +367,129 @@ class MultiUserTranscriber:
                 vad_model=vad_model,
             )
         )
-        return session
+        return session, stt_impl, room_io
 
-    async def _close_session(self, sess: AgentSession) -> None:
-        await sess.drain()
-        await sess.aclose()
+    async def _close_session(
+        self,
+        sess: AgentSession,
+        stt_impl: stt.STT | None = None,
+        room_io: RoomIO | None = None,
+    ) -> None:
+        t0 = time.monotonic()
+        logging.debug("[_close_session] starting drain()")
+        try:
+            await asyncio.wait_for(sess.drain(), timeout=5.0)
+        except asyncio.TimeoutError:
+            logging.warning(
+                "[_close_session] drain() timed out after 5s, proceeding to aclose()"
+            )
+        try:
+            await asyncio.wait_for(sess.aclose(), timeout=10.0)
+        except asyncio.TimeoutError:
+            logging.warning(
+                "[_close_session] aclose() timed out after 10s, proceeding to memory release"
+            )
+            # sess.aclose() timed out: the VAD/STT pipeline tasks are still running
+            # because the audio input was never cleanly closed (participant never
+            # sent a proper disconnect signal). Force-cancel them.
+            if isinstance(stt_impl, VADTriggeredSTT):
+                logging.warning("[_close_session] force-closing VAD stream tasks")
+                await stt_impl.force_close_all()
+        # Explicitly close room_io to cancel _forward_user_transcript and all other
+        # background tasks created by RoomIO.start().  AgentSession.aclose() only
+        # closes room_io when the session created it internally via session.start(room=…).
+        # Since we create RoomIO externally and pass agent_session= to the constructor,
+        # AgentSession._room_io is never set — so we MUST close it here.  Skipping this
+        # leaves _forward_user_transcript (and its audio-stream / FFI-handle references)
+        # alive until the event loop is torn down, which keeps the entire AgentSession
+        # object graph alive and prevents memory from returning to baseline.
+        if room_io is not None:
+            try:
+                await asyncio.wait_for(room_io.aclose(), timeout=5.0)
+            except asyncio.TimeoutError:
+                logging.warning("[_close_session] room_io.aclose() timed out after 5s")
+            room_io = None  # type: ignore[assignment]
+        # Drop stt_impl NOW so CPython's reference counter can immediately collect
+        # the VADTriggeredSTT object and decrement the shared Silero VAD model's
+        # refcount.  If this was the last holder, gc.collect() below will free it.
+        stt_impl = None  # type: ignore[assignment]
+        # Drop sess so the AgentSession (and its internal STT pipeline node, which
+        # holds a reference to stt_impl via Agent.stt) is no longer reachable from
+        # this frame when gc.collect() runs below.  Without this, the AgentSession
+        # object graph keeps VADTriggeredSTT / VoskSpeechStream alive even after
+        # stt_impl = None above, because AgentSession still references the Agent
+        # whose .stt field points at the same VADTriggeredSTT instance.
+        sess = None  # type: ignore[assignment]
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, _release_memory_to_os)
+        logging.debug(
+            f"[_close_session] done, total close time {time.monotonic() - t0:.2f}s"
+        )
+
+    def _schedule_vad_eviction_if_idle(self) -> None:
+        """Schedule Silero VAD model eviction if all sessions have ended.
+
+        Called from the done-callback of each session-close task. When the last
+        session closes (both _sessions and _pending_sessions are empty), a timer
+        is started. If no new session arrives before it fires, _evict_idle_vad_model()
+        runs to drop the shared VAD model reference and return its memory to the OS.
+        """
+        # self._vad_model is only set when VAD is used via _get_vad_model() (StreamAdapter
+        # or turn_detection="vad"). When use_silero_vad=true, the shared model lives in
+        # _cached_silero_vad (set by _preload_silero_vad / get_stt_impl) instead.
+        # Check both locations so the eviction timer fires in the VAD-triggered STT case too.
+        has_vad_to_evict = (
+            self._vad_model is not None or _get_cached_silero_vad() is not None
+        )
+        if not has_vad_to_evict:
+            return  # No Silero VAD loaded anywhere; nothing to evict.
+        if self._sessions or self._pending_sessions:
+            return  # Still active or pending sessions.
+
+        with self._vad_idle_lock:
+            if self._vad_idle_timer is not None:
+                self._vad_idle_timer.cancel()
+            timer = threading.Timer(_VAD_IDLE_EVICT_DELAY_S, self._evict_idle_vad_model)
+            timer.daemon = True
+            self._vad_idle_timer = timer
+            timer.start()
+        logging.info(
+            f"All sessions closed; Silero VAD model eviction scheduled in "
+            f"{_VAD_IDLE_EVICT_DELAY_S:.0f}s"
+        )
+
+    def _evict_idle_vad_model(self) -> None:
+        """Evict the Silero VAD model if still idle, then return memory to the OS.
+
+        Runs in a daemon timer thread. Drops all references to the shared VAD
+        model so gc.collect() can free it, then calls malloc_trim() to return the
+        native pages to the OS. The model is reloaded on demand when the next
+        session starts.
+        """
+        with self._vad_idle_lock:
+            self._vad_idle_timer = None
+            if self._sessions or self._pending_sessions:
+                return  # A new session arrived during the grace period.
+
+        logging.info(
+            "Evicting idle Silero VAD model to release memory after inactivity"
+        )
+
+        # Drop the instance reference held by this transcriber.
+        self._vad_model = None
+
+        # Drop from proc.userdata so new sessions do not pick up the evicted model.
+        proc = getattr(self.ctx, "proc", None)
+        userdata = getattr(proc, "userdata", None)
+        if isinstance(userdata, dict):
+            userdata.pop("vad", None)
+
+        # Drop from the module-level stt_impl cache.
+        clear_cached_silero_vad()
+
+        # Return freed native memory to the OS.
+        _release_memory_to_os()
+        logging.info("Silero VAD model evicted; memory returned to OS")
 
     def _get_vad_model(self):
         if self._vad_model is None:
@@ -316,6 +574,20 @@ class MultiUserTranscriber:
 #     userdata["turn_detectors"] = _preload_turn_detector_models()
 
 
+async def session_end(ctx: JobContext) -> None:
+    """Close all sessions BEFORE the framework calls room.disconnect().
+
+    room.disconnect() blocks until every AudioStream subscription is released by the
+    FFI.  AudioStreams are owned by AgentSession objects, so if any session is still
+    open when room.disconnect() runs, the FFI deadlocks for the full close_timeout
+    (30 s).  This callback is invoked by the framework *before* room.disconnect(), so
+    closing sessions here lets the FFI proceed without the timeout.
+    """
+    transcriber = _transcribers.pop(ctx.room.name, None)
+    if transcriber is not None:
+        await transcriber.aclose()
+
+
 async def entrypoint(ctx: JobContext):
     # ######################################
     # TODO: use turn detection when required
@@ -329,6 +601,8 @@ async def entrypoint(ctx: JobContext):
     agent_config = openvidu_agent.get_agent_config()
 
     transcriber = MultiUserTranscriber(ctx, agent_config)
+    # Register so session_end() can close it before room.disconnect() is called.
+    _transcribers[ctx.room.name] = transcriber
     transcriber.start()
 
     await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
@@ -337,6 +611,9 @@ async def entrypoint(ctx: JobContext):
         transcriber.on_participant_connected(participant)
 
     async def cleanup():
+        # session_end() normally runs first (before room.disconnect()), so
+        # _aclose_started will be True here and this becomes a fast no-op.
+        _transcribers.pop(ctx.room.name, None)
         await transcriber.aclose()
 
     ctx.add_shutdown_callback(cleanup)
@@ -581,9 +858,13 @@ if __name__ == "__main__":
 
     # Set agent name for explicit dispatch only in manual processing mode.
     if agent_config["live_captions"]["processing"] == "manual":
-        server.rtc_session(type=ServerType.ROOM, agent_name=agent_name)(main_entrypoint)
+        server.rtc_session(
+            type=ServerType.ROOM, agent_name=agent_name, on_session_end=session_end
+        )(main_entrypoint)
     else:
-        server.rtc_session(type=ServerType.ROOM)(main_entrypoint)
+        server.rtc_session(type=ServerType.ROOM, on_session_end=session_end)(
+            main_entrypoint
+        )
 
     # Preload local models into memory before starting the server
     # This ensures all thread-based agents share the same model instance

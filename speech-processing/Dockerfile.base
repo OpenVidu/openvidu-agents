@@ -11,6 +11,14 @@ ENV PYTHONUNBUFFERED=1
 # Disable pip version check to speed up builds
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1
 
+# Limit the number of glibc malloc arenas. This agent runs all jobs as threads in
+# a single long-lived process (JobExecutorType.THREAD), and native STT libraries
+# (e.g. Vosk/Kaldi) allocate heavily per recognizer. By default glibc creates up
+# to 8*ncores arenas, each retaining its own pool of freed-but-not-returned memory.
+# Capping arenas drastically reduces this stranded memory; the application also
+# calls malloc_trim() explicitly when jobs finish to return freed pages to the OS.
+ENV MALLOC_ARENA_MAX=2
+
 # Create a non-privileged user that the app will run under.
 # See https://docs.docker.com/develop/develop-images/dockerfile_best-practices/#user
 ARG UID=10001

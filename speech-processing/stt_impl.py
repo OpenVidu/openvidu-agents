@@ -97,6 +97,17 @@ def set_cached_silero_vad(vad_model) -> None:
         logging.info("Cached Silero VAD model set for reuse in STT implementations")
 
 
+def clear_cached_silero_vad() -> None:
+    """Clear the cached Silero VAD model so it can be garbage-collected.
+
+    Called by idle eviction logic when no sessions are active and the grace period
+    has elapsed. The model will be reloaded on demand when the next session starts.
+    """
+    global _cached_silero_vad
+    with _vad_load_lock:
+        _cached_silero_vad = None
+
+
 def _get_cached_silero_vad(load_if_missing: bool = False):
     global _cached_silero_vad
 

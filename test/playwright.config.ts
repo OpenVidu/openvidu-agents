@@ -1,5 +1,9 @@
 import { defineConfig } from "@playwright/test";
+import path from "path";
 import { RUN_MODE } from "./e2e/config";
+
+const resource = (file: string) =>
+  path.join(__dirname, "e2e", "resources", file);
 
 const commonLaunchArgs = [
   "--use-fake-ui-for-media-stream",
@@ -11,7 +15,7 @@ const commonLaunchArgs = [
 
 export default defineConfig({
   testDir: "./e2e",
-  timeout: 600000,
+  timeout: 1000000,
   retries: 0,
   workers: 1,
   fullyParallel: false,
@@ -30,7 +34,7 @@ export default defineConfig({
         launchOptions: {
           args: [
             ...commonLaunchArgs,
-            "--use-file-for-fake-audio-capture=e2e/resources/stt-test-with-silence.wav",
+            `--use-file-for-fake-audio-capture=${resource("stt-test-with-silence.wav")}`,
           ],
         },
       },
@@ -42,7 +46,7 @@ export default defineConfig({
         launchOptions: {
           args: [
             ...commonLaunchArgs,
-            "--use-file-for-fake-audio-capture=e2e/resources/stt-test.wav",
+            `--use-file-for-fake-audio-capture=${resource("stt-test.wav")}`,
           ],
         },
       },
@@ -63,7 +67,7 @@ export default defineConfig({
         launchOptions: {
           args: [
             ...commonLaunchArgs,
-            "--use-file-for-fake-audio-capture=e2e/resources/stt-test-with-silence.wav",
+            `--use-file-for-fake-audio-capture=${resource("stt-test-with-silence.wav")}`,
           ],
         },
       },

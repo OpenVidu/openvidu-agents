@@ -88,6 +88,9 @@ class VADTriggeredSTT(stt.STT):
         self._stt = stt_impl
         self._vad = vad_impl
         self._flush_delay = flush_delay
+        # Tracks all VADTriggeredSpeechStream instances created by this STT. Used
+        # by force_close_all() to cancel background tasks when sess.aclose() hangs.
+        self._active_streams: list["VADTriggeredSpeechStream"] = []
 
         # Get sample rate from the underlying STT if available
         self._sample_rate = getattr(stt_impl, "_opts", None)
@@ -130,13 +133,42 @@ class VADTriggeredSTT(stt.STT):
     ) -> "VADTriggeredSpeechStream":
         """Create a VAD-triggered streaming speech recognition session."""
         logger.debug("[VADTriggeredSTT] Creating new VADTriggeredSpeechStream")
-        return VADTriggeredSpeechStream(
+        s = VADTriggeredSpeechStream(
             stt=self,
             base_stt=self._stt,
             vad=self._vad,
             flush_delay=self._flush_delay,
             sample_rate=self._sample_rate,
             conn_options=conn_options,
+        )
+        self._active_streams.append(s)
+        return s
+
+    async def force_close_all(self) -> None:
+        """Cancel all active stream background tasks immediately.
+
+        Called when sess.aclose() times out and the normal VAD/STT pipeline
+        cleanup path is never reached. Cancels the vad_task, stt_forward_task,
+        and audio_forward_task tasks that are running inside each stream's _run()
+        so they don't keep consuming CPU/memory after the session is gone.
+        """
+        streams = list(self._active_streams)
+        self._active_streams.clear()
+        if not streams:
+            return
+        logger.warning(
+            f"[VADTriggeredSTT] force_close_all: cancelling tasks for {len(streams)} stream(s)"
+        )
+        all_tasks: list[asyncio.Task] = []
+        for s in streams:
+            for t in s._run_tasks:
+                if not t.done():
+                    t.cancel()
+                    all_tasks.append(t)
+        if all_tasks:
+            await asyncio.gather(*all_tasks, return_exceptions=True)
+        logger.warning(
+            f"[VADTriggeredSTT] force_close_all: cancelled {len(all_tasks)} task(s)"
         )
 
     def update_options(self, **kwargs) -> None:
@@ -175,6 +207,9 @@ class VADTriggeredSpeechStream(stt.SpeechStream):
         self._audio_frame_count = 0
         self._flush_count = 0
         self._start_time = time.monotonic()
+        # Tasks created in _run(); stored here so they can be cancelled from outside
+        # when sess.aclose() times out and we need to force-stop the pipeline.
+        self._run_tasks: list[asyncio.Task] = []
         logger.debug(f"[VADTriggeredStream:{self._stream_id}] Stream initialized")
 
     async def _run(self) -> None:
@@ -398,6 +433,9 @@ class VADTriggeredSpeechStream(stt.SpeechStream):
                 audio_forward_task(), name=f"audio_forward_task_{self._stream_id}"
             ),
         ]
+        # Store reference so VADTriggeredSTT.force_close_all() can cancel them if
+        # sess.aclose() times out and the normal cleanup path is never reached.
+        self._run_tasks = tasks
 
         try:
             await asyncio.gather(*tasks)
@@ -415,15 +453,32 @@ class VADTriggeredSpeechStream(stt.SpeechStream):
             )
             await aio.cancel_and_wait(*tasks)
             if self._stt_stream:
+                # Signal end-of-input before aclose(). If audio_forward_task was cancelled before it
+                # could call end_input() itself, the underlying STT stream stays blocked waiting for
+                # the next frame. Calling end_input() here lets it drain naturally
+                self._stt_stream.end_input()
                 await self._stt_stream.aclose()
                 logger.debug(
                     f"[VADTriggeredStream:{self._stream_id}] STT stream closed"
                 )
+                # Null out the reference for garbage collection
+                self._stt_stream = None
             if self._vad_stream:
+                # Signal end-of-input before aclose(). This lets the ONNX inference loop see the closed
+                # channel and exit cleanly after its current frame, rather than being cancelled
+                # mid-inference and potentially leaving background ONNX threads running.
+                self._vad_stream.end_input()
                 await self._vad_stream.aclose()
                 logger.debug(
                     f"[VADTriggeredStream:{self._stream_id}] VAD stream closed"
                 )
+                self._vad_stream = None
+            try:
+                # Remove self from the parent STT's _active_streams to break the reference cycle and
+                # allow early garbage collection.
+                self._stt._active_streams.remove(self)
+            except (ValueError, AttributeError):
+                pass
 
             total_elapsed = time.monotonic() - self._start_time
             logger.info(

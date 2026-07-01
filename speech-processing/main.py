@@ -23,10 +23,8 @@ from livekit.agents import (
     WorkerPermissions,
     Agent,
     AgentSession,
-    RoomOutputOptions,
-    RoomInputOptions,
-    RoomIO,
 )
+from livekit.agents.voice.room_io import RoomOptions, TextOutputOptions
 from livekit.agents.worker import ServerType
 from livekit import rtc
 from livekit.plugins import silero
@@ -135,13 +133,9 @@ class MultiUserTranscriber:
     def __init__(self, ctx: JobContext, agent_config: object):
         self.ctx = ctx
         self.agent_config = agent_config
-        # Maps participant_identity → (AgentSession, stt_impl, room_io).
-        # stt_impl is stored so force_close_all() can be called on it when
-        # sess.aclose() times out. room_io is stored so we can call room_io.aclose()
-        # explicitly after sess.aclose(): AgentSession.aclose() only closes room_io
-        # when the session created it internally (via session.start(room=…)); since
-        # we create RoomIO externally and pass it agent_session=, we must close it.
-        self._sessions: dict[str, tuple[AgentSession, stt.STT | None, RoomIO]] = {}
+        # Maps participant_identity → (AgentSession, stt_impl). stt_impl is stored
+        # so force_close_all() can be called on it when sess.aclose() times out.
+        self._sessions: dict[str, tuple[AgentSession, stt.STT | None]] = {}
         self._tasks: set[asyncio.Task] = set()
         self._pending_sessions: set[str] = set()
         self._vad_model = None
@@ -178,10 +172,7 @@ class MultiUserTranscriber:
                 f"with no prior disconnect event"
             )
             await asyncio.gather(
-                *[
-                    self._close_session(sess, stt_impl, room_io)
-                    for _, (sess, stt_impl, room_io) in items
-                ],
+                *[self._close_session(sess, stt_impl) for _, (sess, stt_impl) in items],
                 return_exceptions=True,
             )
             # Drop the stt_impl references held by `items` immediately.  Combined with
@@ -215,8 +206,8 @@ class MultiUserTranscriber:
 
         def on_task_done(task: asyncio.Task):
             try:
-                sess, stt_impl, room_io = task.result()
-                self._sessions[participant.identity] = (sess, stt_impl, room_io)
+                sess, stt_impl = task.result()
+                self._sessions[participant.identity] = (sess, stt_impl)
             finally:
                 self._tasks.discard(task)
                 self._pending_sessions.discard(participant.identity)
@@ -230,10 +221,10 @@ class MultiUserTranscriber:
         entry = self._sessions.pop(participant.identity, None)
         if entry is None:
             return
-        session, stt_impl, room_io = entry
+        session, stt_impl = entry
 
         logging.info(f"closing session for {participant.identity}")
-        task = asyncio.create_task(self._close_session(session, stt_impl, room_io))
+        task = asyncio.create_task(self._close_session(session, stt_impl))
         self._tasks.add(task)
 
         def on_close_done(_task: asyncio.Task):
@@ -243,7 +234,7 @@ class MultiUserTranscriber:
 
     async def _start_session(
         self, participant: rtc.RemoteParticipant
-    ) -> tuple[AgentSession, stt.STT | None, RoomIO]:
+    ) -> tuple[AgentSession, stt.STT | None]:
         if participant.identity in self._sessions:
             return self._sessions[participant.identity]
 
@@ -303,24 +294,6 @@ class MultiUserTranscriber:
         #             f"[EVENT] {participant.identity} PARTIAL -> {event.transcript}"
         #         )
 
-        room_io = RoomIO(
-            agent_session=session,
-            room=self.ctx.room,
-            participant=participant,
-            input_options=RoomInputOptions(
-                text_enabled=False,
-                audio_enabled=True,
-                video_enabled=False,
-                close_on_disconnect=True,
-                delete_room_on_close=False,
-            ),
-            output_options=RoomOutputOptions(
-                transcription_enabled=True,
-                audio_enabled=False,
-                sync_transcription=False,
-            ),
-        )
-        await room_io.start()
         logging.info(
             f"[MultiUserTranscriber] Starting Transcriber agent for {participant.identity} - "
             f"stt_provider={stt_impl.provider}, turn_detection={turn_detection}, "
@@ -332,15 +305,23 @@ class MultiUserTranscriber:
                 stt_impl=stt_impl,
                 turn_detection=turn_detection,
                 vad_model=vad_model,
-            )
+            ),
+            room=self.ctx.room,
+            room_options=RoomOptions(
+                participant_identity=participant.identity,
+                text_input=False,
+                video_input=False,
+                audio_output=False,
+                text_output=TextOutputOptions(sync_transcription=False),
+                close_on_disconnect=True,
+            ),
         )
-        return session, stt_impl, room_io
+        return session, stt_impl
 
     async def _close_session(
         self,
         sess: AgentSession,
         stt_impl: stt.STT | None = None,
-        room_io: RoomIO | None = None,
     ) -> None:
         t0 = time.monotonic()
         logging.debug("[_close_session] starting drain()")
@@ -362,20 +343,6 @@ class MultiUserTranscriber:
             if isinstance(stt_impl, VADTriggeredSTT):
                 logging.warning("[_close_session] force-closing VAD stream tasks")
                 await stt_impl.force_close_all()
-        # Explicitly close room_io to cancel _forward_user_transcript and all other
-        # background tasks created by RoomIO.start().  AgentSession.aclose() only
-        # closes room_io when the session created it internally via session.start(room=…).
-        # Since we create RoomIO externally and pass agent_session= to the constructor,
-        # AgentSession._room_io is never set — so we MUST close it here.  Skipping this
-        # leaves _forward_user_transcript (and its audio-stream / FFI-handle references)
-        # alive until the event loop is torn down, which keeps the entire AgentSession
-        # object graph alive and prevents memory from returning to baseline.
-        if room_io is not None:
-            try:
-                await asyncio.wait_for(room_io.aclose(), timeout=5.0)
-            except asyncio.TimeoutError:
-                logging.warning("[_close_session] room_io.aclose() timed out after 5s")
-            room_io = None  # type: ignore[assignment]
         # Drop stt_impl NOW so CPython's reference counter can immediately collect
         # the VADTriggeredSTT object and decrement the shared Silero VAD model's
         # refcount.  If this was the last holder, gc.collect() below will free it.

@@ -1,0 +1,178 @@
+# Reusable workflow with the shared setup for the Speech Processing agent E2E
+# test suites. It is not meant to be run directly: it is called by
+# "speech-processing-e2e.yml" (functional tests) and
+# "speech-processing-memory-leak-e2e.yml" (memory leak tests), which only differ
+# in the Playwright projects they execute (via the "test-npm-script" input).
+name: Speech Processing agent E2E tests (reusable)
+on:
+  workflow_call:
+    inputs:
+      ref-openvidu-agents:
+        description: "Branch, tag or commit SHA to checkout in repository OpenVidu/openvidu-agents"
+        type: string
+        required: false
+        default: ""
+      ref-openvidu-agents-pro:
+        description: "Branch, tag or commit SHA to checkout in repository OpenVidu/openvidu-agents-pro"
+        type: string
+        required: false
+        default: ""
+      ref-openvidu-local-deployment:
+        description: "Branch, tag or commit SHA to checkout in repository OpenVidu/openvidu-local-deployment. Defaults to 'development'"
+        type: string
+        required: false
+        default: "development"
+      ref-openvidu:
+        description: "Branch, tag or commit SHA to checkout in repository OpenVidu/openvidu. Defaults to 'master'"
+        type: string
+        required: false
+        default: "master"
+      docker-tag-agent-speech-processing:
+        description: "Docker tag for all agent-speech-processing containers. If not provided, the containers will be built from the repository sources"
+        type: string
+        required: false
+        default: ""
+      rtc-engine:
+        description: "RTC engine to use (mediasoup or pion)"
+        type: string
+        required: false
+        default: "pion"
+      ref-openvidu-pro-mediasoup:
+        description: 'Branch, tag or commit SHA to checkout in repository OpenVidu/openvidu-pro-mediasoup. If "default" mediasoup-worker binary will not be compiled: artifact from latest release of OpenVidu/openvidu-pro-mediasoup will be used'
+        type: string
+        required: false
+        default: "default"
+      test-npm-script:
+        description: "npm script (defined in openvidu-agents/test/package.json) used to run the Playwright tests"
+        type: string
+        required: true
+jobs:
+  test:
+    timeout-minutes: 120
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 24
+
+      - name: Install safe-chain
+        uses: OpenVidu/actions/install-safe-chain@040cbfd01320475801d7b12e33769e0d55a737a8 # v1.0.21
+
+      - name: Checkout OpenVidu/openvidu-agents
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ inputs.ref-openvidu-agents || github.sha }}
+          path: openvidu-agents
+
+      - name: Checkout OpenVidu/openvidu-agents-pro
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          repository: OpenVidu/openvidu-agents-pro
+          ref: ${{ inputs.ref-openvidu-agents-pro || 'main' }}
+          token: ${{ secrets.OPENVIDU_GITHUB_TOKEN }}
+          path: openvidu-agents-pro
+
+      - name: Download STT model files
+        working-directory: ./openvidu-agents/speech-processing
+        run: ./download-models.sh
+
+      - name: Checkout OpenVidu/openvidu
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          repository: OpenVidu/openvidu
+          ref: ${{ inputs.ref-openvidu || 'master' }}
+          path: openvidu
+
+      - name: Build agent containers [-cloud, -vosk, -sherpa]
+        if: inputs.docker-tag-agent-speech-processing == ''
+        run: |
+          cd openvidu-agents/speech-processing
+          docker build --no-cache -f Dockerfile.base -t openvidu/agent-speech-processing-base:main .
+          docker build --no-cache -f Dockerfile.cloud -t openvidu/agent-speech-processing-cloud:main .
+          ./build-vosk.sh --no-cache --local-only
+          cd ../../openvidu-agents-pro/speech-processing
+          export GITHUB_TOKEN=${{ secrets.OPENVIDU_GITHUB_TOKEN }}
+          ./build-sherpa.sh --no-cache --local-only
+
+      - name: Install openvidu-testapp dependencies
+        working-directory: ./openvidu/openvidu-testapp
+        run: npm ci
+
+      - name: Run openvidu-testapp
+        working-directory: ./openvidu/openvidu-testapp
+        run: npm start 2>&1 >> ./openvidu-testapp.log &
+
+      - name: Setup mediasoup-worker
+        if: ${{ inputs.rtc-engine == 'mediasoup' }}
+        id: setup-mediasoup-worker
+        uses: OpenVidu/actions/setup-mediasoup-worker@040cbfd01320475801d7b12e33769e0d55a737a8 # v1.0.21
+        with:
+          ref-openvidu-pro-mediasoup: ${{ inputs.ref-openvidu-pro-mediasoup }}
+          github-token: ${{ secrets.OPENVIDU_GITHUB_TOKEN }}
+
+      - name: Setup OpenVidu Local Deployment
+        uses: OpenVidu/actions/start-openvidu-local-deployment@040cbfd01320475801d7b12e33769e0d55a737a8 # v1.0.21
+        with:
+          ref-openvidu-local-deployment: ${{ inputs.ref-openvidu-local-deployment || 'development' }}
+          pre_startup_commands: "sed -i 's|docker_image: docker.io/openvidu/agent-speech-processing-cloud:main|docker_image: docker.io/openvidu/agent-speech-processing-cloud:${{ inputs.docker-tag-agent-speech-processing || 'main' }}|g' agent-speech-processing.yaml"
+          mediasoup-worker-bin: ${{ steps.setup-mediasoup-worker.outputs.MEDIASOUP_WORKER_BIN }}
+          openvidu-edition: "pro"
+          rtc-engine: ${{ inputs.rtc-engine }}
+          github-token: ${{ secrets.OPENVIDU_GITHUB_TOKEN }}
+
+      - name: Run tests
+        run: |
+          cd openvidu-agents/test
+          npm ci
+          # Install Playwright browsers
+          mkdir -p /tmp/ms-playwright
+          PLAYWRIGHT_BROWSERS_PATH=/tmp/ms-playwright npx playwright install --with-deps chromium
+          npm run ${{ inputs.test-npm-script }}
+        env:
+          RUN_MODE: CI
+          LOCAL_DEPLOYMENT_BASE_PATH: ../../openvidu-local-deployment
+          PLAYWRIGHT_BROWSERS_PATH: /tmp/ms-playwright
+          OPENVIDU_PRO_LICENSE: ${{ secrets.OPENVIDU_PRO_LICENSE }}
+          AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
+          AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+          GOOGLE_CREDENTIALS_INFO: ${{ secrets.GOOGLE_CREDENTIALS_INFO }}
+          SARVAM_API_KEY: ${{ secrets.SARVAM_API_KEY }}
+          AZURE_SPEECH_KEY: ${{ secrets.AZURE_SPEECH_KEY }}
+          AZURE_SPEECH_REGION: ${{ secrets.AZURE_SPEECH_REGION }}
+          ASSEMBLYAI_API_KEY: ${{ secrets.ASSEMBLYAI_API_KEY }}
+          GLADIA_API_KEY: ${{ secrets.GLADIA_API_KEY }}
+          DEEPGRAM_API_KEY: ${{ secrets.DEEPGRAM_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          SPEECHMATICS_API_KEY: ${{ secrets.SPEECHMATICS_API_KEY }}
+          MISTRALAI_API_KEY: ${{ secrets.MISTRALAI_API_KEY }}
+          CARTESIA_API_KEY: ${{ secrets.CARTESIA_API_KEY }}
+          SONIOX_API_KEY: ${{ secrets.SONIOX_API_KEY }}
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          SPITCH_API_KEY: ${{ secrets.SPITCH_API_KEY }}
+          ELEVEN_API_KEY: ${{ secrets.ELEVEN_API_KEY }}
+          SIMPLISMART_API_KEY: ${{ secrets.SIMPLISMART_API_KEY }}
+          # FAL_API_KEY: ${{ secrets.FAL_API_KEY }}
+          # CLOVA_API_KEY: ${{ secrets.CLOVA_API_KEY }}
+
+      - name: Publish Test Report
+        uses: ctrf-io/github-test-reporter@0f299074936c32ccaab5be5230511f6b2b9080aa # v1.0.28
+        with:
+          report-path: "openvidu-agents/test/test-results/ctrf-report.json"
+        if: always()
+
+      - name: Upload failed test videos
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: test-videos
+          path: openvidu-agents/test/test-results/**/*.webm
+          retention-days: 2
+
+      - name: Clean up
+        if: always()
+        uses: OpenVidu/actions/cleanup@040cbfd01320475801d7b12e33769e0d55a737a8 # v1.0.21

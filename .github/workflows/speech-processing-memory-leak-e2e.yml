@@ -1,4 +1,4 @@
-name: Speech Processing agent E2E tests
+name: Speech Processing agent memory leak E2E tests
 on:
   workflow_dispatch:
     inputs:
@@ -49,4 +49,4 @@ jobs:
       docker-tag-agent-speech-processing: ${{ inputs.docker-tag-agent-speech-processing }}
       rtc-engine: ${{ inputs.rtc-engine }}
       ref-openvidu-pro-mediasoup: ${{ inputs.ref-openvidu-pro-mediasoup }}
-      test-npm-script: test:e2e
+      test-npm-script: test:e2e:memory

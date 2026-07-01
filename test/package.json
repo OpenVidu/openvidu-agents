@@ -2,7 +2,8 @@
   "name": "openvidu-agents-e2e-tests",
   "version": "1.0.0",
   "scripts": {
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test --project=livecaptions --project=livecaptions-processing-dispatch --project=livecaptions-wrong-license",
+    "test:e2e:memory": "playwright test --project=livecaptions-memory-usage"
   },
   "devDependencies": {
     "@livekit/rtc-node": "^0.13.29",

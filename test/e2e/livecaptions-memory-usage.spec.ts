@@ -84,15 +84,16 @@ const CLOUD_STT_PROVIDERS: SttProviderConfig[] = [
 ];
 
 // Configuration
-const ROOM_CREATION_TIMESPAN_SECONDS = 25; // Time window to create all rooms
-const DISCONNECT_RECONNECT_TIMESPAN_SECONDS = 40; // Time window for random disconnect/reconnect operations
 const PARTICIPANT_ACTION_TIMEOUT_MS = 10000;
 const TOTAL_ROOMS = 5;
 const TOTAL_PUBLISHERS_PER_ROOM = 3;
-const MEMORY_CHECK_WAIT_SECONDS = 5; // Additional wait after room creation
 const MEMORY_STABILITY_CHECK_INTERVAL_MS = 1500;
 const MEMORY_STABILITY_THRESHOLD_PERCENT = 5; // Memory is stable if change is less than this percent
 const MEMORY_STABILITY_CHECKS = 3; // Number of consecutive stable checks required
+
+const SOAK_DURATION_MS = 60 * 3 * 1000;
+const SOAK_MEMORY_LOG_INTERVAL_MS = 20 * 1000; // sample container memory 3 times a minute
+const SOAK_OPERATION_PAUSE_SECONDS = 0.5; // small pause between churn operations
 
 // Leak detection (teardown phase): after destroying everything, CPU should
 // return close to its idle baseline, and memory must drop below each provider's
@@ -333,42 +334,43 @@ async function waitForResourcesToReturnToBaseline(
 }
 
 /**
- * Generate random delays for room/participant creation within a timespan
+ * Read the stable uid of the most recently added instance (the last
+ * app-openvidu-instance element), parsed from its "openvidu-instance-<uid>" id.
  */
-function generateRandomDelays(
-  count: number,
-  timespanSeconds: number,
-): number[] {
-  const delays: number[] = [];
-  for (let i = 0; i < count; i++) {
-    delays.push(Math.random() * timespanSeconds * 1000);
+async function getLastInstanceUid(page: Page): Promise<number> {
+  const id = await page
+    .locator("app-openvidu-instance")
+    .last()
+    .getAttribute("id");
+  const uid = Number(id?.replace("openvidu-instance-", ""));
+  if (!Number.isInteger(uid)) {
+    throw new Error(`Could not determine uid of the new instance (id="${id}")`);
   }
-  return delays.sort((a, b) => a - b);
+  return uid;
 }
 
 /**
- * Add a participant to the page and configure it for a specific room
- * Returns the instance index of the created participant
+ * Add a brand-new participant instance, configure it (publisher-only, audio-only,
+ * minimal event rendering) for the given room, and return its stable uid.
  */
 async function addParticipantToRoom(
   page: Page,
-  instanceIndex: number,
   roomName: string,
-): Promise<void> {
-  console.log(`Adding participant ${instanceIndex} to room "${roomName}"...`);
-
-  // Add a new user instance
+): Promise<number> {
+  // Add a new user instance and read its stable uid
   await page.click("#add-user-btn");
+  const uid = await getLastInstanceUid(page);
+  console.log(`Adding participant ${uid} to room "${roomName}"...`);
 
   // Configure as publisher-only, audio-only
-  await page.click(`#openvidu-instance-${instanceIndex} .subscriber-checkbox`);
-  await page.click(`#room-options-btn-${instanceIndex}`);
+  await page.click(`#openvidu-instance-${uid} .subscriber-checkbox`);
+  await page.click(`#room-options-btn-${uid}`);
   await page.waitForSelector("#video-capture-false", { state: "visible" });
   await page.click("#video-capture-false");
   await page.click("#close-dialog-btn");
 
   // Open the "Room events" dialog of this instance to tweak event toggles
-  await page.click(`#room-events-btn-${instanceIndex}`);
+  await page.click(`#room-events-btn-${uid}`);
   const turnOff = async (toggle: Locator) => {
     if ((await toggle.getAttribute("aria-checked")) === "true") {
       await toggle.dispatchEvent("click");
@@ -391,11 +393,26 @@ async function addParticipantToRoom(
   await page.click("#close-dialog-btn");
 
   // Set the room name for this participant
+  await setParticipantRoom(page, uid, roomName);
+
+  return uid;
+}
+
+/**
+ * Change the room an existing participant instance will join on its next
+ * connect. Used by the soak phase so each reconnect targets a brand-new room.
+ */
+async function setParticipantRoom(
+  page: Page,
+  instanceIndex: number,
+  roomName: string,
+): Promise<void> {
   const roomNameInput = page.locator(
     `#openvidu-instance-${instanceIndex} #room-name-input-${instanceIndex}`,
   );
-  await roomNameInput.clear();
-  await roomNameInput.fill(roomName);
+  await roomNameInput.fill(roomName, {
+    timeout: PARTICIPANT_ACTION_TIMEOUT_MS,
+  });
 }
 
 /**
@@ -456,25 +473,25 @@ async function connectParticipant(
   );
 }
 
-/**
- * Disconnect a participant by its instance index
- */
-async function disconnectParticipant(
-  page: Page,
-  instanceIndex: number,
-): Promise<void> {
-  // Dispatch the disconnect click, retrying until the UI reflects the disconnected state
+async function removeInstance(page: Page, uid: number): Promise<void> {
+  const instance = page.locator(`#openvidu-instance-${uid}`);
   const deadline = Date.now() + PARTICIPANT_ACTION_TIMEOUT_MS;
-  while (await isParticipantConnected(page, instanceIndex)) {
+  while ((await instance.count()) > 0) {
     if (Date.now() > deadline) {
       throw new Error(
-        `Participant ${instanceIndex} did not disconnect within ${PARTICIPANT_ACTION_TIMEOUT_MS}ms`,
+        `Instance ${uid} was not removed within ${PARTICIPANT_ACTION_TIMEOUT_MS}ms`,
       );
     }
-    await dispatchInstanceButtonClick(page, instanceIndex, ".disconnect-btn");
+    try {
+      await page
+        .locator(`#openvidu-instance-${uid} .remove-instance-btn`)
+        .dispatchEvent("click", {}, { timeout: 2000 });
+    } catch {
+      // Remove button not present/clickable yet (e.g. mid-render); retry.
+    }
     await sleep(0.5);
   }
-  console.log(`Participant ${instanceIndex} disconnected.`);
+  console.log(`Participant ${uid} removed.`);
 }
 
 test.beforeAll(async () => {
@@ -494,8 +511,16 @@ test.beforeAll(async () => {
 
 /**
  * Register the memory-usage test for a single STT provider (local or cloud).
+ *
+ * @param provider       the STT provider configuration to soak.
+ * @param soakDurationMs how long the chaos soak (Step 2) runs. Defaults to the
+ *                       short SOAK_DURATION_MS; the long-running variant passes
+ *                       LONG_SOAK_DURATION_MS.
  */
-function registerProviderMemoryTest(provider: SttProviderConfig) {
+function registerProviderMemoryTest(
+  provider: SttProviderConfig,
+  soakDurationMs: number = SOAK_DURATION_MS,
+) {
   const providerName = Object.keys(provider).find(
     (key) => key !== "maxMemoryMB" && key !== "maxTracks",
   ) as string;
@@ -534,8 +559,11 @@ function registerProviderMemoryTest(provider: SttProviderConfig) {
     test(`memory usage should not exceed provider limit with ${providerName}`, async ({
       page,
     }) => {
+      // The chaos soak runs for soakDurationMs, far longer than the
+      // global per-test timeout, so extend it (with margin for setup/teardown).
+      test.setTimeout(soakDurationMs + 30 * 60 * 1000);
+
       const containerName = "agent-speech-processing";
-      const maxMemoryMB = provider.maxMemoryMB;
 
       // Step 1: Wait for baseline memory to stabilize and capture idle CPU
       console.log("Step 1: Waiting for baseline memory to stabilize...");
@@ -545,280 +573,106 @@ function registerProviderMemoryTest(provider: SttProviderConfig) {
         `Idle baseline: memory ${formatBytes(baselineMemory)}, CPU ${baselineCpu.toFixed(2)}%`,
       );
 
-      // Step 2: Generate random schedule for participant creation
-      // Respect maxTracks limit if defined for this provider
-      const maxTracks = provider.maxTracks;
-      const defaultTotalTracks = TOTAL_ROOMS * TOTAL_PUBLISHERS_PER_ROOM;
-      const totalTracks = maxTracks
-        ? Math.min(maxTracks, defaultTotalTracks)
-        : defaultTotalTracks;
+      // Cap on simultaneous tracks (= simultaneous connected participants).
+      const maxTracks =
+        provider.maxTracks ?? TOTAL_ROOMS * TOTAL_PUBLISHERS_PER_ROOM;
 
-      console.log(
-        `Step 2: Generating random schedule for ${totalTracks} tracks over ${ROOM_CREATION_TIMESPAN_SECONDS} seconds...`,
-      );
-
-      interface ParticipantTask {
-        instanceIndex: number;
-        roomName: string;
-        delayMs: number;
-      }
-
-      const tasks: ParticipantTask[] = [];
-      let instanceIndex = 0;
-      let tracksCreated = 0;
-
-      // Generate tasks for each room with random publishers, respecting maxTracks limit
-      for (let roomIndex = 0; roomIndex < TOTAL_ROOMS; roomIndex++) {
-        if (tracksCreated >= totalTracks) break;
-
-        const roomName = `memory-test-room-${roomIndex}`;
-
-        for (let p = 0; p < TOTAL_PUBLISHERS_PER_ROOM; p++) {
-          if (tracksCreated >= totalTracks) break;
-
-          tasks.push({
-            instanceIndex: instanceIndex++,
-            roomName,
-            delayMs: 0, // Will be assigned below
-          });
-          tracksCreated++;
-        }
-      }
-
-      // Assign random delays to all participant tasks
-      const delays = generateRandomDelays(
-        tasks.length,
-        ROOM_CREATION_TIMESPAN_SECONDS,
-      );
-      tasks.forEach((task, i) => {
-        task.delayMs = delays[i];
-      });
-
-      // Sort by delay for sequential execution
-      tasks.sort((a, b) => a.delayMs - b.delayMs);
-
-      // Normalize delays so the first participant connects at time 0
-      const firstDelay = tasks[0].delayMs;
-      tasks.forEach((task) => {
-        task.delayMs -= firstDelay;
-      });
-
-      console.log("Participant creation schedule:");
-      tasks.forEach((task) => {
-        console.log(
-          `  Participant ${task.instanceIndex} in room "${task.roomName}" at ${(task.delayMs / 1000).toFixed(2)}s`,
-        );
-      });
-
-      // Navigate to testapp
       await page.goto(TESTAPP_URL);
 
-      // Step 3: Create all participants first (add them to the page)
-      console.log("Step 3: Adding all participants to the page...");
-      for (const task of tasks) {
-        await addParticipantToRoom(page, task.instanceIndex, task.roomName);
+      // Step 2: Chaos soak. For soakDurationMs, randomly add and remove participants,
+      // never exceeding maxTracks simultaneous tracks. The result is a shifting mix of rooms
+      // and participants coming and going. The agent container memory is sampled regularly
+      console.log(
+        `Step 2: Starting ${(soakDurationMs / 60000).toFixed(1)}min chaos soak (max ${maxTracks} simultaneous tracks)...`,
+      );
+
+      interface ActiveParticipant {
+        uid: number;
+        roomName: string;
       }
+      const active: ActiveParticipant[] = [];
+      let roomCounter = 0; // source of brand-new room names
+      const soakStartTime = Date.now();
+      let lastMemoryLogTime = 0;
 
-      // Step 4: Connect participants according to random schedule
-      console.log("Step 4: Connecting participants according to schedule...");
-      const startTime = Date.now();
-
-      for (const task of tasks) {
-        const elapsedMs = Date.now() - startTime;
-        const waitMs = Math.max(0, task.delayMs - elapsedMs);
-
-        if (waitMs > 0) {
-          await sleep(waitMs / 1000);
-        }
-
-        try {
-          await connectParticipant(page, task.instanceIndex);
-        } catch (error: any) {
-          console.error(
-            `Error connecting participant ${task.instanceIndex}: ${error.message}`,
-          );
-        }
-      }
-
-      // Wait for remaining time in the timespan
-      const totalElapsed = Date.now() - startTime;
-      const remainingTimespan =
-        ROOM_CREATION_TIMESPAN_SECONDS * 1000 - totalElapsed;
-      if (remainingTimespan > 0) {
+      const logSoakMemory = () => {
+        const memoryBytes = getContainerMemoryStats(containerName).usedBytes;
+        const elapsedMin = ((Date.now() - soakStartTime) / 60000).toFixed(1);
+        const activeRooms = new Set(active.map((a) => a.roomName)).size;
         console.log(
-          `Waiting ${(remainingTimespan / 1000).toFixed(2)}s for timespan to complete...`,
+          `[soak ${elapsedMin}min] agent memory: ${formatBytes(memoryBytes)} | tracks: ${active.length}/${maxTracks} | active rooms: ${activeRooms} | rooms created: ${roomCounter}`,
         );
-        await sleep(remainingTimespan / 1000);
-      }
+        lastMemoryLogTime = Date.now();
+      };
 
-      // Step 5: Wait additional time for memory to settle
-      console.log(
-        `Step 5: Waiting ${MEMORY_CHECK_WAIT_SECONDS} additional seconds for memory to settle...`,
-      );
-      await sleep(MEMORY_CHECK_WAIT_SECONDS);
-
-      // Step 6: Check memory after initial connections
-      console.log("Step 6: Checking memory after initial connections...");
-      const afterConnectionStats = getContainerMemoryStats(containerName);
-      const afterConnectionMemory = afterConnectionStats.usedBytes;
-      console.log(
-        `Memory after initial connections: ${formatBytes(afterConnectionMemory)}`,
-      );
-
-      // Step 7: Random disconnect/reconnect phase
-      console.log(
-        `Step 7: Starting random disconnect/reconnect phase for ${DISCONNECT_RECONNECT_TIMESPAN_SECONDS} seconds...`,
-      );
-
-      // Track which participants are currently connected
-      const connectedParticipants = new Set<number>(
-        tasks.map((task) => task.instanceIndex),
-      );
-      const allParticipants = tasks.map((task) => task.instanceIndex);
-
-      // Generate random disconnect/reconnect events
-      const numEvents =
-        totalTracks * Math.max(DISCONNECT_RECONNECT_TIMESPAN_SECONDS / 10, 2);
-      const eventDelays = generateRandomDelays(
-        numEvents,
-        DISCONNECT_RECONNECT_TIMESPAN_SECONDS,
-      );
-
-      const churnStartTime = Date.now();
-
-      for (let i = 0; i < numEvents; i++) {
-        const elapsedMs = Date.now() - churnStartTime;
-        const waitMs = Math.max(0, eventDelays[i] - elapsedMs);
-
-        if (waitMs > 0) {
-          await sleep(waitMs / 1000);
+      while (Date.now() - soakStartTime < soakDurationMs) {
+        if (Date.now() - lastMemoryLogTime >= SOAK_MEMORY_LOG_INTERVAL_MS) {
+          logSoakMemory();
         }
 
-        // Randomly decide whether to disconnect or connect
-        const connectedArray = Array.from(connectedParticipants);
-        const disconnectedArray = allParticipants.filter(
-          (p) => !connectedParticipants.has(p),
-        );
+        // Choose the next action, keeping 0 <= active <= maxTracks. Bias
+        // slightly towards adding so the population stays lively.
+        const canAdd = active.length < maxTracks;
+        const canRemove = active.length > 0;
+        const add = canAdd && (!canRemove || Math.random() < 0.6);
 
-        const canDisconnect = connectedArray.length > 0;
-        const canConnect =
-          disconnectedArray.length > 0 &&
-          connectedParticipants.size < totalTracks;
-
-        if (canDisconnect && (!canConnect || Math.random() < 0.5)) {
-          // Disconnect a random connected participant
-          const participantToDisconnect =
-            connectedArray[Math.floor(Math.random() * connectedArray.length)];
+        if (add) {
+          // Sometimes join an existing active room (making it a multi-participant
+          // room), sometimes create a brand-new one.
+          const activeRooms = [...new Set(active.map((a) => a.roomName))];
+          const roomName =
+            activeRooms.length > 0 && Math.random() < 0.5
+              ? activeRooms[Math.floor(Math.random() * activeRooms.length)]
+              : `chaos-room-${roomCounter++}`;
+          let uid: number | undefined;
           try {
-            await disconnectParticipant(page, participantToDisconnect);
-            connectedParticipants.delete(participantToDisconnect);
+            uid = await addParticipantToRoom(page, roomName);
+            await connectParticipant(page, uid);
+            active.push({ uid, roomName });
             console.log(
-              `  Disconnected participant ${participantToDisconnect}. Active tracks: ${connectedParticipants.size}/${totalTracks}`,
+              `  + participant ${uid} -> room "${roomName}" (${active.length}/${maxTracks} tracks)`,
             );
           } catch (error: any) {
-            console.error(
-              `Error disconnecting participant ${participantToDisconnect}: ${error.message}`,
-            );
+            console.error(`Error adding participant: ${error.message}`);
+            // Best-effort: destroy a half-created instance so it cannot linger
+            // holding a track (which would break the maxTracks cap).
+            if (uid !== undefined) {
+              try {
+                await removeInstance(page, uid);
+              } catch {
+                // ignore
+              }
+            }
           }
-        } else if (canConnect) {
-          // Connect a random disconnected participant
-          const participantToConnect =
-            disconnectedArray[
-              Math.floor(Math.random() * disconnectedArray.length)
-            ];
+        } else if (canRemove) {
+          // Remove a random active participant, destroying its instance.
+          const index = Math.floor(Math.random() * active.length);
+          const victim = active[index];
           try {
-            await connectParticipant(page, participantToConnect);
-            connectedParticipants.add(participantToConnect);
+            await removeInstance(page, victim.uid);
+            active.splice(index, 1);
             console.log(
-              `  Connected participant ${participantToConnect}. Active tracks: ${connectedParticipants.size}/${totalTracks}`,
+              `  - participant ${victim.uid} from room "${victim.roomName}" (${active.length}/${maxTracks} tracks)`,
             );
           } catch (error: any) {
+            // Leave it tracked so we don't undercount tracks; retried later.
             console.error(
-              `Error connecting participant ${participantToConnect}: ${error.message}`,
+              `Error removing participant ${victim.uid}: ${error.message}`,
             );
           }
         }
+
+        await sleep(SOAK_OPERATION_PAUSE_SECONDS);
       }
 
-      // Wait for remaining time in the churn timespan
-      const churnElapsed = Date.now() - churnStartTime;
-      const remainingChurnTime =
-        DISCONNECT_RECONNECT_TIMESPAN_SECONDS * 1000 - churnElapsed;
-      if (remainingChurnTime > 0) {
-        console.log(
-          `Waiting ${(remainingChurnTime / 1000).toFixed(2)}s for churn timespan to complete...`,
-        );
-        await sleep(remainingChurnTime / 1000);
-      }
-
-      // Step 8: Reconnect all disconnected participants to reach maximum capacity
+      logSoakMemory();
       console.log(
-        "Step 8: Reconnecting all disconnected participants to reach maximum capacity...",
-      );
-      const disconnectedArray = allParticipants.filter(
-        (p) => !connectedParticipants.has(p),
+        `Chaos soak finished after ${((Date.now() - soakStartTime) / 60000).toFixed(1)} minutes; ${roomCounter} rooms created.`,
       );
 
-      if (disconnectedArray.length > 0) {
-        console.log(
-          `Reconnecting ${disconnectedArray.length} disconnected participant(s)...`,
-        );
-        for (const participantToReconnect of disconnectedArray) {
-          try {
-            await connectParticipant(page, participantToReconnect);
-            connectedParticipants.add(participantToReconnect);
-            console.log(
-              `  Reconnected participant ${participantToReconnect}. Active tracks: ${connectedParticipants.size}/${totalTracks}`,
-            );
-          } catch (error: any) {
-            console.error(
-              `Error reconnecting participant ${participantToReconnect}: ${error.message}`,
-            );
-          }
-        }
-      } else {
-        console.log("All participants already connected.");
-      }
-
+      // Step 3: Tear everything down from the server side via the LiveKit server API
       console.log(
-        `Final active tracks before memory check: ${connectedParticipants.size}/${totalTracks}`,
-      );
-
-      // Step 9: Wait for memory to settle after final reconnections
-      console.log(
-        `Step 9: Waiting ${MEMORY_CHECK_WAIT_SECONDS} seconds for memory to settle...`,
-      );
-      await sleep(MEMORY_CHECK_WAIT_SECONDS);
-
-      // Step 10: Check final memory usage
-      console.log("Step 10: Checking final memory usage after churn...");
-      const finalStats = getContainerMemoryStats(containerName);
-      const finalMemory = finalStats.usedBytes;
-      const finalMemoryMB = finalMemory / (1024 * 1024);
-      const maxMemoryBytes = maxMemoryMB * 1024 * 1024;
-
-      console.log(`Baseline memory: ${formatBytes(baselineMemory)}`);
-      console.log(`After connections: ${formatBytes(afterConnectionMemory)}`);
-      console.log(`Final memory (after churn): ${formatBytes(finalMemory)}`);
-      console.log(`Maximum allowed for ${providerName}: ${maxMemoryMB} MiB`);
-
-      // Assert memory usage does not exceed absolute limit
-      if (finalMemory > maxMemoryBytes) {
-        throw new Error(
-          `Memory usage exceeded ${maxMemoryMB} MiB limit for ${providerName}!\n` +
-            `Baseline: ${formatBytes(baselineMemory)}\n` +
-            `Final: ${formatBytes(finalMemory)} (${finalMemoryMB.toFixed(2)} MiB)\n` +
-            `Limit: ${maxMemoryMB} MiB`,
-        );
-      }
-
-      console.log(
-        `✓ Memory usage is within acceptable limits (${finalMemoryMB.toFixed(2)} MiB < ${maxMemoryMB} MiB)`,
-      );
-
-      // Step 11: Tear everything down from the server side via the LiveKit server API
-      console.log(
-        "Step 11: Removing all participants via the LiveKit server API...",
+        "Step 3: Removing all participants via the LiveKit server API...",
       );
       const rooms = await roomServiceClient.listRooms();
       for (const room of rooms) {
@@ -853,15 +707,13 @@ function registerProviderMemoryTest(provider: SttProviderConfig) {
         }
       }
 
-      connectedParticipants.clear();
-      console.log(
-        `All participants and rooms removed. Active tracks: ${connectedParticipants.size}/${totalTracks}`,
-      );
+      active.length = 0;
+      console.log("All participants and rooms removed.");
 
-      // Step 12: Wait for the agent container to return to its idle baseline.
+      // Step 4: Wait for the agent container to return to its idle baseline.
       // If memory or CPU never drops back, it indicates a leak.
       console.log(
-        "Step 12: Waiting for agent memory and CPU to return to idle baseline (leak check)...",
+        "Step 4: Waiting for agent memory and CPU to return to idle baseline (leak check)...",
       );
       const memoryThresholdBytes =
         provider.maxMemoryAfterTeardownMB * 1024 * 1024;
@@ -908,3 +760,11 @@ test.describe("Memory usage tests for cloud STT providers", () => {
     registerProviderMemoryTest(provider);
   });
 });
+
+// const LONG_SOAK_DURATION_MS = 60 * 60 * 1000; // 1 hour
+// const SOAK_PROVIDER = LOCAL_STT_PROVIDERS.find(
+//   (p) => p.vosk?.use_silero_vad === false,
+// )!;
+// test.describe(`Memory leak soak test (long-running, ${(LONG_SOAK_DURATION_MS / 60000).toFixed(0)} min)`, () => {
+//   registerProviderMemoryTest(SOAK_PROVIDER, LONG_SOAK_DURATION_MS);
+// });

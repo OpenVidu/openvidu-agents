@@ -27,7 +27,11 @@ interface SttProviderConfig {
   [providerName: string]: any;
   maxMemoryMB: number;
   maxTracks?: number;
-  maxMemoryAfterTeardownMB: number;
+  // Teardown memory cap. Either an absolute value in MiB (a number) or a
+  // percentage string (e.g. "10%") applied on top of the idle baseline
+  // captured at the start of the test (i.e. the container may sit up to that
+  // percentage above idle after teardown).
+  maxMemoryAfterTeardownMB: number | string;
 }
 
 const LOCAL_STT_PROVIDERS: SttProviderConfig[] = [
@@ -77,9 +81,19 @@ const CLOUD_STT_PROVIDERS: SttProviderConfig[] = [
     },
     // Cloud providers offload transcription, so the local container footprint
     // is small. These limits may need calibration against real measurements.
-    maxMemoryMB: 600,
+    maxMemoryMB: 400,
     maxTracks: 12,
-    maxMemoryAfterTeardownMB: 300,
+    maxMemoryAfterTeardownMB: "25%",
+  },
+  {
+    aws: {
+      aws_access_key_id: process.env.AWS_ACCESS_KEY_ID,
+      aws_secret_access_key: process.env.AWS_SECRET_ACCESS_KEY,
+      aws_default_region: process.env.AWS_DEFAULT_REGION,
+    },
+    maxMemoryMB: 400,
+    maxTracks: 12,
+    maxMemoryAfterTeardownMB: "25%",
   },
 ];
 
@@ -97,8 +111,9 @@ const SOAK_OPERATION_PAUSE_SECONDS = 0.5; // small pause between churn operation
 
 // Leak detection (teardown phase): after destroying everything, CPU should
 // return close to its idle baseline, and memory must drop below each provider's
-// explicit maxMemoryAfterTeardownMB cap (allocators rarely release memory back
-// to the OS exactly, so the cap sits above the idle baseline).
+// maxMemoryAfterTeardownMB cap (an absolute MiB value, or a percentage above the
+// idle baseline). Allocators rarely release memory back to the OS exactly, so
+// the cap sits above the idle baseline.
 const LEAK_SETTLE_MAX_WAIT_MS = 120000; // Max time to wait for return to baseline
 const LEAK_SETTLE_CHECK_INTERVAL_MS = 2000;
 const LEAK_SETTLE_STABLE_CHECKS = 3; // Consecutive checks at baseline required
@@ -210,6 +225,35 @@ function formatBytes(bytes: number): string {
     return `${(bytes / 1024).toFixed(2)} KiB`;
   }
   return `${bytes} B`;
+}
+
+/**
+ * Resolve the teardown memory threshold (in bytes) from a provider's
+ * maxMemoryAfterTeardownMB setting.
+ *
+ * - A number is treated as an absolute cap in MiB.
+ * - A percentage string like "10%" is applied on top of the idle baseline
+ *   captured at the start of the test: the container may sit up to that
+ *   percentage above its idle memory after teardown.
+ */
+function resolveTeardownThresholdBytes(
+  maxMemoryAfterTeardownMB: number | string,
+  baselineMemoryBytes: number,
+): number {
+  if (typeof maxMemoryAfterTeardownMB === "number") {
+    return maxMemoryAfterTeardownMB * 1024 * 1024;
+  }
+
+  const match = maxMemoryAfterTeardownMB.trim().match(/^([\d.]+)%$/);
+  if (!match) {
+    throw new Error(
+      `Invalid maxMemoryAfterTeardownMB value "${maxMemoryAfterTeardownMB}": ` +
+        `expected a number (absolute MiB) or a percentage string like "10%".`,
+    );
+  }
+
+  const percent = parseFloat(match[1]);
+  return baselineMemoryBytes * (1 + percent / 100);
 }
 
 /**
@@ -715,8 +759,10 @@ function registerProviderMemoryTest(
       console.log(
         "Step 4: Waiting for agent memory and CPU to return to idle baseline (leak check)...",
       );
-      const memoryThresholdBytes =
-        provider.maxMemoryAfterTeardownMB * 1024 * 1024;
+      const memoryThresholdBytes = resolveTeardownThresholdBytes(
+        provider.maxMemoryAfterTeardownMB,
+        baselineMemory,
+      );
       const settled = await waitForResourcesToReturnToBaseline(
         containerName,
         baselineMemory,
@@ -738,7 +784,11 @@ function registerProviderMemoryTest(
             `Resources did not return to idle baseline after destroying all tracks, participants, agents and rooms.\n` +
             `Idle baseline: memory ${formatBytes(baselineMemory)}, CPU ${baselineCpu.toFixed(2)}%\n` +
             `After teardown: memory ${formatBytes(settled.memoryBytes)}, CPU ${settled.cpuPercent.toFixed(2)}%\n` +
-            `Allowed: memory up to ${provider.maxMemoryAfterTeardownMB} MiB, CPU up to baseline + ${CPU_IDLE_TOLERANCE_PERCENT}%`,
+            `Allowed: memory up to ${formatBytes(memoryThresholdBytes)}` +
+            (typeof provider.maxMemoryAfterTeardownMB === "string"
+              ? ` (${provider.maxMemoryAfterTeardownMB} above idle baseline)`
+              : "") +
+            `, CPU up to baseline + ${CPU_IDLE_TOLERANCE_PERCENT}%`,
         );
       }
 

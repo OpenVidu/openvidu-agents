@@ -472,15 +472,23 @@ async def session_end(ctx: JobContext) -> None:
 
 
 async def _release_room_ffi_subscription(room: rtc.Room) -> None:
-    """Work around a livekit 1.1.9 leak: when a room is disconnected server-side
-    (room deleted / connection lost), Room.disconnect() early-returns without
-    unsubscribing the room's process-global FFI event queue, and without the FFI
-    'eos' the room's listen task never ends. With the THREAD executor the job's
-    event loop object additionally outlives the job un-closed, so the leaked
-    subscription keeps accumulating EVERY FFI event in the process (audio-frame
-    events of all other rooms' tracks, ~100/s per track) into the dead loop
-    forever. Fixed upstream in livekit>=1.1.10 (python-sdks PR #699) for the
-    listen-task-ends case; this covers 1.1.9 and the eos-less remote-close path.
+    """Work around a livekit rtc leak, still present in 1.1.12: when a room is
+    disconnected server-side (room deleted / connection lost), Room.disconnect()
+    early-returns without unsubscribing the room's process-global FFI event
+    queue, and because no FFI 'eos' event is emitted on a remote close, the
+    room's listen task never ends. With the THREAD executor the job's event loop
+    object additionally outlives the job un-closed, so the leaked subscription
+    keeps accumulating EVERY FFI event in the process (audio-frame events of all
+    other rooms' tracks, ~100/s per track) into the dead loop forever.
+
+    livekit>=1.1.10 (python-sdks PR #699) unsubscribes when the listen task
+    ENDS, and 1.1.12 also unsubscribes in Room.__del__ — but NEITHER fires on
+    this path: without 'eos' the listen task never ends, and the Room can never
+    be garbage-collected because the global subscriber list transitively pins it
+    (subscribers -> queue -> pending get() future -> listen task -> coroutine ->
+    Room). Keep this until upstream emits 'eos' on remote disconnect or drops
+    the disconnect() early-return; to re-check, remove the calls and verify the
+    FFI subscriber count returns to baseline after an azure chaos soak.
     """
     if room.isconnected():
         # a proper room.disconnect() (which the framework calls right after

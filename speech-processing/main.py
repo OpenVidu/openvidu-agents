@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import ctypes
 import ctypes.util
 import gc
@@ -62,9 +63,11 @@ def _resolve_malloc_trim():
 
 _malloc_trim = _resolve_malloc_trim()
 
-# Maps room name → MultiUserTranscriber.  Populated in entrypoint() and consumed
-# by session_end() so that sessions are closed BEFORE room.disconnect() is called.
-_transcribers: dict[str, "MultiUserTranscriber"] = {}
+# The job's MultiUserTranscriber is attached to the JobContext itself
+# (ctx._transcriber) rather than a module-level dict keyed by room name: with
+# JobExecutorType.THREAD, a room can be deleted and re-created with the same
+# name while the previous job is still draining, and a name-keyed dict would
+# cross the two jobs' transcribers.
 
 
 def _release_memory_to_os() -> None:
@@ -331,6 +334,13 @@ class MultiUserTranscriber:
             logging.warning(
                 "[_close_session] drain() timed out after 5s, proceeding to aclose()"
             )
+        except RuntimeError as e:
+            if "isn't running" not in str(e):
+                raise
+            # livekit's RoomIO close_on_disconnect already closed the session
+            # ("AgentSession isn't running"); continue so the memory release
+            # below still runs instead of leaking this task's exception.
+            logging.debug("[_close_session] session already closed, skipping drain")
         try:
             await asyncio.wait_for(sess.aclose(), timeout=10.0)
         except asyncio.TimeoutError:
@@ -452,9 +462,58 @@ async def session_end(ctx: JobContext) -> None:
     (30 s).  This callback is invoked by the framework *before* room.disconnect(), so
     closing sessions here lets the FFI proceed without the timeout.
     """
-    transcriber = _transcribers.pop(ctx.room.name, None)
-    if transcriber is not None:
-        await transcriber.aclose()
+    transcriber = getattr(ctx, "_transcriber", None)
+    ctx._transcriber = None
+    try:
+        if transcriber is not None:
+            await transcriber.aclose()
+    finally:
+        await _release_room_ffi_subscription(ctx.room)
+
+
+async def _release_room_ffi_subscription(room: rtc.Room) -> None:
+    """Work around a livekit 1.1.9 leak: when a room is disconnected server-side
+    (room deleted / connection lost), Room.disconnect() early-returns without
+    unsubscribing the room's process-global FFI event queue, and without the FFI
+    'eos' the room's listen task never ends. With the THREAD executor the job's
+    event loop object additionally outlives the job un-closed, so the leaked
+    subscription keeps accumulating EVERY FFI event in the process (audio-frame
+    events of all other rooms' tracks, ~100/s per track) into the dead loop
+    forever. Fixed upstream in livekit>=1.1.10 (python-sdks PR #699) for the
+    listen-task-ends case; this covers 1.1.9 and the eos-less remote-close path.
+    """
+    if room.isconnected():
+        # a proper room.disconnect() (which the framework calls right after
+        # session_end) unsubscribes the queue itself
+        return
+    try:
+        from livekit.rtc._ffi_client import FfiClient
+
+        task = getattr(room, "_task", None)
+        if task is not None and not task.done():
+            task.cancel()
+            with contextlib.suppress(Exception):
+                await asyncio.wait_for(asyncio.gather(task, return_exceptions=True), 5)
+            # run the cleanups _listen_task's cancellation skipped (they only
+            # run after an 'eos' break upstream)
+            for drain_name in ("_drain_rpc_invocation_tasks", "_drain_data_stream_tasks"):
+                drain = getattr(room, drain_name, None)
+                if drain is not None:
+                    with contextlib.suppress(Exception):
+                        await drain()
+        ffi_queue = getattr(room, "_ffi_queue", None)
+        if ffi_queue is not None:
+            queue = FfiClient.instance.queue
+            with queue._lock:
+                was_subscribed = any(q is ffi_queue for q, _, _ in queue._subscribers)
+            if was_subscribed:
+                queue.unsubscribe(ffi_queue)
+                logging.info(
+                    f"[leak-fix] released leaked FFI queue subscription of "
+                    f"disconnected room {room.name}"
+                )
+    except Exception as e:  # noqa: BLE001 - defensive cleanup must never fail the job
+        logging.warning(f"[leak-fix] room FFI cleanup failed: {e}")
 
 
 async def entrypoint(ctx: JobContext):
@@ -470,8 +529,8 @@ async def entrypoint(ctx: JobContext):
     agent_config = openvidu_agent.get_agent_config()
 
     transcriber = MultiUserTranscriber(ctx, agent_config)
-    # Register so session_end() can close it before room.disconnect() is called.
-    _transcribers[ctx.room.name] = transcriber
+    # Attach so session_end() can close it before room.disconnect() is called.
+    ctx._transcriber = transcriber
     transcriber.start()
 
     await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
@@ -482,8 +541,12 @@ async def entrypoint(ctx: JobContext):
     async def cleanup():
         # session_end() normally runs first (before room.disconnect()), so
         # _aclose_started will be True here and this becomes a fast no-op.
-        _transcribers.pop(ctx.room.name, None)
+        ctx._transcriber = None
         await transcriber.aclose()
+        # Shutdown callbacks run AFTER the framework's room.disconnect(), so
+        # this also covers the race where the room disconnects between
+        # session_end()'s check and the framework's disconnect() call.
+        await _release_room_ffi_subscription(ctx.room)
 
     ctx.add_shutdown_callback(cleanup)
 

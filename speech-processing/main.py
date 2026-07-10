@@ -4,14 +4,38 @@ import ctypes
 import ctypes.util
 import gc
 import logging
+import multiprocessing
 import os
 import signal
 import sys
 import time
 
-# Configure basic logging early so preload messages are visible
-# cli.run_app() will reconfigure this with proper formatting later
+
+def _is_job_subprocess() -> bool:
+    """True when called inside a job child process (JobExecutorType.PROCESS).
+
+    Must be evaluated at CALL time, never at import time: multiprocessing
+    re-imports this module (as __mp_main__) in every job subprocess during the
+    bootstrap `prepare()` step, and parent_process() is only populated after
+    that import completes (verified empirically under the Linux forkserver
+    start method) — at import time a child looks like the worker.
+    """
+    return multiprocessing.parent_process() is not None
+
+
+# Configure basic logging early so preload messages are visible.
+# cli.run_app() will reconfigure this with proper formatting later.
+# The handler basicConfig adds is remembered so job subprocesses can remove it
+# in prewarm(): livekit's IPC log forwarding already re-emits child records in
+# the parent, so a local stderr handler in a child would duplicate every log
+# line. (Child detection is impossible at import time — see _is_job_subprocess.)
+_handlers_before_basic_config = len(logging.getLogger().handlers)
 logging.basicConfig(level=logging.INFO)
+_early_log_handler = (
+    logging.getLogger().handlers[-1]
+    if len(logging.getLogger().handlers) > _handlers_before_basic_config
+    else None
+)
 
 from livekit.agents import (
     AgentServer,
@@ -28,7 +52,6 @@ from livekit.agents import (
 from livekit.agents.voice.room_io import RoomOptions, TextOutputOptions
 from livekit.agents.worker import ServerType
 from livekit import rtc
-from livekit.plugins import silero
 
 from stt_impl import (
     get_stt_impl,
@@ -75,13 +98,19 @@ def _release_memory_to_os() -> None:
 
     Closing an AgentSession drops its STT recognizer, but the underlying native
     memory is only returned to glibc's allocator free lists, not to the kernel, so
-    the container RSS stays pinned at its high-water mark. Because all jobs run as
-    threads in a single long-lived process (JobExecutorType.THREAD), that memory is
-    never reclaimed by process exit either. We force a garbage collection so the
+    the container RSS stays pinned at its high-water mark. Under
+    JobExecutorType.THREAD all jobs run as threads in a single long-lived process,
+    so that memory is never reclaimed by process exit either. We force a garbage collection so the
     recognizer's finalizer runs, then call malloc_trim() to hand the now-free heap
     pages back to the OS. Meant to be run in an executor to avoid blocking the loop.
+
+    In a job subprocess (JobExecutorType.PROCESS) the full gc pass is skipped: the
+    process exits when the room ends, which reclaims everything, and touching every
+    object's refcount would dirty the copy-on-write pages shared with the
+    forkserver, inflating per-process memory for no benefit.
     """
-    gc.collect()
+    if not _is_job_subprocess():
+        gc.collect()
     if _malloc_trim is not None:
         _malloc_trim(0)
 
@@ -453,6 +482,19 @@ class MultiUserTranscriber:
 #     userdata["turn_detectors"] = _preload_turn_detector_models()
 
 
+async def main_entrypoint(ctx: JobContext) -> None:
+    """Job entrypoint. Defined at module level (NOT inside the __main__ guard) so
+    it stays importable/picklable in job child processes when the server runs
+    with JobExecutorType.PROCESS (the child re-imports this module with
+    __name__ != "__main__", so anything defined inside the guard is missing)."""
+    # Add custom log context fields
+    ctx.log_context_fields = {
+        "worker_id": ctx.worker_id,
+        "room_name": ctx.room.name,
+    }
+    await entrypoint(ctx)
+
+
 async def session_end(ctx: JobContext) -> None:
     """Close all sessions BEFORE the framework calls room.disconnect().
 
@@ -632,11 +674,32 @@ async def entrypoint(ctx: JobContext):
 
 
 def prewarm(proc: JobProcess):
+    in_job_subprocess = _is_job_subprocess()
+    if in_job_subprocess and _early_log_handler is not None:
+        # Drop the import-time stderr handler: livekit's LogQueueHandler forwards
+        # this child's records to the parent, which re-emits them — keeping the
+        # local handler would duplicate every log line.
+        logging.getLogger().removeHandler(_early_log_handler)
+
     # Reuse the preloaded Silero VAD model from the main process, if it was preloaded.
     # VAD is only preloaded when the STT provider requires it (non-streaming or use_silero_vad=true)
     from stt_impl import _get_cached_silero_vad
 
     cached_vad = _get_cached_silero_vad()
+    if cached_vad is None and in_job_subprocess:
+        # Under JobExecutorType.PROCESS this runs inside a fresh (warm) job
+        # subprocess where the parent's __main__ preload is invisible, so load
+        # the VAD here when the configured provider needs it. This runs before
+        # any job is assigned to the process, keeping the load off the caption
+        # critical path (+~23 MB RSS per process).
+        try:
+            agent_config = OpenViduAgent.get_instance().get_agent_config()
+            if stt_provider_requires_vad(agent_config):
+                logging.info("Prewarm: loading Silero VAD in job subprocess")
+                cached_vad = _get_cached_silero_vad(load_if_missing=True)
+        except (Exception, SystemExit) as e:  # noqa: BLE001 - prewarm must never kill the process (config loader calls exit())
+            logging.warning(f"Prewarm VAD load failed (will load on-demand): {e}")
+
     if cached_vad is not None:
         proc.userdata["vad"] = cached_vad
         logging.debug("Using preloaded Silero VAD model in prewarm")
@@ -662,6 +725,8 @@ def _preload_silero_vad() -> None:
     """
     try:
         logging.info("Preloading Silero VAD model for shared thread-based execution...")
+        from livekit.plugins import silero
+
         vad_model = silero.VAD.load()
         set_cached_silero_vad(vad_model)
         logging.info(
@@ -735,6 +800,8 @@ if __name__ == "__main__":
 
     # If calling "python main.py download-files" do not initialize the OpenViduAgent
     if len(sys.argv) > 1 and sys.argv[1] == "download-files":
+        from livekit.plugins import silero
+
         silero.VAD.load()
 
         # ######################################
@@ -763,10 +830,89 @@ if __name__ == "__main__":
         logging.error("load_threshold must be a number between 0 and 1")
         sys.exit(1)
 
+    # Decide the job executor type from the configured provider:
+    #  - PROCESS for every cloud provider. Each Room job runs in its own OS
+    #    process, so ALL resources (including native SDK memory) are reclaimed
+    #    by the kernel when the Room closes, hung jobs can be killed, and
+    #    job_memory_warn_mb/job_memory_limit_mb are actually enforced.
+    #    Non-streaming cloud providers (openai, azure_openai, groq, fal, clova,
+    #    spitch, simplismart, and the default elevenlabs/mistralai models) need
+    #    the Silero VAD StreamAdapter wrapper: each warm job subprocess loads
+    #    its own VAD copy in prewarm() (+~23 MB per concurrent Room, loaded off
+    #    the caption critical path).
+    #  - THREAD only for vosk/sherpa (with or without VAD): their large local
+    #    ASR models are shared across jobs by design, and one process is what
+    #    lets every job reuse a single copy.
+    # Env override for testing: JOB_EXECUTOR_TYPE=thread|process. Note that
+    # forcing 'process' for vosk/sherpa makes every job child load its own copy
+    # of the ASR model on the job critical path — testing escape hatch only.
+    provider_requires_vad = stt_provider_requires_vad(agent_config)
+    stt_provider = agent_config.get("live_captions", {}).get("provider")
+
+    _executor_override = os.getenv("JOB_EXECUTOR_TYPE", "").strip().lower()
+    if _executor_override in ("thread", "process"):
+        job_executor_type = (
+            JobExecutorType.THREAD
+            if _executor_override == "thread"
+            else JobExecutorType.PROCESS
+        )
+        logging.info(
+            f"Job executor type overridden via JOB_EXECUTOR_TYPE env: "
+            f"{job_executor_type.name}"
+        )
+        if job_executor_type == JobExecutorType.PROCESS and stt_provider in (
+            "vosk",
+            "sherpa",
+        ):
+            logging.warning(
+                "JOB_EXECUTOR_TYPE=process forced for a local-model provider: "
+                "every Room job subprocess will load its own copy of the ASR "
+                "model on the job critical path"
+            )
+    elif _executor_override:
+        logging.warning(
+            f"Unrecognized JOB_EXECUTOR_TYPE value '{_executor_override}' - "
+            f"ignoring and selecting automatically"
+        )
+        job_executor_type = (
+            JobExecutorType.THREAD
+            if stt_provider in ("vosk", "sherpa")
+            else JobExecutorType.PROCESS
+        )
+    elif stt_provider in ("vosk", "sherpa"):
+        job_executor_type = JobExecutorType.THREAD
+    else:
+        job_executor_type = JobExecutorType.PROCESS
+
+    logging.info(
+        f"Using job executor type {job_executor_type.name} for provider "
+        f"'{stt_provider}' (local ASR model: {stt_provider in ('vosk', 'sherpa')}, "
+        f"needs Silero VAD: {provider_requires_vad})"
+    )
+
+    server_kwargs = {}
+    if job_executor_type == JobExecutorType.PROCESS:
+        # The prod default is one warm process per CPU core, which multiplies
+        # the idle footprint on large machines for no benefit here: a small
+        # warm pool keeps job assignment instant while the pool refills
+        # asynchronously in the background.
+        server_kwargs["num_idle_processes"] = 2
+        # Job subprocess initialization (prewarm) may import the provider
+        # plugin and load the Silero VAD; give it comfortable headroom over
+        # livekit's 10s default so a CPU-busy host cannot kill warm children
+        # mid-initialization.
+        server_kwargs["initialize_process_timeout"] = 60.0
+        if provider_requires_vad:
+            # Import (only) the silero plugin in the supervisor so it gets
+            # registered with livekit and therefore included in the forkserver
+            # preload list: job subprocesses then inherit the module pages via
+            # copy-on-write instead of each paying the full cold import. The
+            # VAD model itself is still loaded per child in prewarm().
+            import livekit.plugins.silero  # noqa: F401
+
     server = AgentServer(
-        # Create AgentServer with THREAD executor to share local models across all agents
-        # Significantly reduces memory usage when running multiple concurrent transcriptions
-        job_executor_type=JobExecutorType.THREAD,
+        job_executor_type=job_executor_type,
+        **server_kwargs,
         ws_url=agent_config["ws_url"],
         api_key=agent_config["api_key"],
         api_secret=agent_config["api_secret"],
@@ -788,14 +934,6 @@ if __name__ == "__main__":
         ),
     )
 
-    async def main_entrypoint(ctx: JobContext):
-        # Add custom log context fields
-        ctx.log_context_fields = {
-            "worker_id": ctx.worker_id,
-            "room_name": ctx.room.name,
-        }
-        await entrypoint(ctx)
-
     # Set agent name for explicit dispatch only in manual processing mode.
     if agent_config["live_captions"]["processing"] == "manual":
         server.rtc_session(
@@ -806,14 +944,24 @@ if __name__ == "__main__":
             main_entrypoint
         )
 
-    # Preload local models into memory before starting the server
-    # This ensures all thread-based agents share the same model instance
-    if stt_provider_requires_vad(agent_config):
-        _preload_silero_vad()
+    # Preload local models into memory before starting the server.
+    # THREAD only: it ensures all thread-based agents share the same model
+    # instance. Under PROCESS the supervisor never runs jobs, so preloading here
+    # would only bloat it — each warm job subprocess prewarms its own resources
+    # (see prewarm()).
+    if job_executor_type == JobExecutorType.THREAD:
+        if provider_requires_vad:
+            _preload_silero_vad()
+        else:
+            logging.info(
+                "Skipping Silero VAD preload. Not needed for configured provider"
+            )
+        _preload_vosk_model(agent_config)
+        _preload_sherpa_model(agent_config)
     else:
-        logging.info("Skipping Silero VAD preload. Not needed for configured provider")
-    _preload_vosk_model(agent_config)
-    _preload_sherpa_model(agent_config)
+        logging.info(
+            "Skipping model preloads: PROCESS executor prewarms per-job subprocesses"
+        )
 
     # Set up prewarm function
     server.setup_fnc = prewarm

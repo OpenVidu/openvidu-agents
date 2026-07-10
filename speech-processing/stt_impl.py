@@ -13,69 +13,97 @@ from openviduagentutils.config_manager import ConfigManager
 from openviduagentutils.not_provided import NOT_PROVIDED
 from vad_stt_wrapper import VADTriggeredSTT
 
-# Import all available LiveKit plugins at module level (main thread) to ensure proper registration
+# LiveKit provider plugins are imported LAZILY, on first use of the configured
+# provider. Eagerly importing all ~22 plugins costs ~100 MB RSS and seconds of
+# import time per process, which matters both for the worker baseline and for
+# per-job child processes under JobExecutorType.PROCESS (where only the
+# configured provider's plugin should ever be paid for).
 
-# Track which plugins are available in this container
+# Plugin modules imported so far (plugin name -> module object).
 AVAILABLE_PLUGINS = {}
+# Plugins whose import already failed (so we neither retry nor re-log).
+_unavailable_plugins: set = set()
+_plugin_import_lock = threading.Lock()
 
 
-# Try importing each plugin - if it fails, mark as unavailable
-def _try_import_plugin(plugin_name: str):
-    """Try to import a plugin module. Returns the module if successful, None otherwise."""
+def _plugin_candidates(plugin_name: str):
+    """Module paths a plugin may live at, in resolution order."""
+    yield f"livekit.plugins.{plugin_name}"
+    if plugin_name == "sherpa":
+        # the unified (compiled) image ships sherpa as openvidu_unified.sherpa
+        yield "openvidu_unified.sherpa"
+
+
+def plugin_is_available(plugin_name: str) -> bool:
+    """Check whether a plugin can be imported, WITHOUT importing it when a
+    module spec is resolvable (importlib.util.find_spec). Compiled/unified
+    packages may be importable even when the spec lookup fails or returns
+    None, so a final import attempt is used as the authoritative fallback
+    (fast ImportError for genuinely absent plugins)."""
+    import importlib.util
+
+    if plugin_name in AVAILABLE_PLUGINS:
+        return True
+    for module_name in _plugin_candidates(plugin_name):
+        try:
+            if importlib.util.find_spec(module_name) is not None:
+                return True
+        except (ImportError, ModuleNotFoundError, ValueError, AttributeError):
+            continue
+    return _load_plugin(plugin_name) is not None
+
+
+def _load_plugin(plugin_name: str):
+    """Import a plugin module on first use. Returns the module, or None if the
+    plugin is not available in this container."""
     import importlib
 
-    # First try the standard livekit.plugins path
-    try:
-        module = importlib.import_module(f"livekit.plugins.{plugin_name}")
-        AVAILABLE_PLUGINS[plugin_name] = module
+    module = AVAILABLE_PLUGINS.get(plugin_name)
+    if module is not None:
         return module
-    except (ImportError, ModuleNotFoundError):
-        pass
-
-    # For sherpa also try the unified package path
-    if plugin_name == "sherpa":
-        # Try relative import first
-        try:
-            module = importlib.import_module(".sherpa", package="openvidu_unified")
-            AVAILABLE_PLUGINS[plugin_name] = module
+    if plugin_name in _unavailable_plugins:
+        return None
+    with _plugin_import_lock:
+        module = AVAILABLE_PLUGINS.get(plugin_name)
+        if module is not None:
             return module
-        except (ImportError, ModuleNotFoundError):
-            pass
-        # Try absolute import as fallback
-        try:
-            module = importlib.import_module("openvidu_unified.sherpa")
-            AVAILABLE_PLUGINS[plugin_name] = module
-            return module
-        except (ImportError, ModuleNotFoundError):
-            pass
-
+        if plugin_name in _unavailable_plugins:
+            return None
+        for module_name in _plugin_candidates(plugin_name):
+            try:
+                module = importlib.import_module(module_name)
+                AVAILABLE_PLUGINS[plugin_name] = module
+                logging.info(f"Loaded STT plugin '{plugin_name}' ({module_name})")
+                return module
+            except (ImportError, ModuleNotFoundError) as e:
+                # expected when the plugin is not installed in this image; a
+                # broken install of a PRESENT plugin also lands here, so keep
+                # the reason visible for diagnosis
+                logging.debug(f"Import of '{module_name}' failed: {e!r}")
+            except RuntimeError as e:
+                # livekit requires plugins to register on the main thread; a
+                # first import from a job thread would raise here. All default
+                # paths import on a main thread — this guard covers exotic
+                # JOB_EXECUTOR_TYPE override combinations.
+                logging.warning(
+                    f"Import of '{module_name}' failed with RuntimeError: {e}"
+                )
+        _unavailable_plugins.add(plugin_name)
     logging.info(f"Plugin '{plugin_name}' not available in this container")
     return None
 
 
-# Import all potentially available plugins
-aws = _try_import_plugin("aws")
-azure = _try_import_plugin("azure")
-openai = _try_import_plugin("openai")
-google = _try_import_plugin("google")
-groq = _try_import_plugin("groq")
-deepgram = _try_import_plugin("deepgram")
-assemblyai = _try_import_plugin("assemblyai")
-fal = _try_import_plugin("fal")
-clova = _try_import_plugin("clova")
-speechmatics = _try_import_plugin("speechmatics")
-gladia = _try_import_plugin("gladia")
-sarvam = _try_import_plugin("sarvam")
-mistralai = _try_import_plugin("mistralai")
-cartesia = _try_import_plugin("cartesia")
-soniox = _try_import_plugin("soniox")
-spitch = _try_import_plugin("spitch")
-nvidia = _try_import_plugin("nvidia")
-elevenlabs = _try_import_plugin("elevenlabs")
-simplismart = _try_import_plugin("simplismart")
-vosk = _try_import_plugin("vosk")
-sherpa = _try_import_plugin("sherpa")
-silero = _try_import_plugin("silero")
+def _require_plugin(plugin_name: str):
+    """Like _load_plugin but raises a descriptive error when unavailable."""
+    module = _load_plugin(plugin_name)
+    if module is None:
+        raise ValueError(
+            f"The required plugin '{plugin_name}' is not installed in this "
+            f"container. Please use the correct Docker image for your desired "
+            f"provider."
+        )
+    return module
+
 
 # Module-level cached Silero VAD model for use_silero_vad feature
 # Can be set externally via set_cached_silero_vad() to reuse a prewarmed model
@@ -106,6 +134,7 @@ def _get_cached_silero_vad(load_if_missing: bool = False):
         return _cached_silero_vad
 
     # Only load if explicitly requested
+    silero = _load_plugin("silero") if load_if_missing else None
     if load_if_missing and silero is not None:
         with _vad_load_lock:
             # Double-check: another thread may have loaded it while we waited for the lock
@@ -196,7 +225,7 @@ def _check_provider_streaming_capability(agent_config, stt_provider: str) -> boo
 # ######################################
 # TODO: use turn detection when required
 # ######################################
-# turn_detector = _try_import_plugin("turn_detector")
+# turn_detector = _load_plugin("turn_detector")
 
 
 # Direct mapping from Vosk model names to language codes
@@ -464,6 +493,7 @@ SUPPORTED_LANGUAGES_IN_MULTILINGUAL_TURN_DETECTION = [
 
 
 def get_aws_stt_impl(agent_config) -> stt.STT:
+    aws = _require_plugin("aws")
     config_manager = ConfigManager(agent_config, "live_captions.aws")
     wrong_credentials = "Wrong AWS credentials. live_captions.aws.aws_access_key_id, live_captions.aws.aws_secret_access_key and live_captions.aws.aws_default_region must be set"
 
@@ -516,6 +546,7 @@ def get_aws_stt_impl(agent_config) -> stt.STT:
 
 
 def get_azure_stt_impl(agent_config) -> stt.STT:
+    azure = _require_plugin("azure")
     from azure.cognitiveservices.speech.enums import ProfanityOption
 
     from azure_stt_fix import apply_azure_stt_teardown_fix
@@ -567,6 +598,7 @@ def get_azure_stt_impl(agent_config) -> stt.STT:
 
 
 def get_azure_openai_stt_impl(agent_config) -> stt.STT:
+    openai = _require_plugin("openai")
     config_manager = ConfigManager(agent_config, "live_captions.azure_openai")
 
     azure_api_key = config_manager.mandatory_value(
@@ -611,6 +643,7 @@ def get_azure_openai_stt_impl(agent_config) -> stt.STT:
 
 
 def get_google_stt_impl(agent_config) -> stt.STT:
+    google = _require_plugin("google")
     config_manager = ConfigManager(agent_config, "live_captions.google")
     wrong_credentials = (
         "Wrong Google credentials. live_captions.google.credentials_info must be set"
@@ -660,6 +693,7 @@ def get_google_stt_impl(agent_config) -> stt.STT:
 
 
 def get_openai_stt_impl(agent_config) -> stt.STT:
+    openai = _require_plugin("openai")
     config_manager = ConfigManager(agent_config, "live_captions.openai")
     wrong_credentials = (
         "Wrong OpenAI credentials. live_captions.openai.api_key must be set"
@@ -686,6 +720,7 @@ def get_openai_stt_impl(agent_config) -> stt.STT:
 
 
 def get_groq_stt_impl(agent_config):
+    groq = _require_plugin("groq")
     config_manager = ConfigManager(agent_config, "live_captions.groq")
     wrong_credentials = "Wrong Groq credentials. live_captions.groq.api_key must be set"
 
@@ -712,6 +747,7 @@ def get_groq_stt_impl(agent_config):
 
 
 def get_deepgram_stt_impl(agent_config) -> stt.STT:
+    deepgram = _require_plugin("deepgram")
     config_manager = ConfigManager(agent_config, "live_captions.deepgram")
     wrong_credentials = (
         "Wrong Deepgram credentials. live_captions.deepgram.api_key must be set"
@@ -757,6 +793,7 @@ def get_deepgram_stt_impl(agent_config) -> stt.STT:
 
 
 def get_assemblyai_stt_impl(agent_config) -> stt.STT:
+    assemblyai = _require_plugin("assemblyai")
     config_manager = ConfigManager(agent_config, "live_captions.assemblyai")
     wrong_credentials = (
         "Wrong AssemblyAI credentials. live_captions.assemblyai.api_key must be set"
@@ -789,6 +826,7 @@ def get_assemblyai_stt_impl(agent_config) -> stt.STT:
 
 
 def get_fal_stt_impl(agent_config) -> stt.STT:
+    fal = _require_plugin("fal")
     config_manager = ConfigManager(agent_config, "live_captions.fal")
     wrong_credentials = "Wrong FAL credentials. live_captions.fal.api_key must be set"
 
@@ -801,6 +839,7 @@ def get_fal_stt_impl(agent_config) -> stt.STT:
 
 
 def get_clova_stt_impl(agent_config) -> stt.STT:
+    clova = _require_plugin("clova")
     config_manager = ConfigManager(agent_config, "live_captions.clova")
     wrong_credentials = "Wrong Clova credentials. live_captions.clova.api_key and live_captions.clova.api_key must be set"
 
@@ -819,6 +858,7 @@ def get_clova_stt_impl(agent_config) -> stt.STT:
 
 
 def get_speechmatics_stt_impl(agent_config) -> stt.STT:
+    speechmatics = _require_plugin("speechmatics")
     from livekit.plugins.speechmatics.stt import OperatingPoint
 
     config_manager = ConfigManager(agent_config, "live_captions.speechmatics")
@@ -875,6 +915,7 @@ def get_speechmatics_stt_impl(agent_config) -> stt.STT:
 
 
 def get_gladia_stt_impl(agent_config) -> stt.STT:
+    gladia = _require_plugin("gladia")
     config_manager = ConfigManager(agent_config, "live_captions.gladia")
     wrong_credentials = (
         "Wrong Gladia credentials. live_captions.gladia.api_key must be set"
@@ -907,6 +948,7 @@ def get_gladia_stt_impl(agent_config) -> stt.STT:
 
 
 def get_sarvam_stt_impl(agent_config) -> stt.STT:
+    sarvam = _require_plugin("sarvam")
     config_manager = ConfigManager(agent_config, "live_captions.sarvam")
     wrong_credentials = (
         "Wrong Sarvam credentials. live_captions.sarvam.api_key must be set"
@@ -926,6 +968,7 @@ def get_sarvam_stt_impl(agent_config) -> stt.STT:
 
 
 def get_mistralai_stt_impl(agent_config) -> stt.STT:
+    mistralai = _require_plugin("mistralai")
     config_manager = ConfigManager(agent_config, "live_captions.mistralai")
     wrong_credentials = (
         "Wrong MistralAI credentials. live_captions.mistralai.api_key must be set"
@@ -946,6 +989,7 @@ def get_mistralai_stt_impl(agent_config) -> stt.STT:
 
 
 def get_cartesia_stt_impl(agent_config) -> stt.STT:
+    cartesia = _require_plugin("cartesia")
     config_manager = ConfigManager(agent_config, "live_captions.cartesia")
     wrong_credentials = (
         "Wrong Cartesia credentials. live_captions.cartesia.api_key must be set"
@@ -966,6 +1010,7 @@ def get_cartesia_stt_impl(agent_config) -> stt.STT:
 
 
 def get_soniox_stt_impl(agent_config) -> stt.STT:
+    soniox = _require_plugin("soniox")
     config_manager = ConfigManager(agent_config, "live_captions.soniox")
     wrong_credentials = (
         "Wrong Soniox credentials. live_captions.soniox.api_key must be set"
@@ -991,6 +1036,7 @@ def get_soniox_stt_impl(agent_config) -> stt.STT:
 
 
 def get_spitch_stt_impl(agent_config) -> stt.STT:
+    spitch = _require_plugin("spitch")
     config_manager = ConfigManager(agent_config, "live_captions.spitch")
     wrong_credentials = (
         "Wrong Spitch credentials. live_captions.spitch.api_key must be set"
@@ -1008,6 +1054,7 @@ def get_spitch_stt_impl(agent_config) -> stt.STT:
 
 
 def get_nvidia_stt_impl(agent_config) -> stt.STT:
+    nvidia = _require_plugin("nvidia")
     config_manager = ConfigManager(agent_config, "live_captions.nvidia")
 
     api_key = config_manager.configured_string_value("api_key")
@@ -1047,6 +1094,7 @@ def get_nvidia_stt_impl(agent_config) -> stt.STT:
 
 
 def get_elevenlabs_stt_impl(agent_config) -> stt.STT:
+    elevenlabs = _require_plugin("elevenlabs")
     config_manager = ConfigManager(agent_config, "live_captions.elevenlabs")
     wrong_credentials = (
         "Wrong ElevenLabs credentials. live_captions.elevenlabs.api_key must be set"
@@ -1077,6 +1125,7 @@ def get_elevenlabs_stt_impl(agent_config) -> stt.STT:
 
 
 def get_simplismart_stt_impl(agent_config) -> stt.STT:
+    simplismart = _require_plugin("simplismart")
     config_manager = ConfigManager(agent_config, "live_captions.simplismart")
     wrong_credentials = (
         "Wrong SimpliSmart credentials. live_captions.simplismart.api_key must be set"
@@ -1111,6 +1160,7 @@ def get_simplismart_stt_impl(agent_config) -> stt.STT:
 
 
 def get_vosk_stt_impl(agent_config) -> stt.STT:
+    vosk = _require_plugin("vosk")
     config_manager = ConfigManager(agent_config, "live_captions.vosk")
 
     model = config_manager.configured_string_value("model")
@@ -1152,6 +1202,7 @@ def get_vosk_stt_impl(agent_config) -> stt.STT:
     base_stt = vosk.STT(**kwargs)
 
     # Optionally wrap with VADTriggeredSTT to flush final transcripts based on VAD
+    silero = _load_plugin("silero") if use_silero_vad is True else None
     if use_silero_vad is True and silero is not None:
         logging.info(
             "vosk.use_silero_vad=true - Using VAD wrapper around Vosk STT. Final transcripts will be forced by Silero VAD detection"
@@ -1171,6 +1222,7 @@ def get_vosk_stt_impl(agent_config) -> stt.STT:
 
 
 def get_sherpa_stt_impl(agent_config) -> stt.STT:
+    sherpa = _require_plugin("sherpa")
     # Mapping from model name patterns to recognizer types
     # Pattern matching order matters - more specific patterns first
     SHERPA_MODEL_TO_RECOGNIZER_TYPE = {
@@ -1245,7 +1297,7 @@ def get_sherpa_stt_impl(agent_config) -> stt.STT:
 
     # Handle decoding_method enum conversion
     if decoding_method is not NOT_PROVIDED:
-        # Use the sherpa module loaded by _try_import_plugin (supports both livekit.plugins.sherpa and openvidu_unified.sherpa)
+        # Use the lazily imported sherpa module (supports both livekit.plugins.sherpa and openvidu_unified.sherpa)
         DecodingMethod = sherpa.DecodingMethod
 
         if decoding_method == "greedy_search":
@@ -1255,7 +1307,7 @@ def get_sherpa_stt_impl(agent_config) -> stt.STT:
 
     # Handle recognizer_type enum conversion
     if recognizer_type_str is not NOT_PROVIDED:
-        # Use the sherpa module loaded by _try_import_plugin (supports both livekit.plugins.sherpa and openvidu_unified.sherpa)
+        # Use the lazily imported sherpa module (supports both livekit.plugins.sherpa and openvidu_unified.sherpa)
         RecognizerType = sherpa.RecognizerType
 
         recognizer_type_map = {
@@ -1273,6 +1325,7 @@ def get_sherpa_stt_impl(agent_config) -> stt.STT:
     base_stt = sherpa.STT(**kwargs)
 
     # Optionally wrap with VADTriggeredSTT to flush final transcripts based on VAD
+    silero = _load_plugin("silero") if use_silero_vad is True else None
     if use_silero_vad is True and silero is not None:
         logging.info(
             "sherpa.use_silero_vad=true - Using VAD wrapper around sherpa STT. Final transcripts will be forced by Silero VAD detection"
@@ -1390,17 +1443,18 @@ def get_stt_impl(agent_config) -> stt.STT:
             f"Supported providers: {', '.join(sorted(STT_PROVIDERS.keys()))}"
         )
 
-    # Check if the plugin is available in this container
+    # Check if the plugin is available in this container (find_spec based:
+    # does NOT import the other providers' plugins)
     provider_config = STT_PROVIDERS[stt_provider]
     plugin_name = provider_config.plugin_module.split(".")[
         -1
     ]  # Extract plugin name from module path
 
-    if plugin_name not in AVAILABLE_PLUGINS:
+    if not plugin_is_available(plugin_name):
         available_providers = [
             name
             for name, config in STT_PROVIDERS.items()
-            if config.plugin_module.split(".")[-1] in AVAILABLE_PLUGINS
+            if plugin_is_available(config.plugin_module.split(".")[-1])
         ]
         raise ValueError(
             f"STT provider '{stt_provider}' is not available in this container. "

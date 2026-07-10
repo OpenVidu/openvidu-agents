@@ -48,7 +48,7 @@ const LOCAL_STT_PROVIDERS: SttProviderConfig[] = [
     maxIdleMemoryMB: 150,
     maxMemoryMB: 1800,
     maxTracks: 8,
-    maxMemoryAfterTeardownMB: 300,
+    maxMemoryAfterTeardownMB: 350,
   },
   // Local provider without VAD model
   {

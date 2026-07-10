@@ -46,7 +46,7 @@ const LOCAL_STT_PROVIDERS: SttProviderConfig[] = [
       use_silero_vad: false,
     },
     maxIdleMemoryMB: 150,
-    maxMemoryMB: 1500,
+    maxMemoryMB: 1800,
     maxTracks: 8,
     maxMemoryAfterTeardownMB: 300,
   },
@@ -70,7 +70,7 @@ const LOCAL_STT_PROVIDERS: SttProviderConfig[] = [
     maxIdleMemoryMB: 150,
     maxMemoryMB: 2500,
     maxTracks: 8,
-    maxMemoryAfterTeardownMB: 350,
+    maxMemoryAfterTeardownMB: 400,
   },
   // Local provider with VAD model
   {

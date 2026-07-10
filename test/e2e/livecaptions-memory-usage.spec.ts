@@ -16,7 +16,7 @@ import {
 } from "./utils/helper";
 
 // LiveKit server API, used to force-tear-down rooms and participants during the
-// leak-check teardown (see Step 11).
+// leak-check teardown (see Step 4).
 const roomServiceClient = new RoomServiceClient(
   LIVEKIT_URL_HTTP,
   LIVEKIT_API_KEY,
@@ -25,7 +25,11 @@ const roomServiceClient = new RoomServiceClient(
 
 interface SttProviderConfig {
   [providerName: string]: any;
+  // Maximum MB of the idle container after starting
+  maxIdleMemoryMB: number;
+  // Maximum MB of the container under full load
   maxMemoryMB: number;
+  // Maximum number of simultaneous tracks to test
   maxTracks?: number;
   // Teardown memory cap. Either an absolute value in MiB (a number) or a
   // percentage string (e.g. "10%") applied on top of the idle baseline
@@ -35,65 +39,85 @@ interface SttProviderConfig {
 }
 
 const LOCAL_STT_PROVIDERS: SttProviderConfig[] = [
+  // Local provider without VAD model
   {
     vosk: {
       model: "vosk-model-en-us-0.22-lgraph",
       use_silero_vad: false,
     },
+    maxIdleMemoryMB: 150,
     maxMemoryMB: 1500,
     maxTracks: 8,
-    maxMemoryAfterTeardownMB: 350,
+    maxMemoryAfterTeardownMB: 300,
   },
+  // Local provider without VAD model
   {
     sherpa: {
       model: "sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06",
       use_silero_vad: false,
     },
+    maxIdleMemoryMB: 300,
     maxMemoryMB: 600,
     maxTracks: 12,
     maxMemoryAfterTeardownMB: 400,
   },
+  // Local provider with VAD model
   {
     vosk: {
       model: "vosk-model-en-us-0.22-lgraph",
       use_silero_vad: true,
     },
-    maxMemoryMB: 2000,
+    maxIdleMemoryMB: 150,
+    maxMemoryMB: 2500,
     maxTracks: 8,
     maxMemoryAfterTeardownMB: 350,
   },
+  // Local provider with VAD model
   {
     sherpa: {
       model: "sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06",
       use_silero_vad: true,
     },
-    maxMemoryMB: 1600,
+    maxIdleMemoryMB: 300,
+    maxMemoryMB: 2000,
     maxTracks: 12,
     maxMemoryAfterTeardownMB: 600,
   },
 ];
 
 const CLOUD_STT_PROVIDERS: SttProviderConfig[] = [
+  // A cloud provider that does NOT require VAD model
   {
     azure: {
       speech_key: process.env.AZURE_SPEECH_KEY,
       speech_region: process.env.AZURE_SPEECH_REGION,
     },
-    // Cloud providers offload transcription, so the local container footprint
-    // is small. These limits may need calibration against real measurements.
-    maxMemoryMB: 400,
+    maxIdleMemoryMB: 500,
+    maxMemoryMB: 1000,
     maxTracks: 12,
-    maxMemoryAfterTeardownMB: "25%",
+    maxMemoryAfterTeardownMB: "5%",
   },
+  // Another cloud provider that does NOT require VAD model
   {
     aws: {
       aws_access_key_id: process.env.AWS_ACCESS_KEY_ID,
       aws_secret_access_key: process.env.AWS_SECRET_ACCESS_KEY,
       aws_default_region: process.env.AWS_DEFAULT_REGION,
     },
-    maxMemoryMB: 400,
+    maxIdleMemoryMB: 500,
+    maxMemoryMB: 1000,
     maxTracks: 12,
-    maxMemoryAfterTeardownMB: "25%",
+    maxMemoryAfterTeardownMB: "5%",
+  },
+  // A cloud provider that does require VAD model
+  {
+    elevenlabs: {
+      api_key: process.env.ELEVEN_API_KEY,
+    },
+    maxIdleMemoryMB: 500,
+    maxMemoryMB: 2000,
+    maxTracks: 12,
+    maxMemoryAfterTeardownMB: "5%",
   },
 ];
 
@@ -617,6 +641,20 @@ function registerProviderMemoryTest(
         `Idle baseline: memory ${formatBytes(baselineMemory)}, CPU ${baselineCpu.toFixed(2)}%`,
       );
 
+      // The freshly started container (models preloaded where applicable, no
+      // sessions yet) must stay under the provider's maxIdleMemoryMB cap.
+      const maxIdleMemoryLimitBytes = provider.maxIdleMemoryMB * 1024 * 1024;
+      if (baselineMemory > maxIdleMemoryLimitBytes) {
+        throw new Error(
+          `Idle memory limit exceeded with ${providerName}! Agent container uses ` +
+            `${formatBytes(baselineMemory)} while idle after starting, above the ` +
+            `maxIdleMemoryMB limit of ${formatBytes(maxIdleMemoryLimitBytes)}.`,
+        );
+      }
+      console.log(
+        `✓ Idle memory within limit (${formatBytes(baselineMemory)} <= ${formatBytes(maxIdleMemoryLimitBytes)})`,
+      );
+
       // Cap on simultaneous tracks (= simultaneous connected participants).
       const maxTracks =
         provider.maxTracks ?? TOTAL_ROOMS * TOTAL_PUBLISHERS_PER_ROOM;
@@ -714,9 +752,84 @@ function registerProviderMemoryTest(
         `Chaos soak finished after ${((Date.now() - soakStartTime) / 60000).toFixed(1)} minutes; ${roomCounter} rooms created.`,
       );
 
-      // Step 3: Tear everything down from the server side via the LiveKit server API
+      // Step 3: Max-load memory check. Fill the agent up to the provider's
+      // maxTracks simultaneous tracks (packing participants into rooms of
+      // TOTAL_PUBLISHERS_PER_ROOM), let everything stabilize for 5 seconds and
+      // verify the container memory does not surpass the provider's
+      // maxMemoryMB cap while at full load.
       console.log(
-        "Step 3: Removing all participants via the LiveKit server API...",
+        `Step 3: Filling up to ${maxTracks} simultaneous tracks for the max-load memory check...`,
+      );
+      const maxLoadFillAttemptsLimit = maxTracks * 3;
+      let maxLoadFillAttempts = 0;
+      while (active.length < maxTracks) {
+        if (++maxLoadFillAttempts > maxLoadFillAttemptsLimit) {
+          throw new Error(
+            `Could not reach ${maxTracks} simultaneous tracks for the max-load ` +
+              `memory check (stuck at ${active.length} tracks after ` +
+              `${maxLoadFillAttemptsLimit} attempts)`,
+          );
+        }
+        // Join the first active room that still has space, or create a new one.
+        const roomOccupancy = new Map<string, number>();
+        for (const a of active) {
+          roomOccupancy.set(
+            a.roomName,
+            (roomOccupancy.get(a.roomName) ?? 0) + 1,
+          );
+        }
+        const roomWithSpace = [...roomOccupancy.entries()].find(
+          ([, count]) => count < TOTAL_PUBLISHERS_PER_ROOM,
+        )?.[0];
+        const roomName = roomWithSpace ?? `chaos-room-${roomCounter++}`;
+        let uid: number | undefined;
+        try {
+          uid = await addParticipantToRoom(page, roomName);
+          await connectParticipant(page, uid);
+          active.push({ uid, roomName });
+          console.log(
+            `  + participant ${uid} -> room "${roomName}" (${active.length}/${maxTracks} tracks)`,
+          );
+        } catch (error: any) {
+          console.error(
+            `Error adding participant during max-load fill: ${error.message}`,
+          );
+          // Best-effort: destroy a half-created instance so it cannot linger
+          // holding a track (which would break the maxTracks cap).
+          if (uid !== undefined) {
+            try {
+              await removeInstance(page, uid);
+            } catch {
+              // ignore
+            }
+          }
+        }
+        await sleep(SOAK_OPERATION_PAUSE_SECONDS);
+      }
+
+      console.log(
+        `All ${maxTracks} tracks up; waiting 5 seconds for the agent to stabilize...`,
+      );
+      await sleep(5);
+
+      const maxLoadMemoryBytes =
+        getContainerMemoryStats(containerName).usedBytes;
+      const maxMemoryLimitBytes = provider.maxMemoryMB * 1024 * 1024;
+      console.log(
+        `Max-load memory with ${active.length}/${maxTracks} tracks: ${formatBytes(maxLoadMemoryBytes)} (limit ${formatBytes(maxMemoryLimitBytes)})`,
+      );
+      if (maxLoadMemoryBytes > maxMemoryLimitBytes) {
+        throw new Error(
+          `Memory limit exceeded at max load with ${providerName}! ` +
+            `Agent container uses ${formatBytes(maxLoadMemoryBytes)} with ` +
+            `${active.length} simultaneous tracks, above the maxMemoryMB ` +
+            `limit of ${formatBytes(maxMemoryLimitBytes)}.`,
+        );
+      }
+
+      // Step 4: Tear everything down from the server side via the LiveKit server API
+      console.log(
+        "Step 4: Removing all participants via the LiveKit server API...",
       );
       const rooms = await roomServiceClient.listRooms();
       for (const room of rooms) {
@@ -754,10 +867,10 @@ function registerProviderMemoryTest(
       active.length = 0;
       console.log("All participants and rooms removed.");
 
-      // Step 4: Wait for the agent container to return to its idle baseline.
+      // Step 5: Wait for the agent container to return to its idle baseline.
       // If memory or CPU never drops back, it indicates a leak.
       console.log(
-        "Step 4: Waiting for agent memory and CPU to return to idle baseline (leak check)...",
+        "Step 5: Waiting for agent memory and CPU to return to idle baseline (leak check)...",
       );
       const memoryThresholdBytes = resolveTeardownThresholdBytes(
         provider.maxMemoryAfterTeardownMB,

@@ -549,10 +549,6 @@ def get_azure_stt_impl(agent_config) -> stt.STT:
     azure = _require_plugin("azure")
     from azure.cognitiveservices.speech.enums import ProfanityOption
 
-    from azure_stt_fix import apply_azure_stt_teardown_fix
-
-    apply_azure_stt_teardown_fix()
-
     config_manager = ConfigManager(agent_config, "live_captions.azure")
     wrong_credentials = "Wrong azure credentials. One of these combinations must be set:\n    - speech_host\n    - speech_key + speech_region\n    - speech_auth_token + speech_region"
 

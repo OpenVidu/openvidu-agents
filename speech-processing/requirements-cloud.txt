@@ -4,7 +4,7 @@
 -r requirements-base.txt
 
 # Cloud STT plugins
-livekit-agents[aws,azure,google,groq,openai,deepgram,assemblyai,fal,clova,speechmatics,gladia,sarvam,mistralai,cartesia,soniox,spitch,nvidia,elevenlabs,simplismart]==1.6.4
+livekit-agents[aws,azure,google,groq,openai,deepgram,assemblyai,fal,clova,speechmatics,gladia,sarvam,mistralai,cartesia,soniox,spitch,nvidia,elevenlabs,simplismart]==1.6.5
 
 # livekit-plugins-clova pulls in pydub, which imports the stdlib `audioop` module.
 # `audioop` was removed in Python 3.13; audioop-lts is the official backport.

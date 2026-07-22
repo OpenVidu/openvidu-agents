@@ -57,7 +57,7 @@ on:
 jobs:
   start-runner:
     name: Prepare runner
-    runs-on: ${{ vars.LABEL_WORKER_SELFHOSTED }}
+    runs-on: ${{ vars.LABEL_WORKER_SELFHOSTED || 'ubuntu-latest' }}
     outputs:
       label: ${{ steps.start-ec2-runner.outputs.label }}
       ec2-instance-id: ${{ steps.start-ec2-runner.outputs.ec2-instance-id }}
@@ -99,7 +99,7 @@ jobs:
     needs:
       - start-runner
       - test
-    runs-on: ${{ vars.LABEL_WORKER_SELFHOSTED }}
+    runs-on: ${{ vars.LABEL_WORKER_SELFHOSTED || 'ubuntu-latest' }}
     if: ${{ always() && inputs.use-aws }}
     steps:
       - name: Stop AWS EC2 Runner

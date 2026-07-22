@@ -796,6 +796,42 @@ def _preload_sherpa_model(agent_config) -> None:
         )
 
 
+def _preload_nemotron_model(agent_config) -> None:
+    """Preload the Nemotron model into memory for sharing across threads.
+
+    When using JobExecutorType.THREAD, all agent threads share the same process
+    memory. This loads the ~2.4 GB GPU model once at startup so all subsequent
+    STT instances reuse the cached model via livekit-plugins-nemotron's internal
+    _ModelCache, instead of paying the multi-second load on the caption path.
+    """
+    try:
+        stt_provider = agent_config.get("live_captions", {}).get("provider")
+        if stt_provider == "nemotron":
+            logging.info(
+                "Preloading nemotron model for shared thread-based execution..."
+            )
+            # Creating an STT instance triggers model loading into the cache.
+            stt_impl = get_stt_impl(agent_config)
+
+            # If wrapped in VADTriggeredSTT, get the underlying nemotron STT.
+            from vad_stt_wrapper import VADTriggeredSTT
+
+            if isinstance(stt_impl, VADTriggeredSTT):
+                nemo_stt = stt_impl._stt
+            else:
+                nemo_stt = stt_impl
+
+            # Force model loading by ensuring it is in the shared cache.
+            asyncio.run(nemo_stt._ensure_model())
+            logging.info(
+                "nemotron model preloaded successfully. Will be shared across all agent threads"
+            )
+    except Exception as e:
+        logging.warning(
+            f"Failed to preload nemotron model: {e}. Model will be loaded on first use."
+        )
+
+
 if __name__ == "__main__":
 
     # If calling "python main.py download-files" do not initialize the OpenViduAgent
@@ -840,12 +876,12 @@ if __name__ == "__main__":
     #    the Silero VAD StreamAdapter wrapper: each warm job subprocess loads
     #    its own VAD copy in prewarm() (+~23 MB per concurrent Room, loaded off
     #    the caption critical path).
-    #  - THREAD only for vosk/sherpa (with or without VAD): their large local
-    #    ASR models are shared across jobs by design, and one process is what
-    #    lets every job reuse a single copy.
+    #  - THREAD only for vosk/sherpa/nemotron (with or without VAD): their large
+    #    local ASR models are shared across jobs by design, and one process is
+    #    what lets every job reuse a single copy.
     # Env override for testing: JOB_EXECUTOR_TYPE=thread|process. Note that
-    # forcing 'process' for vosk/sherpa makes every job child load its own copy
-    # of the ASR model on the job critical path — testing escape hatch only.
+    # forcing 'process' for vosk/sherpa/nemotron makes every job child load its
+    # own copy of the ASR model on the job critical path — testing escape hatch only.
     provider_requires_vad = stt_provider_requires_vad(agent_config)
     stt_provider = agent_config.get("live_captions", {}).get("provider")
 
@@ -863,6 +899,7 @@ if __name__ == "__main__":
         if job_executor_type == JobExecutorType.PROCESS and stt_provider in (
             "vosk",
             "sherpa",
+            "nemotron",
         ):
             logging.warning(
                 "JOB_EXECUTOR_TYPE=process forced for a local-model provider: "
@@ -876,17 +913,17 @@ if __name__ == "__main__":
         )
         job_executor_type = (
             JobExecutorType.THREAD
-            if stt_provider in ("vosk", "sherpa")
+            if stt_provider in ("vosk", "sherpa", "nemotron")
             else JobExecutorType.PROCESS
         )
-    elif stt_provider in ("vosk", "sherpa"):
+    elif stt_provider in ("vosk", "sherpa", "nemotron"):
         job_executor_type = JobExecutorType.THREAD
     else:
         job_executor_type = JobExecutorType.PROCESS
 
     logging.info(
         f"Using job executor type {job_executor_type.name} for provider "
-        f"'{stt_provider}' (local ASR model: {stt_provider in ('vosk', 'sherpa')}, "
+        f"'{stt_provider}' (local ASR model: {stt_provider in ('vosk', 'sherpa', 'nemotron')}, "
         f"needs Silero VAD: {provider_requires_vad})"
     )
 
@@ -958,6 +995,7 @@ if __name__ == "__main__":
             )
         _preload_vosk_model(agent_config)
         _preload_sherpa_model(agent_config)
+        _preload_nemotron_model(agent_config)
     else:
         logging.info(
             "Skipping model preloads: PROCESS executor prewarms per-job subprocesses"

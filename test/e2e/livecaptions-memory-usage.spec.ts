@@ -83,6 +83,15 @@ const LOCAL_STT_PROVIDERS: SttProviderConfig[] = [
     maxTracks: 12,
     maxMemoryAfterTeardownMB: 600,
   },
+  {
+    nemotron: {
+      model: "nemotron-3.5-asr-streaming-0.6b",
+    },
+    maxIdleMemoryMB: 6000,
+    maxMemoryMB: 8000,
+    maxTracks: 12,
+    maxMemoryAfterTeardownMB: "20%",
+  },
 ];
 
 const CLOUD_STT_PROVIDERS: SttProviderConfig[] = [

@@ -16,7 +16,7 @@ live_captions:
   # - automatic: the agent will automatically connect to new Rooms.
   processing: manual
 
-  # Which speech-to-text AI provider to use [aws, azure, google, openai, azure_openai, groq, deepgram, assemblyai, fal, clova, speechmatics, gladia, sarvam, mistralai, cartesia, soniox, nvidia, elevenlabs, simplismart, vosk, sherpa]
+  # Which speech-to-text AI provider to use [aws, azure, google, openai, azure_openai, groq, deepgram, assemblyai, fal, clova, speechmatics, gladia, sarvam, mistralai, cartesia, soniox, nvidia, elevenlabs, simplismart, vosk, sherpa, nemotron]
   # The custom configuration for the selected provider must be set below
   provider: vosk
 
@@ -435,3 +435,27 @@ live_captions:
     decoding_method:
     # Whether to override sherpa's built-in Voice Activity Detection (VAD) with Silero's VAD. Default is false.
     use_silero_vad: false
+
+  nemotron:
+    # Local NVIDIA Nemotron 3.5 streaming ASR (via NVIDIA NeMo). This provider requires docker_image
+    # "docker.io/openvidu/agent-speech-processing-nemotron-cuda12". A GPU is strongly recommended (CPU is a slow fallback).
+    # A single multilingual checkpoint covers 40 language-locales and is baked into the image.
+    # Transcription-ready (19): en-US, en-GB, es-US, es-ES, fr-FR, fr-CA, it-IT, pt-BR, pt-PT, nl-NL, de-DE, tr-TR, ru-RU, ar-AR, hi-IN, ja-JP, ko-KR, vi-VN, uk-UA
+    # Broad-coverage (13): pl-PL, sv-SE, cs-CZ, nb-NO, da-DK, bg-BG, fi-FI, hr-HR, sk-SK, zh-CN, hu-HU, ro-RO, et-EE
+    # Adaptation-ready (8, require fine-tuning, NOT usable out of the box in production environments): el-GR, lt-LT, lv-LV, mt-MT, sl-SI, he-IL, th-TH, nn-NO
+    model: nvidia/nemotron-3.5-asr-streaming-0.6b
+    # Language locale (e.g. "en-US", "es-US", "de-DE", "ja-JP") or "auto" for automatic detection.
+    # Pinning a locale is more accurate/stable than "auto". Default is "auto".
+    language: auto
+    # Compute device: "cuda" (default, recommended) or "cpu".
+    device: cuda
+    # Compute precision: "float32" (default), "float16", or "bfloat16". Half precision roughly halves GPU VRAM at a small (validate!) accuracy cost.
+    precision: float32
+    # Latency/accuracy dial (encoder att_context_size, [left, right] context in 80 ms frames). Lower right value = lower latency, higher = more accurate.
+    # The checkpoint is trained with exactly these four values (chunk latency in parentheses); other values are rejected at load time and the model keeps the default:
+    # [56, 0] (80 ms) | [56, 3] (320 ms, default) | [56, 6] (560 ms) | [56, 13] (1120 ms)
+    att_context_size: [56, 3]
+    # Audio sample rate in Hz. Default is 16000.
+    sample_rate:
+    # Whether to return interim/partial results during recognition. Default is true.
+    partial_results:

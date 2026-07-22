@@ -80,7 +80,37 @@ export class LocalDeployment {
         "docker inspect ready-check -f {{.State.Status}}:{{.State.ExitCode}}",
       );
     } while (statusCode !== "exited:0");
+
+    // Wait for the worker to register (nemotron takes longer)
+    await this.waitForAgentWorkerRegistered();
+
     console.log("Local deployment started");
+  }
+
+  private static async waitForAgentWorkerRegistered(timeoutMs = 180000) {
+    const container = "agent-speech-processing";
+    const start = Date.now();
+    console.log(`Waiting for '${container}' worker to register...`);
+    while (Date.now() - start < timeoutMs) {
+      let logs = "";
+      try {
+        // `|| true` so a not-yet-spawned container doesn't throw; keep polling.
+        logs = execCommand(`docker logs ${container} 2>&1 || true`);
+      } catch {
+        // Ignore transient docker errors and retry.
+      }
+      if (logs.includes("registered worker")) {
+        const secs = ((Date.now() - start) / 1000).toFixed(1);
+        console.log(`Agent '${container}' worker registered after ${secs}s`);
+        return;
+      }
+      await sleep(1);
+    }
+    console.warn(
+      `Agent '${container}' worker did not register within ${
+        timeoutMs / 1000
+      }s; proceeding anyway (the test may fail because the agent is not ready)`,
+    );
   }
 
   /**
@@ -128,10 +158,36 @@ export class LocalDeployment {
         doc.setIn(["live_captions", providerName, key], value);
       }
     }
+    // GPU acceleration: when STT_ACCEL is set, the GPU-capable local providers (sherpa, nemotron) use their "-cudaXX"
+    // image, request GPU passthrough to the agent container via the `docker_options.gpus`, and run their CUDA runtime.
+    // Empty/unset => CPU images (default, unchanged behavior)
+    const accel = (process.env.STT_ACCEL || "").trim(); // "" | "cuda11" | "cuda12"
+    const gpu = accel === "cuda11" || accel === "cuda12";
+
     if (providerName === "vosk") {
+      // vosk has no GPU build (CPU-only).
       doc.set("docker_image", "openvidu/agent-speech-processing-vosk:main");
     } else if (providerName === "sherpa") {
-      doc.set("docker_image", "openvidu/agent-speech-processing-sherpa:main");
+      const suffix = gpu ? `-${accel}` : "";
+      doc.set(
+        "docker_image",
+        `openvidu/agent-speech-processing-sherpa${suffix}:main`,
+      );
+      if (gpu) {
+        doc.setIn(["docker_options", "gpus"], "all");
+        doc.setIn(["live_captions", "sherpa", "provider"], "cuda");
+      }
+      this.setOpenViduProLicenseInOperatorService(customLicense);
+    } else if (providerName === "nemotron") {
+      const suffix = gpu ? "-cuda12" : "";
+      doc.set(
+        "docker_image",
+        `openvidu/agent-speech-processing-nemotron${suffix}:main`,
+      );
+      if (gpu) {
+        doc.setIn(["docker_options", "gpus"], "all");
+        doc.setIn(["live_captions", "nemotron", "device"], "cuda");
+      }
       this.setOpenViduProLicenseInOperatorService(customLicense);
     } else {
       doc.set("docker_image", "openvidu/agent-speech-processing-cloud:main");

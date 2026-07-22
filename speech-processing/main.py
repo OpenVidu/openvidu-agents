@@ -546,7 +546,10 @@ async def _release_room_ffi_subscription(room: rtc.Room) -> None:
                 await asyncio.wait_for(asyncio.gather(task, return_exceptions=True), 5)
             # run the cleanups _listen_task's cancellation skipped (they only
             # run after an 'eos' break upstream)
-            for drain_name in ("_drain_rpc_invocation_tasks", "_drain_data_stream_tasks"):
+            for drain_name in (
+                "_drain_rpc_invocation_tasks",
+                "_drain_data_stream_tasks",
+            ):
                 drain = getattr(room, drain_name, None)
                 if drain is not None:
                     with contextlib.suppress(Exception):
@@ -697,7 +700,10 @@ def prewarm(proc: JobProcess):
             if stt_provider_requires_vad(agent_config):
                 logging.info("Prewarm: loading Silero VAD in job subprocess")
                 cached_vad = _get_cached_silero_vad(load_if_missing=True)
-        except (Exception, SystemExit) as e:  # noqa: BLE001 - prewarm must never kill the process (config loader calls exit())
+        except (
+            Exception,
+            SystemExit,
+        ) as e:  # noqa: BLE001 - prewarm must never kill the process (config loader calls exit())
             logging.warning(f"Prewarm VAD load failed (will load on-demand): {e}")
 
     if cached_vad is not None:
@@ -823,6 +829,16 @@ def _preload_nemotron_model(agent_config) -> None:
 
             # Force model loading by ensuring it is in the shared cache.
             asyncio.run(nemo_stt._ensure_model())
+            # Absorb the one-time lazy-init cost (numba JIT of the RNNT greedy decoder, ~3.5s on CPU)
+            # with a dummy utterance, so the first real caption is as fast as subsequent ones.
+            # Non-fatal: on failure the first utterance simply pays that cost instead.
+            try:
+                asyncio.run(nemo_stt.warmup())
+            except Exception as warmup_error:
+                logging.warning(
+                    f"nemotron warm-up failed (non-fatal, first utterance will "
+                    f"pay the one-time JIT cost): {warmup_error}"
+                )
             logging.info(
                 "nemotron model preloaded successfully. Will be shared across all agent threads"
             )

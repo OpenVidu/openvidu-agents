@@ -206,7 +206,13 @@ class VADTriggeredSpeechStream(stt.SpeechStream):
         self._stream_id = id(self)  # Unique ID for logging
         self._audio_frame_count = 0
         self._flush_count = 0
-        self._start_time = time.monotonic()
+        # Deliberately NOT named `_start_time`: the livekit RecognizeStream base
+        # class owns `self._start_time` (epoch-based, exposed via its public
+        # `start_time` property, and re-set by the voice pipeline when the
+        # stream starts). Reusing that name both corrupted the base class's
+        # wall-clock anchor and made these elapsed logs hugely negative
+        # (monotonic minus epoch) once the pipeline overwrote the value.
+        self._wrapper_start_time = time.monotonic()
         # Tasks created in _run(); stored here so they can be cancelled from outside
         # when sess.aclose() times out and we need to force-stop the pipeline.
         self._run_tasks: list[asyncio.Task] = []
@@ -238,7 +244,7 @@ class VADTriggeredSpeechStream(stt.SpeechStream):
             inference_done_count = 0
             async for ev in self._vad_stream:
                 vad_event_count += 1
-                elapsed = time.monotonic() - self._start_time
+                elapsed = time.monotonic() - self._wrapper_start_time
 
                 if ev.type == vad.VADEventType.START_OF_SPEECH:
                     self._speaking = True
@@ -310,7 +316,7 @@ class VADTriggeredSpeechStream(stt.SpeechStream):
             filtered_count = 0
             async for ev in self._stt_stream:
                 stt_event_count += 1
-                elapsed = time.monotonic() - self._start_time
+                elapsed = time.monotonic() - self._wrapper_start_time
 
                 # Filter out START/END_OF_SPEECH from STT (VAD handles these)
                 if ev.type in (
@@ -397,7 +403,7 @@ class VADTriggeredSpeechStream(stt.SpeechStream):
                         flush_event.clear()
                         vad_triggered_flush_count += 1
                         self._flush_count += 1
-                        elapsed = time.monotonic() - self._start_time
+                        elapsed = time.monotonic() - self._wrapper_start_time
                         logger.info(
                             f"[VADTriggeredStream:{self._stream_id}] VAD-triggered flush #{vad_triggered_flush_count} "
                             f"(elapsed={elapsed:.2f}s, frames={frame_count}, audio={total_audio_duration:.1f}s) "
@@ -480,7 +486,7 @@ class VADTriggeredSpeechStream(stt.SpeechStream):
             except (ValueError, AttributeError):
                 pass
 
-            total_elapsed = time.monotonic() - self._start_time
+            total_elapsed = time.monotonic() - self._wrapper_start_time
             logger.info(
                 f"[VADTriggeredStream:{self._stream_id}] Stream ended - "
                 f"total_elapsed={total_elapsed:.2f}s, total_flushes={self._flush_count}"

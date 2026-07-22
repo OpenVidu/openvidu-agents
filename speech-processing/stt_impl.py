@@ -32,6 +32,9 @@ def _plugin_candidates(plugin_name: str):
     if plugin_name == "sherpa":
         # the unified (compiled) image ships sherpa as openvidu_unified.sherpa
         yield "openvidu_unified.sherpa"
+    if plugin_name == "nemotron":
+        # the unified (compiled) image ships nemotron as openvidu_unified.nemotron
+        yield "openvidu_unified.nemotron"
 
 
 def plugin_is_available(plugin_name: str) -> bool:
@@ -160,8 +163,17 @@ def stt_provider_requires_vad(agent_config) -> bool:
     if stt_provider is None:
         return False
 
-    # Scenario 1: Check if vosk/sherpa uses use_silero_vad=true
-    # These providers support streaming natively, but may use VAD wrapper
+    # Scenario 1a: Nemotron has NO built-in end-of-utterance detection, so it
+    # ALWAYS requires a Silero VAD wrapper to finalize transcripts. This is not
+    # configurable (a bare nemotron STT could only ever emit interim results).
+    if stt_provider == "nemotron":
+        logging.info(
+            "Provider 'nemotron' has no built-in endpointing - VAD always required"
+        )
+        return True
+
+    # Scenario 1b: vosk/sherpa support streaming natively, but may opt into a
+    # VAD wrapper via use_silero_vad.
     if stt_provider in ("vosk", "sherpa"):
         config_manager = ConfigManager(agent_config, f"live_captions.{stt_provider}")
         use_silero_vad = config_manager.configured_boolean_value("use_silero_vad")
@@ -469,6 +481,11 @@ STT_PROVIDERS = {
     "sherpa": STTProviderConfig(
         impl_function=None,
         plugin_module="livekit.plugins.sherpa",
+        plugin_class="STT",
+    ),
+    "nemotron": STTProviderConfig(
+        impl_function=None,
+        plugin_module="livekit.plugins.nemotron",
         plugin_class="STT",
     ),
 }
@@ -1344,6 +1361,73 @@ def get_sherpa_stt_impl(agent_config) -> stt.STT:
     return base_stt
 
 
+def get_nemotron_stt_impl(agent_config) -> stt.STT:
+    nemotron = _require_plugin("nemotron")
+
+    config_manager = ConfigManager(agent_config, "live_captions.nemotron")
+
+    model = config_manager.mandatory_value(
+        "model",
+        "Wrong nemotron configuration. live_captions.nemotron.model must be set",
+    )
+    language = config_manager.configured_string_value("language")
+    sample_rate = config_manager.configured_numeric_value("sample_rate")
+    partial_results = config_manager.configured_boolean_value("partial_results")
+    device = config_manager.configured_string_value("device")
+    precision = config_manager.configured_string_value("precision")
+    att_context_size = config_manager.configured_list_value("att_context_size", int)
+
+    # Nemotron is a single multilingual checkpoint (40 language-locales); the
+    # language is a runtime setting, not a per-model fact. Default to automatic
+    # detection when not provided.
+    if language is NOT_PROVIDED:
+        language = "auto"
+
+    kwargs = {
+        k: v
+        for k, v in {
+            "model": model,
+            "language": language,
+            "sample_rate": sample_rate,
+            "partial_results": partial_results,
+            "device": device,
+            # Passed as a plain string; nemotron.STT stores it and maps it to a
+            # torch dtype at load time (unknown values fall back to float32).
+            "precision": precision,
+            "att_context_size": att_context_size,
+        }.items()
+        if v is not NOT_PROVIDED
+    }
+
+    base_stt = nemotron.STT(**kwargs)
+
+    # Nemotron has NO built-in end-of-utterance detection, so a Silero VAD wrapper
+    # is ALWAYS required to finalize transcripts - it is not configurable. A bare
+    # nemotron STT could only ever emit interim results, never a FINAL_TRANSCRIPT
+    # (unlike vosk/sherpa, which have native EOU and expose a use_silero_vad
+    # toggle). If silero is unavailable we FAIL FAST rather than silently returning
+    # a base STT that never finalizes. This mirrors stt_provider_requires_vad,
+    # which always returns True for nemotron.
+    silero = _load_plugin("silero")
+    if silero is None:
+        raise ValueError(
+            "nemotron has no built-in end-of-utterance detection and requires "
+            "the Silero VAD plugin to finalize transcripts, but the silero "
+            "plugin is not available in this container. Use the correct Docker "
+            "image (silero must be baked into the nemotron image)."
+        )
+    logging.info(
+        "Using Silero VAD wrapper around nemotron STT (this model has no "
+        "built-in endpointing). Final transcripts are forced by Silero VAD detection"
+    )
+    vad_model = _get_cached_silero_vad(load_if_missing=True)
+    return VADTriggeredSTT(
+        stt_impl=base_stt,
+        vad_impl=vad_model,
+        flush_delay=0.4,  # Give Nemotron 400ms to catch up after VAD detection
+    )
+
+
 # Initialize the registry with implementation functions
 def _initialize_stt_registry():
     """Initialize the STT provider registry with implementation functions.
@@ -1376,6 +1460,7 @@ def _initialize_stt_registry():
         "simplismart": get_simplismart_stt_impl,
         "vosk": get_vosk_stt_impl,
         "sherpa": get_sherpa_stt_impl,
+        "nemotron": get_nemotron_stt_impl,
     }
 
     # Validate that all registered providers have implementation functions

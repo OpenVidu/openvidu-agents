@@ -1,0 +1,114 @@
+# GPU variant of "speech-processing-e2e.yml". Runs ONLY the GPU-compatible local
+# provider tests (sherpa + nemotron) on an AWS NVIDIA GPU EC2 runner.
+name: Speech Processing agent E2E tests (GPU)
+on:
+  workflow_dispatch:
+    inputs:
+      use-aws:
+        description: "Use AWS EC2 GPU runner (required for real GPU acceleration; without it the job runs on ubuntu-latest and falls back to CPU)"
+        type: boolean
+        default: true
+        required: true
+      aws-instance-type:
+        description: "AWS EC2 instance type (must be an NVIDIA GPU instance)"
+        type: string
+        default: "g4dn.xlarge"
+        required: false
+      aws-image-id:
+        description: "AWS AMI id to boot the runner from. Must be GPU-capable (NVIDIA driver + NVIDIA Container Toolkit). Defaults to the AWS_GITHUB_ACTIONS_AMI repo/org variable."
+        type: string
+        default: ""
+        required: false
+      ref-openvidu-agents:
+        description: "Branch, tag or commit SHA to checkout in repository OpenVidu/openvidu-agents"
+        required: false
+        default: ""
+      ref-openvidu-agents-pro:
+        description: "Branch, tag or commit SHA to checkout in repository OpenVidu/openvidu-agents-pro"
+        required: false
+        default: ""
+      ref-openvidu-local-deployment:
+        description: "Branch, tag or commit SHA to checkout in repository OpenVidu/openvidu-local-deployment. Defaults to 'development'"
+        type: string
+        required: false
+        default: "development"
+      ref-openvidu:
+        description: "Branch, tag or commit SHA to checkout in repository OpenVidu/openvidu. Defaults to 'master'"
+        type: string
+        required: false
+        default: "master"
+      docker-tag-agent-speech-processing:
+        description: "Docker tag for all agent-speech-processing containers. If not provided, the containers will be built from the repository sources"
+        type: string
+        required: false
+      rtc-engine:
+        description: "RTC engine to use"
+        type: choice
+        default: "pion"
+        required: true
+        options:
+          - mediasoup
+          - pion
+      ref-openvidu-pro-mediasoup:
+        description: 'Branch, tag or commit SHA to checkout in repository OpenVidu/openvidu-pro-mediasoup. If "default" mediasoup-worker binary will not be compiled: artifact from latest release of OpenVidu/openvidu-pro-mediasoup will be used'
+        type: string
+        default: "default"
+        required: true
+jobs:
+  start-runner:
+    name: Prepare runner
+    runs-on: ${{ vars.LABEL_WORKER_SELFHOSTED }}
+    outputs:
+      label: ${{ steps.start-ec2-runner.outputs.label }}
+      ec2-instance-id: ${{ steps.start-ec2-runner.outputs.ec2-instance-id }}
+    steps:
+      - name: Start AWS EC2 Runner
+        id: start-ec2-runner
+        uses: OpenVidu/actions/start-aws-runner@040cbfd01320475801d7b12e33769e0d55a737a8 # v1.0.21
+        if: ${{ inputs.use-aws }}
+        with:
+          aws-instance-type: ${{ inputs.aws-instance-type || 'g4dn.xlarge' }}
+          aws-access-key-id: ${{ vars.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+          github-token: ${{ secrets.OPENVIDU_GITHUB_TOKEN }}
+          ec2-image-id: ${{ inputs.aws-image-id || vars.AWS_GITHUB_ACTIONS_GPU_AMI || vars.AWS_GITHUB_ACTIONS_AMI }}
+          subnet-id: ${{ vars.AWS_SUBNET_ID }}
+          security-group-id: ${{ vars.AWS_SECURITY_GROUP_ID }}
+          workflow-name: ${{ github.workflow }}
+          repository-name: ${{ github.repository }}
+
+  test:
+    needs: start-runner
+    uses: ./.github/workflows/speech-processing-e2e-base.yml
+    secrets: inherit
+    with:
+      ref-openvidu-agents: ${{ inputs.ref-openvidu-agents }}
+      ref-openvidu-agents-pro: ${{ inputs.ref-openvidu-agents-pro }}
+      ref-openvidu-local-deployment: ${{ inputs.ref-openvidu-local-deployment }}
+      ref-openvidu: ${{ inputs.ref-openvidu }}
+      docker-tag-agent-speech-processing: ${{ inputs.docker-tag-agent-speech-processing }}
+      rtc-engine: ${{ inputs.rtc-engine }}
+      ref-openvidu-pro-mediasoup: ${{ inputs.ref-openvidu-pro-mediasoup }}
+      test-npm-script: test:e2e:gpu
+      runs-on: ${{ needs.start-runner.outputs.label || 'ubuntu-latest' }}
+      gpu: true
+
+  stop-runner:
+    name: Stop EC2 runner
+    needs:
+      - start-runner
+      - test
+    runs-on: ${{ vars.LABEL_WORKER_SELFHOSTED }}
+    if: ${{ always() && inputs.use-aws }}
+    steps:
+      - name: Stop AWS EC2 Runner
+        id: stop-ec2-runner
+        uses: OpenVidu/actions/stop-aws-runner@040cbfd01320475801d7b12e33769e0d55a737a8 # v1.0.21
+        with:
+          aws-access-key-id: ${{ vars.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+          github-token: ${{ secrets.OPENVIDU_GITHUB_TOKEN }}
+          label: ${{ needs.start-runner.outputs.label }}
+          ec2-instance-id: ${{ needs.start-runner.outputs.ec2-instance-id }}

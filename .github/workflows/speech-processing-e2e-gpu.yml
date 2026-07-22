@@ -15,7 +15,7 @@ on:
         default: "g4dn.xlarge"
         required: false
       aws-image-id:
-        description: "AWS AMI id to boot the runner from. Must be GPU-capable (NVIDIA driver + NVIDIA Container Toolkit). Defaults to the AWS_GITHUB_ACTIONS_AMI repo/org variable."
+        description: "AWS AMI id to boot the runner from. Must be GPU-capable (NVIDIA driver + NVIDIA Container Toolkit preinstalled, e.g. an AWS Deep Learning Base AMI). Defaults to the AWS_GITHUB_ACTIONS_GPU_AMI repo/org variable, falling back to AWS_GITHUB_ACTIONS_AMI."
         type: string
         default: ""
         required: false

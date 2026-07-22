@@ -133,7 +133,8 @@ const STT_AI_PROVIDERS = [
   },
   {
     nemotron: {
-      model: "nemotron-3.5-asr-streaming-0.6b"
+      model: "nemotron-3.5-asr-streaming-0.6b",
+      max_concurrent_transcriptions: process.env.STT_ACCEL ? 4 : 1,
     },
   },
   // REASON THIS PROVIDER CAN'T BE AUTOMATICALLY TESTED: no free credits or tier available

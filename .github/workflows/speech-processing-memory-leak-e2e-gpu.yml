@@ -68,13 +68,13 @@ jobs:
         if: ${{ inputs.use-aws }}
         with:
           aws-instance-type: ${{ inputs.aws-instance-type || 'g4dn.xlarge' }}
-          aws-access-key-id: ${{ vars.AWS_ACCESS_KEY_ID }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ vars.AWS_REGION }}
+          aws-region: ${{ secrets.AWS_REGION }}
           github-token: ${{ secrets.OPENVIDU_GITHUB_TOKEN }}
           ec2-image-id: ${{ inputs.aws-image-id || vars.AWS_GITHUB_ACTIONS_GPU_AMI || vars.AWS_GITHUB_ACTIONS_AMI }}
-          subnet-id: ${{ vars.AWS_SUBNET_ID }}
-          security-group-id: ${{ vars.AWS_SECURITY_GROUP_ID }}
+          subnet-id: ${{ secrets.AWS_SUBNET_ID }}
+          security-group-id: ${{ secrets.AWS_SECURITY_GROUP_ID }}
           workflow-name: ${{ github.workflow }}
           repository-name: ${{ github.repository }}
 
@@ -106,9 +106,9 @@ jobs:
         id: stop-ec2-runner
         uses: OpenVidu/actions/stop-aws-runner@040cbfd01320475801d7b12e33769e0d55a737a8 # v1.0.21
         with:
-          aws-access-key-id: ${{ vars.AWS_ACCESS_KEY_ID }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ vars.AWS_REGION }}
+          aws-region: ${{ secrets.AWS_REGION }}
           github-token: ${{ secrets.OPENVIDU_GITHUB_TOKEN }}
           label: ${{ needs.start-runner.outputs.label }}
           ec2-instance-id: ${{ needs.start-runner.outputs.ec2-instance-id }}

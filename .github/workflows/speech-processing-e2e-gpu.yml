@@ -64,10 +64,11 @@ jobs:
     steps:
       - name: Start AWS EC2 Runner
         id: start-ec2-runner
-        uses: OpenVidu/actions/start-aws-runner@040cbfd01320475801d7b12e33769e0d55a737a8 # v1.0.21
+        uses: OpenVidu/actions/start-aws-runner@070fb73fda8fe7a08e28991b1c2d276f12a009ef # v1.0.22
         if: ${{ inputs.use-aws }}
         with:
           aws-instance-type: ${{ inputs.aws-instance-type || 'g4dn.xlarge' }}
+          aws-volume-size: "150"
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
@@ -104,7 +105,7 @@ jobs:
     steps:
       - name: Stop AWS EC2 Runner
         id: stop-ec2-runner
-        uses: OpenVidu/actions/stop-aws-runner@040cbfd01320475801d7b12e33769e0d55a737a8 # v1.0.21
+        uses: OpenVidu/actions/stop-aws-runner@070fb73fda8fe7a08e28991b1c2d276f12a009ef # v1.0.22
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}

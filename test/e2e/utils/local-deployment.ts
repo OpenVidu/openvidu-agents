@@ -161,8 +161,8 @@ export class LocalDeployment {
     // GPU acceleration: when STT_ACCEL is set, the GPU-capable local providers (sherpa, nemotron) use their "-cudaXX"
     // image, request GPU passthrough to the agent container via the `docker_options.gpus`, and run their CUDA runtime.
     // Empty/unset => CPU images (default, unchanged behavior)
-    const accel = (process.env.STT_ACCEL || "").trim(); // "" | "cuda11" | "cuda12"
-    const gpu = accel === "cuda11" || accel === "cuda12";
+    const accel = (process.env.STT_ACCEL || "").trim(); // "" | "cuda12"
+    const gpu = accel === "cuda12";
 
     if (providerName === "vosk") {
       // vosk has no GPU build (CPU-only).

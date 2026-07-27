@@ -66,7 +66,11 @@ const LOCAL_STT_PROVIDERS: SttProviderConfig[] = [
     maxIdleMemoryMB: process.env.STT_ACCEL ? 1500 : 300,
     maxMemoryMB: process.env.STT_ACCEL ? 2500 : 600,
     maxTracks: 12,
-    maxMemoryAfterTeardownMB: process.env.STT_ACCEL ? "20%" : 400,
+    // GPU teardown is an absolute cap, not %-over-idle: CUDA host-side
+    // allocations initialize at first DECODE (after the idle baseline)
+    // and are never returned, so RSS legitimately plateaus. A real leak
+    // grows past this cap with room churn.
+    maxMemoryAfterTeardownMB: process.env.STT_ACCEL ? 1800 : 400,
     // VRAM (GPU runs only): recognizer load measured ~150 MiB on a T4; the
     // rest is CUDA context + cuDNN/cuBLAS workspaces.
     maxIdleVramMB: 1000,
@@ -92,7 +96,8 @@ const LOCAL_STT_PROVIDERS: SttProviderConfig[] = [
     maxIdleMemoryMB: process.env.STT_ACCEL ? 3000 : 300,
     maxMemoryMB: process.env.STT_ACCEL ? 3000 : 2000,
     maxTracks: 12,
-    maxMemoryAfterTeardownMB: process.env.STT_ACCEL ? "20%" : 600,
+    // GPU: absolute cap (see the VAD-disabled sherpa entry above)
+    maxMemoryAfterTeardownMB: process.env.STT_ACCEL ? 1800 : 600,
     // VRAM (GPU runs only): see the VAD-disabled sherpa entry above.
     maxIdleVramMB: 1000,
     maxVramMB: 2500,

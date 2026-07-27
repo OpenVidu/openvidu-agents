@@ -825,6 +825,8 @@ function registerProviderMemoryTest(
         provider.maxTracks ?? TOTAL_ROOMS * TOTAL_PUBLISHERS_PER_ROOM;
 
       await page.goto(TESTAPP_URL);
+      // Bound every UI action/locator wait on this page
+      page.setDefaultTimeout(PARTICIPANT_ACTION_TIMEOUT_MS);
 
       // Step 2: Chaos soak. For soakDurationMs, randomly add and remove participants,
       // never exceeding maxTracks simultaneous tracks. The result is a shifting mix of rooms

@@ -354,6 +354,10 @@ function checkLevenshteinDistance(
   // Compare only first sentence of the transcription.
   transcribedText = transcribedText.split(".")[0];
   let expectedText = AUDIO_TRANSCRIPTIONS[0];
+  // The VAD window may legitimately capture the onset of the next sentence.
+  // Comparing only the expected-length prefix keeps the accuracy check meaningful
+  // while tolerating that trailing spillover.
+  transcribedText = transcribedText.slice(0, expectedText.length);
   let LD = getLevenshteinDistance(expectedText, transcribedText);
   if (LD > 5) {
     throw new Error(

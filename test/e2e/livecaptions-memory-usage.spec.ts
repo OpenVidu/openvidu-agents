@@ -36,6 +36,13 @@ interface SttProviderConfig {
   // captured at the start of the test (i.e. the container may sit up to that
   // percentage above idle after teardown).
   maxMemoryAfterTeardownMB: number | string;
+  // GPU VRAM caps in MiB, only enforced on GPU runs (STT_ACCEL set, nvidia-smi
+  // available on the test host). Unlike RAM there is no return-to-idle
+  // teardown cap: caching allocators (torch, ORT CUDA arenas) hold their
+  // high-water mark by design, so the teardown leak criterion is instead
+  // "no growth beyond the soak high-water mark" (see checkVram/Step 5).
+  maxIdleVramMB?: number;
+  maxVramMB?: number;
 }
 
 const LOCAL_STT_PROVIDERS: SttProviderConfig[] = [
@@ -56,10 +63,14 @@ const LOCAL_STT_PROVIDERS: SttProviderConfig[] = [
       model: "sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06",
       use_silero_vad: false,
     },
-    maxIdleMemoryMB: 300,
-    maxMemoryMB: 600,
+    maxIdleMemoryMB: process.env.STT_ACCEL ? 1500 : 300,
+    maxMemoryMB: process.env.STT_ACCEL ? 2500 : 600,
     maxTracks: 12,
-    maxMemoryAfterTeardownMB: 400,
+    maxMemoryAfterTeardownMB: process.env.STT_ACCEL ? "20%" : 400,
+    // VRAM (GPU runs only): recognizer load measured ~150 MiB on a T4; the
+    // rest is CUDA context + cuDNN/cuBLAS workspaces.
+    maxIdleVramMB: 1000,
+    maxVramMB: 2500,
   },
   // Local provider with VAD model
   {
@@ -78,19 +89,27 @@ const LOCAL_STT_PROVIDERS: SttProviderConfig[] = [
       model: "sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06",
       use_silero_vad: true,
     },
-    maxIdleMemoryMB: 300,
-    maxMemoryMB: 2000,
+    maxIdleMemoryMB: process.env.STT_ACCEL ? 3000 : 300,
+    maxMemoryMB: process.env.STT_ACCEL ? 3000 : 2000,
     maxTracks: 12,
-    maxMemoryAfterTeardownMB: 600,
+    maxMemoryAfterTeardownMB: process.env.STT_ACCEL ? "20%" : 600,
+    // VRAM (GPU runs only): see the VAD-disabled sherpa entry above.
+    maxIdleVramMB: 1000,
+    maxVramMB: 2500,
   },
   {
     nemotron: {
       model: "nemotron-3.5-asr-streaming-0.6b",
     },
-    maxIdleMemoryMB: 6000,
-    maxMemoryMB: 8000,
+    maxIdleMemoryMB: 3000,
+    maxMemoryMB: 3000,
     maxTracks: 12,
     maxMemoryAfterTeardownMB: "20%",
+    // VRAM (GPU runs only): fp32 model + CUDA context measured ~5000 MiB on a
+    // T4 at load; leave headroom for cuDNN workspaces under 12 tracks while
+    // still failing far before the T4's 15360 MiB is exhausted.
+    maxIdleVramMB: 6500,
+    maxVramMB: 9000,
   },
 ];
 
@@ -222,6 +241,97 @@ function getContainerCpuStats(containerName: string): number {
     );
     throw error;
   }
+}
+
+// Allowed VRAM above the soak high-water mark after teardown. Caching
+// allocators never shrink, so any growth beyond high-water after everything
+// is destroyed is a leak signature, not allocator noise.
+const VRAM_TEARDOWN_TOLERANCE_PERCENT = 5;
+
+/**
+ * Device-level GPU VRAM used, in MiB, via nvidia-smi on the test host. The
+ * agent is the only GPU-consuming process in the deployment, so device-level
+ * usage is effectively the agent's usage.
+ */
+function getGpuVramUsedMB(): number {
+  const output = execCommand(
+    "nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits",
+  );
+  const value = parseInt(output.trim().split("\n")[0], 10);
+  if (isNaN(value)) {
+    throw new Error(`Unexpected nvidia-smi output: ${output}`);
+  }
+  return value;
+}
+
+/**
+ * Assert, from the agent container's own logs, that the provider actually
+ * validated and is using GPU acceleration. A container that silently fell
+ * back to CPU would otherwise produce meaningless "passing" GPU memory
+ * numbers. Both the sherpa and nemotron plugins run GPU readiness checks at
+ * model preload (before the worker registers, so the markers are guaranteed
+ * to be in the logs once the deployment is up) and log a VRAM-delta residency
+ * confirmation after loading the model onto the GPU.
+ */
+function verifyAgentGpuValidation(
+  containerName: string,
+  providerName: string,
+): void {
+  // 2>&1: the agent logs to both container streams; execSync captures stdout only.
+  const logs = execCommand(`docker logs ${containerName} 2>&1`);
+  // Any of these means the agent is NOT properly GPU-accelerated.
+  const forbiddenMarkers = [
+    "issue(s) detected", // gpu_diagnostics readiness summary found problems
+    "possible silent CPU fallback", // near-zero VRAM delta after model load
+    "falling back to CPU", // GPU device requested but unusable
+  ];
+  // Both must be present: readiness checks passed AND the loaded model was
+  // confirmed resident on the GPU (positive VRAM delta).
+  const requiredMarkers = ["All GPU readiness checks passed", "running on GPU"];
+  for (const marker of forbiddenMarkers) {
+    if (logs.includes(marker)) {
+      throw new Error(
+        `GPU validation failed for ${providerName}: agent container logs ` +
+          `contain "${marker}". The agent is not properly GPU-accelerated, ` +
+          `so GPU memory results would be meaningless.`,
+      );
+    }
+  }
+  for (const marker of requiredMarkers) {
+    if (!logs.includes(marker)) {
+      throw new Error(
+        `GPU validation failed for ${providerName}: agent container logs do ` +
+          `not contain "${marker}". Cannot confirm GPU acceleration is active.`,
+      );
+    }
+  }
+  console.log(
+    `✓ Agent container GPU support validated from its logs for ${providerName} ` +
+      `(readiness checks passed, model resident on GPU)`,
+  );
+}
+
+/**
+ * VRAM checks run only on GPU runs (STT_ACCEL set) and only if nvidia-smi
+ * works on the test host. Probed once and cached.
+ */
+let vramAvailable: boolean | null = null;
+function isVramMeasurementAvailable(): boolean {
+  if (!process.env.STT_ACCEL) {
+    return false;
+  }
+  if (vramAvailable === null) {
+    try {
+      getGpuVramUsedMB();
+      vramAvailable = true;
+    } catch {
+      console.warn(
+        "STT_ACCEL is set but nvidia-smi is not usable on the test host — skipping VRAM checks",
+      );
+      vramAvailable = false;
+    }
+  }
+  return vramAvailable;
 }
 
 /**
@@ -664,6 +774,52 @@ function registerProviderMemoryTest(
         `✓ Idle memory within limit (${formatBytes(baselineMemory)} <= ${formatBytes(maxIdleMemoryLimitBytes)})`,
       );
 
+      // GPU runs: capture the VRAM idle baseline, enforce the idle cap, and
+      // set up the sampler used through the rest of the test. It tracks the
+      // high-water mark (the reference for the teardown leak check) and
+      // enforces the absolute maxVramMB cap at every sample.
+      const vramChecksEnabled = isVramMeasurementAvailable();
+
+      // Before trusting any GPU memory number, confirm from the agent's own
+      // container logs that GPU support validated and the model is resident
+      // on the GPU (fails fast instead of soaking a CPU-fallback container).
+      if (vramChecksEnabled && provider.maxVramMB) {
+        verifyAgentGpuValidation(containerName, providerName);
+      }
+      let vramHighWaterMB = 0;
+      const checkVram = (phase: string): number | null => {
+        if (!vramChecksEnabled) {
+          return null;
+        }
+        const usedMB = getGpuVramUsedMB();
+        if (usedMB > vramHighWaterMB) {
+          vramHighWaterMB = usedMB;
+        }
+        if (provider.maxVramMB && usedMB > provider.maxVramMB) {
+          throw new Error(
+            `VRAM limit exceeded (${phase}) with ${providerName}! GPU uses ` +
+              `${usedMB} MiB, above the maxVramMB limit of ${provider.maxVramMB} MiB.`,
+          );
+        }
+        return usedMB;
+      };
+      if (vramChecksEnabled) {
+        const idleVramMB = checkVram("idle")!;
+        console.log(`Idle VRAM baseline: ${idleVramMB} MiB`);
+        if (provider.maxIdleVramMB && idleVramMB > provider.maxIdleVramMB) {
+          throw new Error(
+            `Idle VRAM limit exceeded with ${providerName}! GPU uses ` +
+              `${idleVramMB} MiB while idle after starting, above the ` +
+              `maxIdleVramMB limit of ${provider.maxIdleVramMB} MiB.`,
+          );
+        }
+        if (provider.maxIdleVramMB) {
+          console.log(
+            `✓ Idle VRAM within limit (${idleVramMB} MiB <= ${provider.maxIdleVramMB} MiB)`,
+          );
+        }
+      }
+
       // Cap on simultaneous tracks (= simultaneous connected participants).
       const maxTracks =
         provider.maxTracks ?? TOTAL_ROOMS * TOTAL_PUBLISHERS_PER_ROOM;
@@ -688,10 +844,13 @@ function registerProviderMemoryTest(
 
       const logSoakMemory = () => {
         const memoryBytes = getContainerMemoryStats(containerName).usedBytes;
+        const vramMB = checkVram("soak");
         const elapsedMin = ((Date.now() - soakStartTime) / 60000).toFixed(1);
         const activeRooms = new Set(active.map((a) => a.roomName)).size;
         console.log(
-          `[soak ${elapsedMin}min] agent memory: ${formatBytes(memoryBytes)} | tracks: ${active.length}/${maxTracks} | active rooms: ${activeRooms} | rooms created: ${roomCounter}`,
+          `[soak ${elapsedMin}min] agent memory: ${formatBytes(memoryBytes)}` +
+            (vramMB !== null ? ` | VRAM: ${vramMB} MiB` : "") +
+            ` | tracks: ${active.length}/${maxTracks} | active rooms: ${activeRooms} | rooms created: ${roomCounter}`,
         );
         lastMemoryLogTime = Date.now();
       };
@@ -827,6 +986,13 @@ function registerProviderMemoryTest(
       console.log(
         `Max-load memory with ${active.length}/${maxTracks} tracks: ${formatBytes(maxLoadMemoryBytes)} (limit ${formatBytes(maxMemoryLimitBytes)})`,
       );
+      const maxLoadVramMB = checkVram("max load");
+      if (maxLoadVramMB !== null) {
+        console.log(
+          `Max-load VRAM with ${active.length}/${maxTracks} tracks: ${maxLoadVramMB} MiB` +
+            (provider.maxVramMB ? ` (limit ${provider.maxVramMB} MiB)` : ""),
+        );
+      }
       if (maxLoadMemoryBytes > maxMemoryLimitBytes) {
         throw new Error(
           `Memory limit exceeded at max load with ${providerName}! ` +
@@ -917,6 +1083,34 @@ function registerProviderMemoryTest(
       console.log(
         `✓ No leak detected: agent returned to idle baseline for ${providerName}`,
       );
+
+      // GPU runs: VRAM leak check. Caching allocators (torch, ORT CUDA
+      // arenas) hold their high-water mark by design, so VRAM does NOT return
+      // to the idle baseline — the leak signature is growth BEYOND the soak
+      // high-water mark after everything has been destroyed.
+      if (vramChecksEnabled) {
+        const vramAfterTeardownMB = getGpuVramUsedMB();
+        const vramAllowedMB = Math.round(
+          vramHighWaterMB * (1 + VRAM_TEARDOWN_TOLERANCE_PERCENT / 100),
+        );
+        console.log(
+          `After teardown VRAM: ${vramAfterTeardownMB} MiB (soak high-water ` +
+            `${vramHighWaterMB} MiB, allowed up to ${vramAllowedMB} MiB)`,
+        );
+        if (vramAfterTeardownMB > vramAllowedMB) {
+          throw new Error(
+            `Possible VRAM leak with ${providerName}! GPU memory grew beyond ` +
+              `the soak high-water mark after destroying all tracks, ` +
+              `participants, agents and rooms.\n` +
+              `Soak high-water: ${vramHighWaterMB} MiB\n` +
+              `After teardown: ${vramAfterTeardownMB} MiB\n` +
+              `Allowed: up to ${vramAllowedMB} MiB (high-water + ${VRAM_TEARDOWN_TOLERANCE_PERCENT}%)`,
+          );
+        }
+        console.log(
+          `✓ No VRAM leak detected: GPU memory stayed at or below the soak high-water mark for ${providerName}`,
+        );
+      }
     });
   });
 }

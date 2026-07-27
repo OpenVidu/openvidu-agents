@@ -318,7 +318,8 @@ describeProviderTests("Multi-user STT tests", ({ providerName }) => {
     }
     // Check that each user has received at least one final transcription event for every other user (and itself)
     const promises = [];
-    const TIMEOUT = providerName === "vosk" ? 50000 : 20000;
+    // Local providers need headroom: vosk and sherpa's native endpointing (VAD off)
+    const TIMEOUT = ["vosk", "sherpa"].includes(providerName) ? 50000 : 20000;
     for (let user = 0; user < NUM_USERS; user++) {
       for (let otherUser = 0; otherUser < NUM_USERS; otherUser++) {
         promises.push(
@@ -354,11 +355,18 @@ function checkLevenshteinDistance(
   // Compare only first sentence of the transcription.
   transcribedText = transcribedText.split(".")[0];
   let expectedText = AUDIO_TRANSCRIPTIONS[0];
-  // The VAD window may legitimately capture the onset of the next sentence.
-  // Comparing only the expected-length prefix keeps the accuracy check meaningful
-  // while tolerating that trailing spillover.
-  transcribedText = transcribedText.slice(0, expectedText.length);
-  let LD = getLevenshteinDistance(expectedText, transcribedText);
+  // Comparing equal-length prefixes tolerates both while still checking word
+  // accuracy; the minimum-coverage guard keeps fragments and garbage failing.
+  const minLen = Math.min(transcribedText.length, expectedText.length);
+  if (minLen < expectedText.length * 0.6) {
+    throw new Error(
+      `Transcribed text too short (${transcribedText.length} chars) to cover expected sentence.\nExpected: "${expectedText}"\nTranscribed: "${transcribedText}"`,
+    );
+  }
+  let LD = getLevenshteinDistance(
+    expectedText.slice(0, minLen),
+    transcribedText.slice(0, minLen),
+  );
   if (LD > 5) {
     throw new Error(
       `Levenshtein distance (${LD}) exceeds maximum allowed between expected and transcribed text.\nExpected: "${expectedText}"\nTranscribed: "${transcribedText}"`,

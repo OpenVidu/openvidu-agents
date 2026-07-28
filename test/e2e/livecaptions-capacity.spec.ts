@@ -30,6 +30,10 @@ import {
 const PROVIDER = {
   nemotron: {
     model: "nemotron-3.5-asr-streaming-0.6b",
+    // Optional inference precision override (float32 | float16 | bfloat16).
+    // Unset/empty values are filtered out by LocalDeployment.configureProvider,
+    // leaving the plugin's default (float32).
+    precision: process.env.NEMOTRON_PRECISION,
   },
 };
 

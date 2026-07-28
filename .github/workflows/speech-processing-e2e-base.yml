@@ -56,6 +56,11 @@ on:
         type: boolean
         required: false
         default: false
+      nemotron-precision:
+        description: "Inference precision for the nemotron provider (float32, float16 or bfloat16). Empty keeps the plugin default (float32). Currently honored by the capacity test."
+        type: string
+        required: false
+        default: ""
 jobs:
   test:
     timeout-minutes: 120
@@ -154,6 +159,7 @@ jobs:
           npm run ${{ inputs.test-npm-script }}
         env:
           RUN_MODE: CI
+          NEMOTRON_PRECISION: ${{ inputs.nemotron-precision }}
           LOCAL_DEPLOYMENT_BASE_PATH: ../../openvidu-local-deployment
           PLAYWRIGHT_BROWSERS_PATH: /tmp/ms-playwright
           OPENVIDU_PRO_LICENSE: ${{ secrets.OPENVIDU_PRO_LICENSE }}

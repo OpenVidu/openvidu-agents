@@ -63,8 +63,8 @@ const LOCAL_STT_PROVIDERS: SttProviderConfig[] = [
       model: "sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06",
       use_silero_vad: false,
     },
-    maxIdleMemoryMB: process.env.STT_ACCEL ? 1500 : 300,
-    maxMemoryMB: process.env.STT_ACCEL ? 2500 : 600,
+    maxIdleMemoryMB: process.env.STT_ACCEL ? 700 : 300,
+    maxMemoryMB: process.env.STT_ACCEL ? 1500 : 600,
     maxTracks: 12,
     // GPU teardown is an absolute cap, not %-over-idle: CUDA host-side
     // allocations initialize at first DECODE (after the idle baseline)
@@ -73,8 +73,8 @@ const LOCAL_STT_PROVIDERS: SttProviderConfig[] = [
     maxMemoryAfterTeardownMB: process.env.STT_ACCEL ? 1800 : 400,
     // VRAM (GPU runs only): recognizer load measured ~150 MiB on a T4; the
     // rest is CUDA context + cuDNN/cuBLAS workspaces.
-    maxIdleVramMB: 1000,
-    maxVramMB: 2500,
+    maxIdleVramMB: 200,
+    maxVramMB: 700,
   },
   // Local provider with VAD model
   {
@@ -93,13 +93,13 @@ const LOCAL_STT_PROVIDERS: SttProviderConfig[] = [
       model: "sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06",
       use_silero_vad: true,
     },
-    maxIdleMemoryMB: process.env.STT_ACCEL ? 3000 : 300,
+    maxIdleMemoryMB: process.env.STT_ACCEL ? 600 : 300,
     maxMemoryMB: process.env.STT_ACCEL ? 3000 : 2000,
     maxTracks: 12,
     // GPU: absolute cap (see the VAD-disabled sherpa entry above)
     maxMemoryAfterTeardownMB: process.env.STT_ACCEL ? 1800 : 600,
     // VRAM (GPU runs only): see the VAD-disabled sherpa entry above.
-    maxIdleVramMB: 1000,
+    maxIdleVramMB: 200,
     maxVramMB: 2500,
   },
   {
@@ -937,12 +937,22 @@ function registerProviderMemoryTest(
       );
       const maxLoadFillAttemptsLimit = maxTracks * 3;
       let maxLoadFillAttempts = 0;
+      const fillDeadline = Date.now() + 10 * 60 * 1000;
       while (active.length < maxTracks) {
         if (++maxLoadFillAttempts > maxLoadFillAttemptsLimit) {
           throw new Error(
             `Could not reach ${maxTracks} simultaneous tracks for the max-load ` +
               `memory check (stuck at ${active.length} tracks after ` +
               `${maxLoadFillAttemptsLimit} attempts)`,
+          );
+        }
+        if (Date.now() > fillDeadline) {
+          throw new Error(
+            `Could not reach ${maxTracks} simultaneous tracks within 10 ` +
+              `minutes for the max-load memory check (stuck at ` +
+              `${active.length} tracks). New sessions connect and publish but ` +
+              `receive no transcriptions — check the docker logs dump for the ` +
+              `agent worker's load/job-dispatch state (e.g. load_threshold).`,
           );
         }
         // Join the first active room that still has space, or create a new one.

@@ -148,6 +148,7 @@ export class LocalDeployment {
     });
 
     doc.set("enabled", true);
+    doc.set("load_threshold", 1);
     doc.setIn(["live_captions", "provider"], providerName);
     if (processing) {
       doc.setIn(["live_captions", "processing"], processing);

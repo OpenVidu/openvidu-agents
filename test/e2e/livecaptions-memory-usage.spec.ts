@@ -1134,6 +1134,10 @@ function registerProviderMemoryTest(
 
 test.describe("Memory usage tests for local STT providers", () => {
   LOCAL_STT_PROVIDERS.forEach((provider) => {
+    // Exclude sherpa + VAD from GPU runs
+    if (process.env.STT_ACCEL && provider.sherpa?.use_silero_vad === true) {
+      return;
+    }
     registerProviderMemoryTest(provider);
   });
 });

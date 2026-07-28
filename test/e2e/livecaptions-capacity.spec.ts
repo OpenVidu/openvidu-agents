@@ -44,6 +44,45 @@ const RAMP_BUDGET_MS = 25 * 60 * 1000;
 const PUBLISHERS_PER_ROOM = 3;
 const PARTICIPANT_ACTION_TIMEOUT_MS = 10000;
 
+const AGENT_CONTAINER = "agent-speech-processing";
+
+// Whether nvidia-smi works on this host; probed once, cached.
+let vramAvailable: boolean | null = null;
+
+/**
+ * One-line snapshot of the agent container's resource usage, to identify
+ * WHICH resource saturates first as the ramp progresses. CPU% is docker's
+ * per-core convention (400% = 4 cores fully busy). VRAM is host-wide
+ * (nvidia-smi), only sampled on GPU runs.
+ */
+function sampleAgentLoad(): string {
+  const parts: string[] = [];
+  try {
+    const stats = execCommand(
+      `docker stats ${AGENT_CONTAINER} --no-stream --format "{{.CPUPerc}} {{.MemUsage}}"`,
+    )
+      .trim()
+      .split(/\s+/);
+    parts.push(`agent CPU: ${stats[0]}`, `RAM: ${stats.slice(1).join(" ")}`);
+  } catch (error: any) {
+    parts.push(`agent stats unavailable (${error.message})`);
+  }
+  if (process.env.STT_ACCEL && vramAvailable !== false) {
+    try {
+      const vram = execCommand(
+        "nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits",
+      )
+        .trim()
+        .split("\n")[0];
+      vramAvailable = true;
+      parts.push(`VRAM: ${vram} MiB`);
+    } catch {
+      vramAvailable = false;
+    }
+  }
+  return `[${parts.join(" | ")}]`;
+}
+
 test.beforeAll(async () => {
   const fs = require("fs");
   const path = require("path");
@@ -93,6 +132,8 @@ test.describe("Transcribed tracks capacity probe", () => {
     let stopReason = `hard cap of ${HARD_CAP_TRACKS} tracks reached`;
     const rampDeadline = Date.now() + RAMP_BUDGET_MS;
 
+    console.log(`Baseline (0 tracks) ${sampleAgentLoad()}`);
+
     while (tracks < HARD_CAP_TRACKS) {
       if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
         stopReason = `${MAX_CONSECUTIVE_FAILURES} consecutive tracks failed to be transcribed`;
@@ -111,12 +152,12 @@ test.describe("Transcribed tracks capacity probe", () => {
         tracks++;
         consecutiveFailures = 0;
         console.log(
-          `Capacity so far: ${tracks} simultaneous transcribed tracks`,
+          `Capacity so far: ${tracks} simultaneous transcribed tracks ${sampleAgentLoad()}`,
         );
       } catch (error: any) {
         consecutiveFailures++;
         console.warn(
-          `Track ${tracks + 1} failed (${consecutiveFailures}/${MAX_CONSECUTIVE_FAILURES} consecutive): ${error.message}`,
+          `Track ${tracks + 1} failed (${consecutiveFailures}/${MAX_CONSECUTIVE_FAILURES} consecutive) ${sampleAgentLoad()}: ${error.message}`,
         );
         // Destroy the half-created instance so it cannot linger publishing an
         // unverified track that would skew the measurement.
@@ -159,7 +200,7 @@ test.describe("Transcribed tracks capacity probe", () => {
     console.log(
       `CAPACITY RESULT: ${tracks} simultaneous transcribed tracks with ` +
         `${providerName} (stop reason: ${stopReason}; oldest track still ` +
-        `transcribing at full load: ${sustained})`,
+        `transcribing at full load: ${sustained}) ${sampleAgentLoad()}`,
     );
 
     expect(tracks).toBeGreaterThan(0);

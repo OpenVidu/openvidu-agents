@@ -63,7 +63,7 @@ const LOCAL_STT_PROVIDERS: SttProviderConfig[] = [
       model: "sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06",
       use_silero_vad: false,
     },
-    maxIdleMemoryMB: process.env.STT_ACCEL ? 700 : 300,
+    maxIdleMemoryMB: process.env.STT_ACCEL ? 1000 : 300,
     maxMemoryMB: process.env.STT_ACCEL ? 1500 : 600,
     maxTracks: 12,
     // GPU teardown is an absolute cap, not %-over-idle: CUDA host-side

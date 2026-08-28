@@ -1,6 +1,11 @@
 # Base requirements shared by all speech-processing variants
 openviduagentutils @ git+https://github.com/OpenVidu/openvidu-agents.git#egg=openviduagentutils&subdirectory=openviduagentutils
 livekit-agents[silero]==1.6.5
+
+# TODO: remove both when bumping livekit-agents to >= 1.6.10
+openai<3
+httpx<1
+
 # ######################################
 # TODO: use turn detection when required
 # ######################################

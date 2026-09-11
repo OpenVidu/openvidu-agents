@@ -39,6 +39,12 @@ RUN pip install --no-cache-dir --force-reinstall --no-deps \
 # Install livekit-plugins-vosk from local directory
 RUN pip install --no-cache-dir -r requirements-vosk.txt
 
+# TODO: apply the pending upstream fixes to the installed livekit-agents (see patches/apply.sh)
+# Remove these two lines below (with folder speech-processing/patches) whenever the livekit-agents
+# dependency in use includes https://github.com/livekit/agents/pull/7225
+COPY patches ./patches
+RUN ./patches/apply.sh && rm -rf ./patches
+
 # Copy only the pre-compiled libvosk binaries (NOT the language models)
 COPY vosk-models/libvosk-*.so ./vosk-libvosk/
 

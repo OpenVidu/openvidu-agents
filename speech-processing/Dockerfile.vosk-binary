@@ -110,6 +110,12 @@ COPY --from=vosk-builder /opt/vosk-api/src/libvosk-${TARGETARCH}.so /opt/venv/li
 # Install livekit-plugins-vosk from local directory
 RUN pip install --no-cache-dir -r requirements-vosk.txt
 
+# TODO: apply the pending upstream fixes to the installed livekit-agents (see patches/apply.sh)
+# Remove these two lines below (with folder speech-processing/patches) whenever the livekit-agents
+# dependency in use includes https://github.com/livekit/agents/pull/7225
+COPY patches ./patches
+RUN ./patches/apply.sh && rm -rf ./patches
+
 # =============================================================================
 # STAGE 3: Final - Clean image with no trace of secrets
 # =============================================================================

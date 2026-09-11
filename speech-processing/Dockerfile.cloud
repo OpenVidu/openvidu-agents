@@ -8,6 +8,12 @@ FROM ${BASE_IMAGE}
 COPY requirements-base.txt requirements-cloud.txt ./
 RUN pip install --no-cache-dir -r requirements-cloud.txt
 
+# TODO: apply the pending upstream fixes to the installed livekit-agents (see patches/apply.sh)
+# Remove these two lines below (with folder speech-processing/patches) whenever the livekit-agents
+# dependency in use includes https://github.com/livekit/agents/pull/7225
+COPY patches ./patches
+RUN ./patches/apply.sh && rm -rf ./patches
+
 # Pre-download any ML models or files the agent needs
 # This ensures the container is ready to run immediately without downloading
 # dependencies at runtime, which improves startup time and reliability

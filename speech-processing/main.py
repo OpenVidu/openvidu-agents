@@ -847,8 +847,19 @@ def _preload_nemotron_model(agent_config) -> None:
             f"Failed to preload nemotron model: {e}. Model will be loaded on first use."
         )
 
+def _exit_on_stop_signal_during_startup(signum: int, frame) -> None:
+    logging.info(
+        f"Received signal {signum} while starting up, before serving any job: exiting"
+    )
+    sys.exit(0)
+
 
 if __name__ == "__main__":
+    # Real stop handlers are only setup after the initialization process (config
+    # and local models loaded). This signal allows the agent to stop before
+    # completeing the initialization process.
+    for _stop_signal in (signal.SIGTERM, signal.SIGINT, signal.SIGQUIT):
+        signal.signal(_stop_signal, _exit_on_stop_signal_during_startup)
 
     # If calling "python main.py download-files" do not initialize the OpenViduAgent
     if len(sys.argv) > 1 and sys.argv[1] == "download-files":

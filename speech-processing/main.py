@@ -3,6 +3,7 @@ import contextlib
 import ctypes
 import ctypes.util
 import gc
+import inspect
 import logging
 import multiprocessing
 import os
@@ -513,6 +514,20 @@ async def session_end(ctx: JobContext) -> None:
         await _release_room_ffi_subscription(ctx.room)
 
 
+# The cleanups at the tail of rtc.Room._listen_task, which upstream only reaches
+# after an 'eos' break. _release_room_ffi_subscription replays them when it cancels
+# a listen task that will never see one, so this must stay in sync with that tail:
+# livekit 1.1.18 replaced the single async _drain_data_stream_tasks() of 1.1.13 with
+# the two sync _error_stream_readers() / _dispose_open_stream_writers(). A name that
+# disappears is skipped silently there, so test_rtc_private_api.py checks this tuple
+# against the installed livekit rtc instead.
+_ROOM_LISTEN_TASK_CLEANUPS = (
+    "_drain_rpc_invocation_tasks",
+    "_error_stream_readers",
+    "_dispose_open_stream_writers",
+)
+
+
 async def _release_room_ffi_subscription(room: rtc.Room) -> None:
     """Work around a livekit rtc leak, still present in 1.1.12: when a room is
     disconnected server-side (room deleted / connection lost), Room.disconnect()
@@ -545,15 +560,14 @@ async def _release_room_ffi_subscription(room: rtc.Room) -> None:
             with contextlib.suppress(Exception):
                 await asyncio.wait_for(asyncio.gather(task, return_exceptions=True), 5)
             # run the cleanups _listen_task's cancellation skipped (they only
-            # run after an 'eos' break upstream)
-            for drain_name in (
-                "_drain_rpc_invocation_tasks",
-                "_drain_data_stream_tasks",
-            ):
-                drain = getattr(room, drain_name, None)
-                if drain is not None:
+            # run after an 'eos' break upstream), whether sync or async
+            for cleanup_name in _ROOM_LISTEN_TASK_CLEANUPS:
+                cleanup = getattr(room, cleanup_name, None)
+                if cleanup is not None:
                     with contextlib.suppress(Exception):
-                        await drain()
+                        result = cleanup()
+                        if inspect.isawaitable(result):
+                            await result
         ffi_queue = getattr(room, "_ffi_queue", None)
         if ffi_queue is not None:
             queue = FfiClient.instance.queue

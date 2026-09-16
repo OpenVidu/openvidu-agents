@@ -626,9 +626,13 @@ class TestSTTImplementations(unittest.TestCase):
                 "speechmatics": {
                     "api_key": "test_speechmatics_key",
                     "language": "fr",
+                    "model": "linden-1",
                     "operating_point": "enhanced",
                     "output_locale": "fr-FR",
                     "enable_partials": False,
+                    "speaker_format": "{speaker_id}: {text}",
+                    # retired by the Speechmatics Agent STT service; kept here so the
+                    # assertions below prove they are no longer forwarded
                     "max_delay": 1.0,
                     "max_delay_mode": "fixed",
                     "punctuation_overrides": {"period": "full stop"},
@@ -661,9 +665,10 @@ class TestSTTImplementations(unittest.TestCase):
         call_args = mock_speechmatics_stt.call_args[1]
         self.assertEqual(call_args["api_key"], "test_speechmatics_key")
         self.assertEqual(call_args["language"], "fr")
+        self.assertEqual(call_args["model"], "linden-1")
         self.assertEqual(call_args["operating_point"], "enhanced")
         self.assertEqual(call_args["output_locale"], "fr-FR")
-        self.assertEqual(call_args["punctuation_overrides"], {"period": "full stop"})
+        self.assertEqual(call_args["speaker_format"], "{speaker_id}: {text}")
         self.assertEqual(
             call_args["additional_vocab"],
             [
@@ -673,11 +678,85 @@ class TestSTTImplementations(unittest.TestCase):
             ],
         )
         self.assertEqual(call_args["include_partials"], False)
-        self.assertEqual(call_args["max_delay"], 1.0)
         self.assertEqual(call_args["enable_diarization"], True)
         self.assertEqual(call_args["max_speakers"], 2)
         self.assertEqual(call_args["speaker_sensitivity"], 0.5)
         self.assertEqual(call_args["prefer_current_speaker"], True)
+        # Retired by Speechmatics: forwarding them only makes the plugin log that it
+        # ignores them, so they must not reach the constructor at all.
+        for retired in ("max_delay", "max_delay_mode", "punctuation_overrides"):
+            self.assertNotIn(retired, call_args)
+
+    @patch("livekit.plugins.speechmatics.STT")
+    def test_get_speechmatics_stt_impl_accepts_documented_diarization_key(
+        self, mock_speechmatics_stt
+    ):
+        """agent-speech-processing.yaml documents the singular prefer_current_speaker.
+
+        Only the plural was read until now, so a config written against the docs was
+        silently ignored.
+        """
+        for key in ("prefer_current_speaker", "prefer_current_speakers"):
+            with self.subTest(key=key):
+                mock_speechmatics_stt.reset_mock()
+                mock_speechmatics_stt.return_value = "speechmatics_stt_instance"
+                config = {
+                    "live_captions": {
+                        "speechmatics": {
+                            "api_key": "test_key",
+                            "speaker_diarization_config": {key: True},
+                        }
+                    }
+                }
+
+                get_speechmatics_stt_impl(config)
+
+                call_args = mock_speechmatics_stt.call_args[1]
+                self.assertEqual(call_args["prefer_current_speaker"], True)
+
+    @patch("stt_impl._get_cached_silero_vad")
+    @patch("livekit.plugins.speechmatics.STT")
+    def test_get_speechmatics_stt_impl_shares_the_cached_vad(
+        self, mock_speechmatics_stt, mock_get_vad
+    ):
+        """The plugin must be handed the process-wide VAD, not left to load its own.
+
+        Its default EXTERNAL turn detection closes turns from a VAD, and with none
+        passed it loads a private Silero copy per STT, i.e. per participant.
+        """
+        # Arrange
+        config = {"live_captions": {"speechmatics": {"api_key": "test_key"}}}
+        sentinel_vad = object()
+        mock_get_vad.return_value = sentinel_vad
+        mock_speechmatics_stt.return_value = "speechmatics_stt_instance"
+
+        # Act
+        get_speechmatics_stt_impl(config)
+
+        # Assert
+        mock_get_vad.assert_called_once_with(load_if_missing=True)
+        self.assertIs(mock_speechmatics_stt.call_args[1]["vad"], sentinel_vad)
+
+    @patch("livekit.plugins.speechmatics.STT")
+    def test_get_speechmatics_stt_impl_omits_unset_operating_point(
+        self, mock_speechmatics_stt
+    ):
+        """An unset operating_point must not reach the plugin.
+
+        livekit-plugins-speechmatics 1.8.2 turned `operating_point` into a deprecated
+        alias of `model` that logs two warnings and resolves to the default model, so
+        sending a default of our own would spam the log for a value nobody configured.
+        """
+        # Arrange
+        config = {"live_captions": {"speechmatics": {"api_key": "test_key"}}}
+        mock_speechmatics_stt.return_value = "speechmatics_stt_instance"
+
+        # Act
+        get_speechmatics_stt_impl(config)
+
+        # Assert
+        call_args = mock_speechmatics_stt.call_args[1]
+        self.assertNotIn("operating_point", call_args)
 
     def test_get_speechmatics_stt_impl_missing_api_key(self):
         # Arrange
@@ -1617,3 +1696,124 @@ class TestSTTImplementations(unittest.TestCase):
             self.assertEqual(result, "vosk_stt_instance")
             mock_impl.assert_called_once_with(config)
 
+
+class TestRetiredProviderKeys(unittest.TestCase):
+    """stt_impl.RETIRED_PROVIDER_KEYS: the generic 'this key does nothing' mechanism.
+
+    A provider's impl function stops reading a key its upstream service retired, so
+    nothing is forwarded; the registry is what still tells the operator why their
+    setting is being ignored, naming the live_captions.<provider>.<key> path rather
+    than the plugin's own parameter.
+    """
+
+    def _config(self, provider: str, block: dict) -> dict:
+        return {"live_captions": {"provider": provider, provider: block}}
+
+    def test_registry_only_names_known_providers(self):
+        for provider in stt_impl.RETIRED_PROVIDER_KEYS:
+            with self.subTest(provider=provider):
+                self.assertIn(
+                    provider,
+                    stt_impl.STT_PROVIDERS,
+                    f"RETIRED_PROVIDER_KEYS names '{provider}', which is not a "
+                    f"registered STT provider",
+                )
+
+    def test_every_entry_carries_a_reason(self):
+        for provider, retired in stt_impl.RETIRED_PROVIDER_KEYS.items():
+            for key, reason in retired.items():
+                with self.subTest(provider=provider, key=key):
+                    self.assertTrue(
+                        isinstance(reason, str) and reason.strip(),
+                        f"{provider}.{key} has no reason; the warning would read "
+                        f"'is no longer supported: .'",
+                    )
+
+    def test_retired_keys_are_not_plugin_parameters(self):
+        """A retired key that is a real constructor parameter again must be dropped.
+
+        Checks the installed plugin, so a release that brings a parameter back fails
+        here instead of leaving the agent warning about a key that works.
+        """
+        import importlib
+        import inspect
+
+        for provider, retired in stt_impl.RETIRED_PROVIDER_KEYS.items():
+            config = stt_impl.STT_PROVIDERS[provider]
+            try:
+                module = importlib.import_module(config.plugin_module)
+            except ModuleNotFoundError:
+                self.skipTest(f"{config.plugin_module} not installed in this image")
+            plugin_class = getattr(module, config.plugin_class)
+            parameters = set(inspect.signature(plugin_class.__init__).parameters)
+            for key in retired:
+                with self.subTest(provider=provider, key=key):
+                    self.assertNotIn(
+                        key,
+                        parameters,
+                        f"{config.plugin_module}.{config.plugin_class} accepts "
+                        f"'{key}' again: remove it from RETIRED_PROVIDER_KEYS and "
+                        f"start reading it in get_{provider}_stt_impl.",
+                    )
+
+    def test_warning_names_the_openvidu_key(self):
+        """The plugin names its own parameter; only this path locates it in the config."""
+        config = self._config(
+            "speechmatics",
+            {"api_key": "k", "max_delay": 1.0, "max_delay_mode": "fixed"},
+        )
+
+        with self.assertLogs(level="WARNING") as captured:
+            warned = stt_impl.warn_about_retired_keys(config, "speechmatics")
+
+        logged = "\n".join(captured.output)
+        self.assertCountEqual(warned, ["max_delay", "max_delay_mode"])
+        self.assertIn("live_captions.speechmatics.max_delay", logged)
+        self.assertIn("live_captions.speechmatics.max_delay_mode", logged)
+        # punctuation_overrides is registered but not configured here
+        self.assertNotIn("live_captions.speechmatics.punctuation_overrides", logged)
+
+    def test_silent_when_the_keys_are_not_configured(self):
+        config = self._config("speechmatics", {"api_key": "k"})
+
+        with self.assertNoLogs(level="WARNING"):
+            self.assertEqual(
+                stt_impl.warn_about_retired_keys(config, "speechmatics"), []
+            )
+
+    def test_provider_without_retired_keys_is_a_no_op(self):
+        config = self._config("deepgram", {"api_key": "k", "max_delay": 1.0})
+
+        with self.assertNoLogs(level="WARNING"):
+            self.assertEqual(stt_impl.warn_about_retired_keys(config, "deepgram"), [])
+
+    def test_missing_or_malformed_provider_block_never_raises(self):
+        for block in ({}, None, "not-a-mapping"):
+            with self.subTest(block=block):
+                config = {"live_captions": {"provider": "speechmatics"}}
+                if block is not None:
+                    config["live_captions"]["speechmatics"] = block
+                self.assertEqual(
+                    stt_impl.warn_about_retired_keys(config, "speechmatics"), []
+                )
+
+    @patch("stt_impl.plugin_is_available", return_value=True)
+    def test_get_stt_impl_warns_for_any_provider(self, _mock_available):
+        """The warning is wired into the one dispatcher, so no provider can forget it."""
+        config = self._config("speechmatics", {"api_key": "k", "max_delay": 1.0})
+
+        with patch.dict(
+            stt_impl.STT_PROVIDERS,
+            {
+                "speechmatics": stt_impl.STT_PROVIDERS["speechmatics"]._replace(
+                    impl_function=MagicMock(return_value="stt_instance")
+                )
+            },
+        ):
+            with self.assertLogs(level="WARNING") as captured:
+                result = stt_impl.get_stt_impl(config)
+
+        self.assertEqual(result, "stt_instance")
+        self.assertIn(
+            "live_captions.speechmatics.max_delay", "\n".join(captured.output)
+        )

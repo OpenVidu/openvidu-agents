@@ -172,6 +172,16 @@ def stt_provider_requires_vad(agent_config) -> bool:
         )
         return True
 
+    # Scenario 1a-bis: speechmatics streams, but its default EXTERNAL turn detection
+    # closes turns from a VAD rather than from the service. get_speechmatics_stt_impl
+    # hands it the shared model, so preload it here instead of letting the first
+    # participant pay the load (or the plugin fall back to a per-STT copy).
+    if stt_provider == "speechmatics":
+        logging.info(
+            "Provider 'speechmatics' uses EXTERNAL turn detection - shared VAD required"
+        )
+        return True
+
     # Scenario 1b: vosk/sherpa support streaming natively, but may opt into a
     # VAD wrapper via use_silero_vad.
     if stt_provider in ("vosk", "sherpa"):
@@ -369,6 +379,46 @@ class STTProviderConfig(NamedTuple):
     impl_function: Callable[[dict], stt.STT]
     plugin_module: str
     plugin_class: str
+
+
+# Config keys a provider has retired: its upstream service or plugin stopped honouring them.
+# Entries are checked against the installed plugins by test_stt_impl.py::TestRetiredProviderKeys
+RETIRED_PROVIDER_KEYS: dict[str, dict[str, str]] = {
+    "speechmatics": {
+        "max_delay": "the Speechmatics Agent STT service no longer accepts it",
+        "max_delay_mode": "the Speechmatics Agent STT service no longer accepts it",
+        "punctuation_overrides": "the Speechmatics Agent STT service no longer accepts it",
+    },
+}
+
+
+def warn_about_retired_keys(agent_config, stt_provider: str) -> list[str]:
+    """Warn for each retired key the configuration still sets.
+
+    Returns the keys warned about, for tests and callers that want to report them;
+    the warning itself is the point.
+    """
+    retired = RETIRED_PROVIDER_KEYS.get(stt_provider)
+    if not retired:
+        return []
+
+    try:
+        config_manager = ConfigManager(agent_config, f"live_captions.{stt_provider}")
+    except Exception:  # noqa: BLE001 - a warning must never break startup
+        return []
+
+    warned: list[str] = []
+    for key, reason in retired.items():
+        # configured_value() returns the sentinel for anything it cannot read, so a
+        # missing or malformed provider block simply yields no warnings
+        if config_manager.configured_value(key) is NOT_PROVIDED:
+            continue
+        warned.append(key)
+        logging.warning(
+            f"live_captions.{stt_provider}.{key} is no longer supported: {reason}. "
+            f"It is ignored; remove it from the agent configuration."
+        )
+    return warned
 
 
 # Central registry of all supported STT providers
@@ -872,8 +922,6 @@ def get_clova_stt_impl(agent_config) -> stt.STT:
 
 def get_speechmatics_stt_impl(agent_config) -> stt.STT:
     speechmatics = _require_plugin("speechmatics")
-    from livekit.plugins.speechmatics.stt import OperatingPoint
-
     config_manager = ConfigManager(agent_config, "live_captions.speechmatics")
     wrong_credentials = (
         "Wrong Speechmatics credentials. live_captions.speechmatics.api_key must be set"
@@ -881,16 +929,11 @@ def get_speechmatics_stt_impl(agent_config) -> stt.STT:
 
     api_key = config_manager.mandatory_value("api_key", wrong_credentials)
     language = config_manager.optional_string_value("language", "en")
-    operating_point_str = config_manager.optional_string_value(
-        "operating_point", "enhanced"
-    )
-    operating_point = OperatingPoint(operating_point_str)
+    model = config_manager.configured_string_value("model")
+    operating_point = config_manager.configured_string_value("operating_point")
     include_partials = config_manager.configured_boolean_value("enable_partials")
     output_locale = config_manager.configured_string_value("output_locale")
-    max_delay = config_manager.configured_numeric_value("max_delay")
-    punctuation_overrides = config_manager.configured_dict_value(
-        "punctuation_overrides"
-    )
+    speaker_format = config_manager.configured_string_value("speaker_format")
     additional_vocab = config_manager.configured_list_value("additional_vocab")
     speaker_diarization_config = config_manager.configured_dict_value(
         "speaker_diarization_config"
@@ -900,11 +943,11 @@ def get_speechmatics_stt_impl(agent_config) -> stt.STT:
         k: v
         for k, v in {
             "language": language,
+            "model": model,
             "operating_point": operating_point,
             "output_locale": output_locale,
             "include_partials": include_partials,
-            "max_delay": max_delay,
-            "punctuation_overrides": punctuation_overrides,
+            "speaker_format": speaker_format,
             "additional_vocab": additional_vocab,
         }.items()
         if v is not NOT_PROVIDED
@@ -919,10 +962,22 @@ def get_speechmatics_stt_impl(agent_config) -> stt.STT:
             kwargs["speaker_sensitivity"] = speaker_diarization_config[
                 "speaker_sensitivity"
             ]
-        if "prefer_current_speakers" in speaker_diarization_config:
-            kwargs["prefer_current_speaker"] = speaker_diarization_config[
-                "prefer_current_speakers"
-            ]
+        # The documented key is the singular "prefer_current_speaker" (the plugin's own
+        # parameter name); the plural was read here since df932ae, so a config written
+        # against the docs was silently ignored. Both are accepted, singular wins.
+        for diarization_key in ("prefer_current_speaker", "prefer_current_speakers"):
+            if diarization_key in speaker_diarization_config:
+                kwargs["prefer_current_speaker"] = speaker_diarization_config[
+                    diarization_key
+                ]
+                break
+
+    # The plugin's default EXTERNAL turn detection needs a VAD to close turns, and with
+    # none passed it loads its own Silero copy per STT -- i.e. per participant. Hand it
+    # the process-wide cached model instead (~10 MB saved per extra participant).
+    vad_model = _get_cached_silero_vad(load_if_missing=True)
+    if vad_model is not None:
+        kwargs["vad"] = vad_model
 
     return speechmatics.STT(api_key=api_key, **kwargs)
 
@@ -1548,6 +1603,8 @@ def get_stt_impl(agent_config) -> stt.STT:
         )
 
     logging.info(f"Using {stt_provider} as STT provider")
+
+    warn_about_retired_keys(agent_config, stt_provider)
 
     return provider_config.impl_function(agent_config)
 

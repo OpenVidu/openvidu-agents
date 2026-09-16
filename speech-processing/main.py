@@ -58,6 +58,7 @@ from stt_impl import (
     get_stt_impl,
     set_cached_silero_vad,
     stt_provider_requires_vad,
+    warn_about_retired_keys,
 )
 from vad_stt_wrapper import VADTriggeredSTT
 from openviduagentutils.openvidu_agent import OpenViduAgent
@@ -925,6 +926,10 @@ if __name__ == "__main__":
     # own copy of the ASR model on the job critical path — testing escape hatch only.
     provider_requires_vad = stt_provider_requires_vad(agent_config)
     stt_provider = agent_config.get("live_captions", {}).get("provider")
+
+    # Report retired config keys in the agent configuration file not longer
+    # supported by the provider plugin
+    warn_about_retired_keys(agent_config, stt_provider)
 
     _executor_override = os.getenv("JOB_EXECUTOR_TYPE", "").strip().lower()
     if _executor_override in ("thread", "process"):

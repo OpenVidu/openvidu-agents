@@ -6,7 +6,7 @@ the SDK leaves behind on a server-side room close (see its docstring). Every one
 those reads is defensive -- `getattr(..., None)`, `contextlib.suppress(Exception)` --
 so when a bump renames one of them the workaround does not fail, it silently stops
 working. That already happened once: rtc 1.1.13 -> 1.1.18 (pulled in by livekit-agents
-1.6.5 -> 1.8.1) replaced the async `_drain_data_stream_tasks()` with the two sync
+1.6.5 -> 1.8.2) replaced the async `_drain_data_stream_tasks()` with the two sync
 `_error_stream_readers()` / `_dispose_open_stream_writers()`, and the old name simply
 resolved to None from then on.
 

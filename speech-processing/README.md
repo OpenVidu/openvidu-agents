@@ -135,7 +135,7 @@ live_captions:
 Add the plugin to `requirements.txt`:
 
 ```txt
-livekit-agents[silero,turn_detector,...,newprovider]==1.8.1
+livekit-agents[silero,turn_detector,...,newprovider]==1.8.2
 ```
 
 Or install separately:

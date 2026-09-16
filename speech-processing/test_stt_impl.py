@@ -1,3 +1,8 @@
+import ast
+import importlib
+import inspect
+import pathlib
+import re
 import unittest
 from unittest.mock import patch, MagicMock
 import os
@@ -1757,7 +1762,7 @@ class TestRetiredProviderKeys(unittest.TestCase):
                     )
 
     def test_warning_names_the_openvidu_key(self):
-        """The plugin names its own parameter; only this path locates it in the config."""
+        """The plugin names its own parameter; only this path finds it in the config."""
         config = self._config(
             "speechmatics",
             {"api_key": "k", "max_delay": 1.0, "max_delay_mode": "fixed"},
@@ -1799,7 +1804,7 @@ class TestRetiredProviderKeys(unittest.TestCase):
 
     @patch("stt_impl.plugin_is_available", return_value=True)
     def test_get_stt_impl_warns_for_any_provider(self, _mock_available):
-        """The warning is wired into the one dispatcher, so no provider can forget it."""
+        """Wired into the one dispatcher, so no provider can forget it."""
         config = self._config("speechmatics", {"api_key": "k", "max_delay": 1.0})
 
         with patch.dict(
@@ -1817,3 +1822,291 @@ class TestRetiredProviderKeys(unittest.TestCase):
         self.assertIn(
             "live_captions.speechmatics.max_delay", "\n".join(captured.output)
         )
+
+
+class TestForwardedKwargsMatchInstalledPlugins(unittest.TestCase):
+    """Every kwarg an impl function forwards must still be a parameter of its plugin.
+
+    This is the generic form of what caught speechmatics: livekit-plugins-speechmatics
+    1.8.2 dropped max_delay and punctuation_overrides, its STT absorbed them through
+    **kwargs, and the agent went on sending values the service ignored. The other
+    mocked tests cannot see that -- they assert against a MagicMock, which accepts
+    anything -- so this one reads the real signature instead, for every provider at
+    once, and fails on the next plugin release that retires a parameter.
+
+    A key that legitimately disappears belongs in RETIRED_PROVIDER_KEYS, with the read
+    removed from the impl function; then this test goes quiet again.
+    """
+
+    # impl functions that build their instance through a classmethod
+    ALTERNATE_CONSTRUCTORS = {"azure_openai": ("with_azure",)}
+    # impl functions whose kwargs feed a nested options object, not the constructor
+    NESTED_OPTIONS = {"soniox": "STTOptions"}
+
+    @staticmethod
+    def _forwarded_kwargs(func: ast.FunctionDef) -> set[str]:
+        """Keys of the `kwargs` dict the impl builds, plus any `kwargs[...] = ...`.
+
+        Only those: they are unambiguously destined for the plugin. Keywords written
+        directly at the call site are left out so the wrapper constructions some
+        providers do (VADTriggeredSTT, StreamAdapter) are not mistaken for them.
+        """
+        names: set[str] = set()
+        for node in ast.walk(func):
+            if not isinstance(node, ast.Assign):
+                continue
+            if any(isinstance(t, ast.Name) and t.id == "kwargs" for t in node.targets):
+                for inner in ast.walk(node.value):
+                    if isinstance(inner, ast.Dict):
+                        names |= {
+                            k.value
+                            for k in inner.keys
+                            if isinstance(k, ast.Constant) and isinstance(k.value, str)
+                        }
+            for target in node.targets:
+                if (
+                    isinstance(target, ast.Subscript)
+                    and isinstance(target.value, ast.Name)
+                    and target.value.id == "kwargs"
+                    and isinstance(target.slice, ast.Constant)
+                    and isinstance(target.slice.value, str)
+                ):
+                    names.add(target.slice.value)
+        return names
+
+    def _accepted_parameters(self, provider: str, config) -> set[str]:
+        module = importlib.import_module(config.plugin_module)
+        plugin_class = getattr(module, config.plugin_class)
+
+        accepted = set(inspect.signature(plugin_class.__init__).parameters)
+        for alternate in self.ALTERNATE_CONSTRUCTORS.get(provider, ()):
+            accepted |= set(
+                inspect.signature(getattr(plugin_class, alternate)).parameters
+            )
+        nested = self.NESTED_OPTIONS.get(provider)
+        if nested and (options := getattr(module, nested, None)) is not None:
+            accepted |= set(inspect.signature(options).parameters)
+        return accepted
+
+    def test_no_impl_forwards_an_unknown_kwarg(self):
+        source = pathlib.Path(__file__).with_name("stt_impl.py").read_text()
+        functions = {
+            node.name: node
+            for node in ast.walk(ast.parse(source))
+            if isinstance(node, ast.FunctionDef)
+        }
+
+        checked = 0
+        for provider, config in sorted(stt_impl.STT_PROVIDERS.items()):
+            func = functions.get(f"get_{provider}_stt_impl")
+            if func is None:
+                continue
+            with self.subTest(provider=provider):
+                try:
+                    accepted = self._accepted_parameters(provider, config)
+                except ModuleNotFoundError:
+                    self.skipTest(f"{config.plugin_module} not installed in this image")
+                unknown = sorted(self._forwarded_kwargs(func) - accepted)
+                self.assertEqual(
+                    unknown,
+                    [],
+                    f"get_{provider}_stt_impl forwards {unknown} to "
+                    f"{config.plugin_module}.{config.plugin_class}, which no longer "
+                    f"declares them. If the plugin retired them, stop reading them "
+                    f"and add them to RETIRED_PROVIDER_KEYS; if they were renamed, "
+                    f"forward the new name.",
+                )
+                checked += 1
+
+        self.assertGreater(checked, 0, "no provider was checked")
+
+
+class TestDeprecatedPluginParameters(unittest.TestCase):
+    """Catch a parameter the plugin starts calling deprecated while still declaring it.
+
+    TestForwardedKwargsMatchInstalledPlugins only sees a parameter that *disappears*.
+    The step before that -- still declared, but documented as deprecated and mapped to a
+    new name -- is invisible to a signature check, and it is where the next break comes
+    from: every key speechmatics retired in 1.8.2 spent a release in this state first.
+
+    A new hit here is a decision, not a failure: migrate the config key to the new name,
+    or record it below with the reason it is still fine.
+    """
+
+    # (provider, parameter) -> why forwarding it is still correct today.
+    KNOWN_DEPRECATIONS = {
+        ("assemblyai", "min_end_of_turn_silence_when_confident"):
+            "deprecated alias, still mapped onto min_turn_silence by the plugin",
+        ("deepgram", "keyterms"):
+            "deprecated alias, still mapped onto keyterm by the plugin",
+        ("elevenlabs", "model_id"):
+            "deprecated alias, still mapped onto model by the plugin",
+        ("speechmatics", "operating_point"):
+            "deprecated alias of model, kept so existing configs keep working",
+        ("speechmatics", "model"):
+            "not deprecated: named in the operating_point deprecation notice as its "
+            "replacement",
+    }
+
+    MARKER = re.compile(
+        r"deprecat|no longer|is ignored|has no effect|will be removed", re.I
+    )
+    ALTERNATE_CONSTRUCTORS = (
+        TestForwardedKwargsMatchInstalledPlugins.ALTERNATE_CONSTRUCTORS
+    )
+
+    def test_no_new_deprecation_among_forwarded_kwargs(self):
+        source = pathlib.Path(__file__).with_name("stt_impl.py").read_text()
+        functions = {
+            node.name: node
+            for node in ast.walk(ast.parse(source))
+            if isinstance(node, ast.FunctionDef)
+        }
+
+        for provider, config in sorted(stt_impl.STT_PROVIDERS.items()):
+            func = functions.get(f"get_{provider}_stt_impl")
+            if func is None:
+                continue
+            with self.subTest(provider=provider):
+                try:
+                    module = importlib.import_module(config.plugin_module)
+                except ModuleNotFoundError:
+                    self.skipTest(f"{config.plugin_module} not installed in this image")
+                plugin_class = getattr(module, config.plugin_class)
+
+                # Only the constructor(s): a deprecation notice elsewhere in the package
+                # (another method's docstring, the realtime model) is not about us.
+                sources = [inspect.getsource(plugin_class.__init__)]
+                for alternate in self.ALTERNATE_CONSTRUCTORS.get(provider, ()):
+                    sources.append(inspect.getsource(getattr(plugin_class, alternate)))
+                flagged = [
+                    line.strip()
+                    for text in sources
+                    for line in text.splitlines()
+                    if self.MARKER.search(line)
+                ]
+
+                forwarded = TestForwardedKwargsMatchInstalledPlugins._forwarded_kwargs(
+                    func
+                )
+                for name in sorted(forwarded):
+                    hits = [
+                        line for line in flagged
+                        if re.search(rf"\b{re.escape(name)}\b", line)
+                    ]
+                    if not hits:
+                        continue
+                    self.assertIn(
+                        (provider, name),
+                        self.KNOWN_DEPRECATIONS,
+                        f"{config.plugin_module}.{config.plugin_class} now flags "
+                        f"'{name}' as deprecated:\n    {hits[0]}\n"
+                        f"Migrate live_captions.{provider}.{name} to the replacement, "
+                        f"or add ('{provider}', '{name}') to KNOWN_DEPRECATIONS with "
+                        f"the reason it is still correct.",
+                    )
+
+
+class TestConfigDocumentationMatchesCode(unittest.TestCase):
+    """agent-speech-processing.yaml is the operator-facing contract; keep it honest.
+
+    When a plugin retires a key, the impl stops reading it -- and without this test the
+    YAML would go on documenting a setting that does nothing, which is exactly what an
+    operator needs told. The reverse direction catches a key that works but was never
+    written down.
+    """
+
+    # keys read on purpose without documenting them
+    UNDOCUMENTED_ON_PURPOSE = {
+        ("speechmatics", "operating_point"):
+            "deprecated alias of model: still accepted so existing configs keep "
+            "working, deliberately not advertised to new ones",
+    }
+
+    @classmethod
+    def setUpClass(cls):
+        import yaml
+
+        base = pathlib.Path(__file__).parent
+        cls.yaml_text = (base / "agent-speech-processing.yaml").read_text()
+        cls.live_captions = yaml.safe_load(cls.yaml_text)["live_captions"]
+        cls.functions = {
+            node.name: node
+            for node in ast.walk(ast.parse((base / "stt_impl.py").read_text()))
+            if isinstance(node, ast.FunctionDef)
+        }
+
+    def _impl(self, provider):
+        return self.functions.get(f"get_{provider}_stt_impl")
+
+    def test_every_documented_key_is_read(self):
+        """A documented key nobody reads silently does nothing."""
+        for provider, block in sorted(self.live_captions.items()):
+            if not isinstance(block, dict):
+                continue
+            func = self._impl(provider)
+            if func is None:
+                continue
+            referenced = {
+                node.value
+                for node in ast.walk(func)
+                if isinstance(node, ast.Constant) and isinstance(node.value, str)
+            }
+
+            def unread(prefix, node):
+                for key, value in node.items():
+                    if key not in referenced:
+                        yield f"{prefix}{key}"
+                    if isinstance(value, dict):
+                        yield from unread(f"{prefix}{key}.", value)
+
+            with self.subTest(provider=provider):
+                stale = sorted(unread("", block))
+                self.assertEqual(
+                    stale,
+                    [],
+                    f"agent-speech-processing.yaml documents "
+                    f"live_captions.{provider}.{{{', '.join(stale)}}}, which "
+                    f"get_{provider}_stt_impl never reads. If the plugin retired the "
+                    f"key, say so in the YAML and register it in "
+                    f"RETIRED_PROVIDER_KEYS; otherwise start reading it.",
+                )
+
+    def test_every_read_key_is_documented(self):
+        """A key that works but is written down nowhere is invisible to operators."""
+        for provider in sorted(stt_impl.STT_PROVIDERS):
+            func = self._impl(provider)
+            if func is None:
+                continue
+            read = {
+                node.args[0].value
+                for node in ast.walk(func)
+                if isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr.endswith("_value")
+                and node.args
+                and isinstance(node.args[0], ast.Constant)
+                and isinstance(node.args[0].value, str)
+            }
+            block = re.search(
+                rf"^  {re.escape(provider)}:\n(.*?)(?=^  [a-z_]+:\n|\Z)",
+                self.yaml_text,
+                re.S | re.M,
+            )
+            documented_text = block.group(1) if block else ""
+
+            with self.subTest(provider=provider):
+                # commented-out examples count as documented, hence the raw text search
+                missing = sorted(
+                    key
+                    for key in read
+                    if not re.search(rf"\b{re.escape(key)}\b", documented_text)
+                    and (provider, key) not in self.UNDOCUMENTED_ON_PURPOSE
+                )
+                self.assertEqual(
+                    missing,
+                    [],
+                    f"get_{provider}_stt_impl reads {missing}, which "
+                    f"agent-speech-processing.yaml never mentions. Document them, or "
+                    f"record them in UNDOCUMENTED_ON_PURPOSE with the reason.",
+                )

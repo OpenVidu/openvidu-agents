@@ -307,6 +307,8 @@ live_captions:
   soniox:
     # API key for Soniox. See https://console.soniox.com/
     api_key:
+    # The Soniox STT model to use. Defaults to "stt-rt-v5". See https://soniox.com/docs/stt/models
+    model:
     # Set language hints when possible to significantly improve accuracy. See: https://soniox.com/docs/stt/concepts/language-hints
     language_hints:
       # - "en"

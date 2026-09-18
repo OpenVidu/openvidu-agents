@@ -23,6 +23,15 @@ const roomServiceClient = new RoomServiceClient(
   LIVEKIT_API_SECRET,
 );
 
+const NON_PROVIDER_KEYS = [
+  "maxIdleMemoryMB",
+  "maxMemoryMB",
+  "maxTracks",
+  "maxMemoryAfterTeardownMB",
+  "maxIdleVramMB",
+  "maxVramMB",
+] as const;
+
 interface SttProviderConfig {
   [providerName: string]: any;
   // Maximum MB of the idle container after starting
@@ -87,7 +96,13 @@ const LOCAL_STT_PROVIDERS: SttProviderConfig[] = [
     maxTracks: 8,
     maxMemoryAfterTeardownMB: 650,
   },
-  // Local provider with VAD model
+  // Local provider with VAD model.
+  //
+  // NOTE: this entry is skipped entirely on GPU runs (see the STT_ACCEL guard
+  // where LOCAL_STT_PROVIDERS is registered), so every `STT_ACCEL ? a : b`
+  // below always evaluates to `b` and the VRAM caps are never enforced. The
+  // GPU values are kept as the starting point for whenever that exclusion is
+  // lifted, not because they are in use today.
   {
     sherpa: {
       model: "sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06",
@@ -180,6 +195,30 @@ interface MemoryStats {
   usedBytes: number;
   limitBytes: number;
   percentUsed: number;
+}
+
+/**
+ * The STT provider name of a config entry: its one key that is not a tuning
+ * knob (see NON_PROVIDER_KEYS).
+ *
+ * Deliberately strict. The previous implementation took the first key that was
+ * neither "maxMemoryMB" nor "maxTracks", which only ever returned the right
+ * answer because every entry happens to declare the provider first: moving a
+ * cap above it made the whole suite run against a provider named
+ * "maxIdleMemoryMB", and adding a new cap key reintroduces that silently.
+ */
+function resolveProviderName(provider: SttProviderConfig): string {
+  const candidates = Object.keys(provider).filter(
+    (key) => !(NON_PROVIDER_KEYS as readonly string[]).includes(key),
+  );
+  if (candidates.length !== 1) {
+    throw new Error(
+      `Cannot determine the STT provider of a config entry: expected exactly ` +
+        `one key outside NON_PROVIDER_KEYS, found [${candidates.join(", ")}]. ` +
+        `If you added a new tuning knob, list it in NON_PROVIDER_KEYS.`,
+    );
+  }
+  return candidates[0];
 }
 
 /**
@@ -418,6 +457,12 @@ async function waitForStableMemory(
   const deadline = Date.now() + maxWaitMs;
   let stableCount = 0;
   let previousMemory = 0;
+  // Memory at the start of the current stable streak. Comparing against it
+  // (rather than only against the previous sample) is what stops a steady
+  // climb from passing: each individual step can sit under the per-sample
+  // threshold while the total keeps rising. At 4% per sample the old check
+  // declared "stable" after three samples, ~12% above where it started.
+  let streakStartMemory = 0;
 
   while (Date.now() < deadline) {
     const stats = getContainerMemoryStats(containerName);
@@ -426,11 +471,19 @@ async function waitForStableMemory(
     if (previousMemory > 0) {
       const changePercent =
         (Math.abs(currentMemory - previousMemory) / previousMemory) * 100;
+      const streakDriftPercent =
+        streakStartMemory > 0
+          ? (Math.abs(currentMemory - streakStartMemory) / streakStartMemory) *
+            100
+          : 0;
 
-      if (changePercent < MEMORY_STABILITY_THRESHOLD_PERCENT) {
+      if (
+        changePercent < MEMORY_STABILITY_THRESHOLD_PERCENT &&
+        streakDriftPercent < MEMORY_STABILITY_THRESHOLD_PERCENT
+      ) {
         stableCount++;
         console.log(
-          `Memory stable check ${stableCount}/${MEMORY_STABILITY_CHECKS}: ${formatBytes(currentMemory)} (change: ${changePercent.toFixed(2)}%)`,
+          `Memory stable check ${stableCount}/${MEMORY_STABILITY_CHECKS}: ${formatBytes(currentMemory)} (change: ${changePercent.toFixed(2)}%, drift over streak: ${streakDriftPercent.toFixed(2)}%)`,
         );
 
         if (stableCount >= MEMORY_STABILITY_CHECKS) {
@@ -439,20 +492,31 @@ async function waitForStableMemory(
         }
       } else {
         stableCount = 0;
+        streakStartMemory = currentMemory;
         console.log(
-          `Memory not stable: ${formatBytes(currentMemory)} (change: ${changePercent.toFixed(2)}%)`,
+          `Memory not stable: ${formatBytes(currentMemory)} (change: ${changePercent.toFixed(2)}%, drift over streak: ${streakDriftPercent.toFixed(2)}%)`,
         );
       }
+    } else {
+      streakStartMemory = currentMemory;
     }
 
     previousMemory = currentMemory;
     await sleep(MEMORY_STABILITY_CHECK_INTERVAL_MS / 1000);
   }
 
-  // Return current memory even if not fully stable
+  // Return current memory even if not fully stable. Deliberately not fatal: a
+  // slow runner that never quite settles should still run the soak. But the
+  // value becomes the baseline that anchors the percentage teardown caps, so
+  // an inflated one silently weakens the leak check -- say so loudly enough to
+  // be found when a result looks surprising.
   const finalStats = getContainerMemoryStats(containerName);
   console.warn(
-    `Memory did not fully stabilize within ${maxWaitMs}ms. Using current value: ${formatBytes(finalStats.usedBytes)}`,
+    `WARNING: memory did not stabilize within ${maxWaitMs}ms. Using current ` +
+      `value ${formatBytes(finalStats.usedBytes)} as the idle baseline. ` +
+      `Percentage-based maxMemoryAfterTeardownMB caps are derived from this ` +
+      `number, so if it is inflated the teardown leak check is correspondingly ` +
+      `more permissive.`,
   );
   return finalStats.usedBytes;
 }
@@ -713,9 +777,7 @@ function registerProviderMemoryTest(
   provider: SttProviderConfig,
   soakDurationMs: number = SOAK_DURATION_MS,
 ) {
-  const providerName = Object.keys(provider).find(
-    (key) => key !== "maxMemoryMB" && key !== "maxTracks",
-  ) as string;
+  const providerName = resolveProviderName(provider);
 
   const providerConfig = provider[providerName];
   const useVad = providerConfig?.use_silero_vad;
@@ -1019,10 +1081,29 @@ function registerProviderMemoryTest(
         );
       }
 
-      // Step 4: Tear everything down from the server side via the LiveKit server API
+      // Step 4: Tear everything down. Destroy the browser instances FIRST, then
+      // sweep the server side.
+      //
+      // Order matters: removeParticipant() only evicts the server-side
+      // participant, leaving the testapp instance alive in the page. Anything
+      // that instance does afterwards (a reconnect, a lingering publisher)
+      // recreates a room *during* the Step 5 leak check, where it looks like
+      // memory that never settles. Closing the clients first means the server
+      // sweep below only has to mop up what the UI failed to release.
       console.log(
-        "Step 4: Removing all participants via the LiveKit server API...",
+        `Step 4: Destroying ${active.length} testapp instance(s), then sweeping the server side...`,
       );
+      for (const participant of [...active]) {
+        try {
+          await removeInstance(page, participant.uid);
+        } catch (error: any) {
+          // Not fatal: the server-side sweep below is the backstop.
+          console.error(
+            `Error removing instance ${participant.uid} from room "${participant.roomName}": ${error.message}`,
+          );
+        }
+      }
+
       const rooms = await roomServiceClient.listRooms();
       for (const room of rooms) {
         const participants = await roomServiceClient.listParticipants(

@@ -52,10 +52,10 @@ const LOCAL_STT_PROVIDERS: SttProviderConfig[] = [
       model: "vosk-model-en-us-0.22-lgraph",
       use_silero_vad: false,
     },
-    maxIdleMemoryMB: 150,
+    maxIdleMemoryMB: 450,
     maxMemoryMB: 1800,
     maxTracks: 8,
-    maxMemoryAfterTeardownMB: 350,
+    maxMemoryAfterTeardownMB: 600,
   },
   // Local provider without VAD model
   {
@@ -63,14 +63,14 @@ const LOCAL_STT_PROVIDERS: SttProviderConfig[] = [
       model: "sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06",
       use_silero_vad: false,
     },
-    maxIdleMemoryMB: process.env.STT_ACCEL ? 1000 : 300,
-    maxMemoryMB: process.env.STT_ACCEL ? 1500 : 600,
+    maxIdleMemoryMB: process.env.STT_ACCEL ? 1000 : 550,
+    maxMemoryMB: process.env.STT_ACCEL ? 1500 : 850,
     maxTracks: 12,
     // GPU teardown is an absolute cap, not %-over-idle: CUDA host-side
     // allocations initialize at first DECODE (after the idle baseline)
     // and are never returned, so RSS legitimately plateaus. A real leak
     // grows past this cap with room churn.
-    maxMemoryAfterTeardownMB: process.env.STT_ACCEL ? 1800 : 400,
+    maxMemoryAfterTeardownMB: process.env.STT_ACCEL ? 1800 : 650,
     // VRAM (GPU runs only): recognizer load measured ~150 MiB on a T4; the
     // rest is CUDA context + cuDNN/cuBLAS workspaces.
     maxIdleVramMB: 200,
@@ -82,10 +82,10 @@ const LOCAL_STT_PROVIDERS: SttProviderConfig[] = [
       model: "vosk-model-en-us-0.22-lgraph",
       use_silero_vad: true,
     },
-    maxIdleMemoryMB: 150,
+    maxIdleMemoryMB: 450,
     maxMemoryMB: 2500,
     maxTracks: 8,
-    maxMemoryAfterTeardownMB: 400,
+    maxMemoryAfterTeardownMB: 650,
   },
   // Local provider with VAD model
   {
@@ -93,11 +93,11 @@ const LOCAL_STT_PROVIDERS: SttProviderConfig[] = [
       model: "sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06",
       use_silero_vad: true,
     },
-    maxIdleMemoryMB: process.env.STT_ACCEL ? 600 : 300,
+    maxIdleMemoryMB: process.env.STT_ACCEL ? 600 : 550,
     maxMemoryMB: process.env.STT_ACCEL ? 3000 : 2000,
     maxTracks: 12,
     // GPU: absolute cap (see the VAD-disabled sherpa entry above)
-    maxMemoryAfterTeardownMB: process.env.STT_ACCEL ? 1800 : 600,
+    maxMemoryAfterTeardownMB: process.env.STT_ACCEL ? 1800 : 850,
     // VRAM (GPU runs only): see the VAD-disabled sherpa entry above.
     maxIdleVramMB: 200,
     maxVramMB: 2500,

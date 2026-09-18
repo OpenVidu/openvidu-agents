@@ -88,6 +88,136 @@ def _resolve_malloc_trim():
 
 _malloc_trim = _resolve_malloc_trim()
 
+
+# Panic messages that describe a single room's handshake giving up, not a broken
+# FFI runtime. livekit.rtc's ffi_event_callback answers *every* panic by sending
+# SIGTERM to the whole process ("We are in a unrecoverable state"), which under
+# JobExecutorType.THREAD takes the agent container down with all its other jobs.
+_RECOVERABLE_FFI_PANIC_MARKERS = ("timed out waiting for ReadyForRoomEventRequest",)
+
+# Incremented once per recoverable panic seen, so the SIGTERM it raises is
+# swallowed exactly once rather than masking a real shutdown request.
+_pending_recoverable_ffi_panics = 0
+# Partial stderr line, since `print` writes the panic message in several chunks.
+_ffi_panic_line_buffer = ""
+_ffi_panic_lock = None  # threading.Lock, created in _install_ffi_panic_guard()
+
+
+def _install_ffi_panic_guard() -> None:
+    """Stop a single room's FFI panic from killing the whole agent process.
+
+    Wraps `livekit.rtc._ffi_client.os.kill` (the exact call the panic branch of
+    ffi_event_callback makes) so that a SIGTERM raised for a known-recoverable
+    panic is dropped, while any other panic keeps upstream's fail-fast behaviour.
+
+    The panic branch runs inside a ctypes callback on an FFI thread, so it cannot
+    be wrapped at the function level; patching the module's `os` lookup is the
+    narrowest interception point that does not fork the vendored SDK. Both the
+    message print and the kill happen there, so the panic is still logged.
+    """
+    import threading
+
+    global _ffi_panic_lock
+    _ffi_panic_lock = threading.Lock()
+
+    try:
+        from livekit.rtc import _ffi_client
+    except Exception as e:  # noqa: BLE001 - never block startup on this guard
+        logging.warning(
+            f"Could not install the FFI panic guard ({e}). A single room's FFI "
+            f"panic will terminate the whole agent process."
+        )
+        return
+
+    real_kill = _ffi_client.os.kill
+    our_pid = os.getpid()
+
+    # The branch runs exactly two statements:
+    #     print("FFI Panic: ", event.panic.message, file=sys.stderr, flush=True)
+    #     os.kill(os.getpid(), signal.SIGTERM)
+    # Both resolve their module through _ffi_client's globals, so replacing that
+    # module's `sys` lets us read the message, and its `os` lets us drop the kill
+    # that follows. Nothing global is mutated: the real sys.stderr still receives
+    # the text, and only this one module sees the proxies.
+    class _PanicReadingSys:
+        """Proxies _ffi_client's `sys`, classifying the panic message."""
+
+        @property
+        def stderr(self):
+            return _PanicClassifyingStream(sys.stderr)
+
+        def __getattr__(self, name):
+            return getattr(sys, name)
+
+    class _PanicClassifyingStream:
+        """Classifies the panic line, which `print` delivers in several writes.
+
+        `print("FFI Panic: ", message, file=..., flush=True)` calls write() once
+        per argument and separator, so no single chunk holds both the "FFI Panic"
+        prefix and the message. Buffer until the newline and match on the whole
+        line instead.
+        """
+
+        def __init__(self, wrapped):
+            self._wrapped = wrapped
+
+        def write(self, text):
+            global _pending_recoverable_ffi_panics, _ffi_panic_line_buffer
+            with _ffi_panic_lock:
+                _ffi_panic_line_buffer += text
+                while "\n" in _ffi_panic_line_buffer:
+                    line, _, _ffi_panic_line_buffer = _ffi_panic_line_buffer.partition(
+                        "\n"
+                    )
+                    if "FFI Panic" in line and any(
+                        marker in line for marker in _RECOVERABLE_FFI_PANIC_MARKERS
+                    ):
+                        _pending_recoverable_ffi_panics += 1
+                # Cap the buffer: the panic branch always ends its line, but a
+                # stray unterminated write must not grow this without bound.
+                if len(_ffi_panic_line_buffer) > 8192:
+                    _ffi_panic_line_buffer = _ffi_panic_line_buffer[-1024:]
+            return self._wrapped.write(text)
+
+        def __getattr__(self, name):
+            return getattr(self._wrapped, name)
+
+    class _GuardedOs:
+        """Proxies _ffi_client's `os`, intercepting only the panic kill."""
+
+        def kill(self, pid, sig):  # noqa: D102
+            if pid == our_pid and sig == signal.SIGTERM:
+                global _pending_recoverable_ffi_panics, _ffi_panic_line_buffer
+                with _ffi_panic_lock:
+                    # The panic branch prints with flush=True before killing, but
+                    # do not depend on the trailing newline having arrived: an
+                    # unterminated buffer holding the marker counts too.
+                    if any(
+                        marker in _ffi_panic_line_buffer
+                        for marker in _RECOVERABLE_FFI_PANIC_MARKERS
+                    ):
+                        _pending_recoverable_ffi_panics += 1
+                        _ffi_panic_line_buffer = ""
+                    recoverable = _pending_recoverable_ffi_panics > 0
+                    if recoverable:
+                        _pending_recoverable_ffi_panics -= 1
+                if recoverable:
+                    logging.error(
+                        "Ignoring the SIGTERM raised by a recoverable FFI panic: "
+                        "the affected room is gone, the rest of the agent keeps "
+                        "running. See _RECOVERABLE_FFI_PANIC_MARKERS in main.py."
+                    )
+                    return None
+            return real_kill(pid, sig)
+
+        def __getattr__(self, name):
+            return getattr(os, name)
+
+    _ffi_client.sys = _PanicReadingSys()
+    _ffi_client.os = _GuardedOs()
+    logging.debug("FFI panic guard installed")
+
+
 # The job's MultiUserTranscriber is attached to the JobContext itself
 # (ctx._transcriber) rather than a module-level dict keyed by room name: with
 # JobExecutorType.THREAD, a room can be deleted and re-created with the same
@@ -699,6 +829,13 @@ def prewarm(proc: JobProcess):
         # local handler would duplicate every log line.
         logging.getLogger().removeHandler(_early_log_handler)
 
+    if in_job_subprocess:
+        # Each job subprocess has its own livekit.rtc import and so its own copy
+        # of the panic branch; the guard installed in __main__ does not reach it.
+        # A subprocess hosts a single room, so the panic would only kill that one
+        # job, but recovering lets the warm process be reused instead of replaced.
+        _install_ffi_panic_guard()
+
     # Reuse the preloaded Silero VAD model from the main process, if it was preloaded.
     # VAD is only preloaded when the STT provider requires it (non-streaming or use_silero_vad=true)
     from stt_impl import _get_cached_silero_vad
@@ -1058,5 +1195,8 @@ if __name__ == "__main__":
     signal.signal(
         signal.SIGQUIT, lambda signum, frame: os.kill(int(os.getpid()), signal.SIGTERM)
     )
+
+    # Keep one room's FFI panic of a THREAD job from terminating the whole agent.
+    _install_ffi_panic_guard()
 
     cli.run_app(server)

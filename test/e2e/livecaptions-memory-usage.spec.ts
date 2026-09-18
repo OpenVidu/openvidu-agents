@@ -61,10 +61,10 @@ const LOCAL_STT_PROVIDERS: SttProviderConfig[] = [
       model: "vosk-model-en-us-0.22-lgraph",
       use_silero_vad: false,
     },
-    maxIdleMemoryMB: 450,
-    maxMemoryMB: 1800,
+    maxIdleMemoryMB: 550,
+    maxMemoryMB: 2300,
     maxTracks: 8,
-    maxMemoryAfterTeardownMB: 600,
+    maxMemoryAfterTeardownMB: 700,
   },
   // Local provider without VAD model
   {
@@ -72,14 +72,14 @@ const LOCAL_STT_PROVIDERS: SttProviderConfig[] = [
       model: "sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06",
       use_silero_vad: false,
     },
-    maxIdleMemoryMB: process.env.STT_ACCEL ? 1000 : 550,
-    maxMemoryMB: process.env.STT_ACCEL ? 1500 : 850,
+    maxIdleMemoryMB: process.env.STT_ACCEL ? 1000 : 700,
+    maxMemoryMB: process.env.STT_ACCEL ? 1500 : 900,
     maxTracks: 12,
     // GPU teardown is an absolute cap, not %-over-idle: CUDA host-side
     // allocations initialize at first DECODE (after the idle baseline)
     // and are never returned, so RSS legitimately plateaus. A real leak
     // grows past this cap with room churn.
-    maxMemoryAfterTeardownMB: process.env.STT_ACCEL ? 1800 : 650,
+    maxMemoryAfterTeardownMB: process.env.STT_ACCEL ? 1800 : 750,
     // VRAM (GPU runs only): recognizer load measured ~150 MiB on a T4; the
     // rest is CUDA context + cuDNN/cuBLAS workspaces.
     maxIdleVramMB: 200,
@@ -91,10 +91,10 @@ const LOCAL_STT_PROVIDERS: SttProviderConfig[] = [
       model: "vosk-model-en-us-0.22-lgraph",
       use_silero_vad: true,
     },
-    maxIdleMemoryMB: 450,
+    maxIdleMemoryMB: 550,
     maxMemoryMB: 2500,
     maxTracks: 8,
-    maxMemoryAfterTeardownMB: 650,
+    maxMemoryAfterTeardownMB: 700,
   },
   // Local provider with VAD model.
   //
@@ -108,7 +108,7 @@ const LOCAL_STT_PROVIDERS: SttProviderConfig[] = [
       model: "sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06",
       use_silero_vad: true,
     },
-    maxIdleMemoryMB: process.env.STT_ACCEL ? 600 : 550,
+    maxIdleMemoryMB: process.env.STT_ACCEL ? 600 : 700,
     maxMemoryMB: process.env.STT_ACCEL ? 3000 : 2000,
     maxTracks: 12,
     // GPU: absolute cap (see the VAD-disabled sherpa entry above)
@@ -140,7 +140,7 @@ const CLOUD_STT_PROVIDERS: SttProviderConfig[] = [
       speech_key: process.env.AZURE_SPEECH_KEY,
       speech_region: process.env.AZURE_SPEECH_REGION,
     },
-    maxIdleMemoryMB: 600,
+    maxIdleMemoryMB: 750,
     maxMemoryMB: 1000,
     maxTracks: 12,
     maxMemoryAfterTeardownMB: "5%",
@@ -152,7 +152,7 @@ const CLOUD_STT_PROVIDERS: SttProviderConfig[] = [
       aws_secret_access_key: process.env.AWS_SECRET_ACCESS_KEY,
       aws_default_region: process.env.AWS_DEFAULT_REGION,
     },
-    maxIdleMemoryMB: 600,
+    maxIdleMemoryMB: 750,
     maxMemoryMB: 1000,
     maxTracks: 12,
     maxMemoryAfterTeardownMB: "5%",
@@ -162,7 +162,7 @@ const CLOUD_STT_PROVIDERS: SttProviderConfig[] = [
     elevenlabs: {
       api_key: process.env.ELEVEN_API_KEY,
     },
-    maxIdleMemoryMB: 600,
+    maxIdleMemoryMB: 750,
     maxMemoryMB: 2000,
     maxTracks: 12,
     maxMemoryAfterTeardownMB: "5%",

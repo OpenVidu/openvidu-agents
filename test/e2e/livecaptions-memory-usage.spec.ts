@@ -133,18 +133,20 @@ const LOCAL_STT_PROVIDERS: SttProviderConfig[] = [
     maxVramMB: 9000,
   },
   // Nemotron 3.5 through the sherpa provider (int8 on CPU, float32 on GPU; see
-  // utils/models.ts). Caps are initial estimates from the model sizes (657 MB
-  // int8 / 2.4 GB float32 weights): tighten them from the first measured runs.
+  // utils/models.ts). GPU: idle RSS measured 3.85 GiB on a T4 (ONNX Runtime
+  // keeps the 2.4 GB of float32 weights in host memory next to the GPU copy;
+  // the NeMo plugin idled at 2.75 GiB), VRAM +3423 MiB at load. CPU (int8):
+  // estimates from the 657 MB weights, to tighten from the first measured run.
   {
     sherpa: {
       model: SHERPA_NEMOTRON_MODEL,
       language: "en",
       use_silero_vad: false,
     },
-    maxIdleMemoryMB: 3000,
-    maxMemoryMB: 4000,
+    maxIdleMemoryMB: process.env.STT_ACCEL ? 4500 : 3000,
+    maxMemoryMB: process.env.STT_ACCEL ? 6000 : 4000,
     maxTracks: 12,
-    maxMemoryAfterTeardownMB: process.env.STT_ACCEL ? 3500 : "20%",
+    maxMemoryAfterTeardownMB: process.env.STT_ACCEL ? 5000 : "20%",
     // VRAM (GPU runs only): 2.4 GB of float32 weights + CUDA context.
     maxIdleVramMB: 4500,
     maxVramMB: 7000,

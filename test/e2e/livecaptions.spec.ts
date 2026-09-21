@@ -276,7 +276,10 @@ describeProviderTests(
       await page.click(".connect-btn");
       // Wall-clock latency from connect to the first interim and first final
       // caption: chunk size and endpointing differ between local models, so the
-      // lanes are compared on this too (grep "LATENCY RESULT").
+      // lanes are compared on this too (grep "LATENCY RESULT"). The fixture is
+      // looped by the fake capture device and has long silences, so where it
+      // stands when the agent starts listening adds seconds of noise: compare
+      // across several runs, never a single value.
       const connectedAt = Date.now();
       const interimEvents = await waitForEvent(
         page,
@@ -426,11 +429,25 @@ function checkLevenshteinDistance(
   // Compare only first sentence of the transcription.
   transcribedText = transcribedText.split(".")[0];
   let expectedText = AUDIO_TRANSCRIPTIONS[0];
-  const wer = wordErrorRate(expectedText, transcribedText);
-  const ldFull = getLevenshteinDistance(expectedText, transcribedText);
+  // Both metrics use equal-length prefixes, like the assertion below: a final
+  // that runs past the reference sentence (a provider that emits no period)
+  // is not an error, and one that stops early is caught by the coverage guard.
+  const referenceWords = normalizeTranscript(expectedText)
+    .split(" ")
+    .filter(Boolean);
+  const transcribedWords = normalizeTranscript(transcribedText)
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, referenceWords.length);
+  const wer = wordErrorRate(expectedText, transcribedWords.join(" "));
+  const prefixLen = Math.min(transcribedText.length, expectedText.length);
+  const ldPrefix = getLevenshteinDistance(
+    expectedText.slice(0, prefixLen),
+    transcribedText.slice(0, prefixLen),
+  );
   const accuracyLine =
     `ACCURACY RESULT provider=${providerName} model=${model} ` +
-    `ld=${ldFull} wer=${wer.toFixed(3)} transcribed="${transcribedText}"`;
+    `ld=${ldPrefix} wer=${wer.toFixed(3)} transcribed="${transcribedText}"`;
   console.log(accuracyLine);
   try {
     test

@@ -945,6 +945,19 @@ def _preload_sherpa_model(agent_config) -> None:
             # Force model loading by ensuring the recognizer is created
             # The _ensure_recognizer() method loads the model into _RecognizerCache
             asyncio.run(sherpa_stt._ensure_recognizer())
+            # Absorb the one-time first-inference costs (CUDA context and cuDNN
+            # algorithm search on GPU images, thread pools and arenas on CPU) with
+            # a short silent utterance, so the first participant's audio is not
+            # decoded in a burst behind that stall (seen as a 13 s first caption on
+            # a T4). Non-fatal: the first utterance simply pays the cost instead.
+            if hasattr(sherpa_stt, "warmup"):
+                try:
+                    asyncio.run(sherpa_stt.warmup())
+                except Exception as warmup_error:
+                    logging.warning(
+                        f"sherpa warm-up failed (non-fatal, first utterance will "
+                        f"pay the one-time initialization cost): {warmup_error}"
+                    )
             logging.info(
                 "sherpa model preloaded successfully. Will be shared across all agent threads"
             )

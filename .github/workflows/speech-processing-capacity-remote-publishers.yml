@@ -310,6 +310,34 @@ jobs:
           done
           echo "Timed out waiting for the agent host"; exit 1
 
+      # Fail fast and name the fix when the runner security group drops the
+      # traffic: the SDK would otherwise report "validate request timed out".
+      - name: Check connectivity to the agent host
+        env:
+          AGENT_HOST_IP: ${{ needs.start-agent-runner.outputs.private-ip }}
+        run: |
+          ok=""
+          for i in $(seq 1 6); do
+            code=$(curl -s -m 10 -o /dev/null -w '%{http_code}' "http://$AGENT_HOST_IP:7880/" || true)
+            if [ -n "$code" ] && [ "$code" != "000" ]; then
+              echo "http://$AGENT_HOST_IP:7880/ answered HTTP $code"
+              ok=1
+              break
+            fi
+            echo "http://$AGENT_HOST_IP:7880/ not reachable (attempt $i/6)"
+            sleep 5
+          done
+          if [ -z "$ok" ]; then
+            echo "::error::The publishers runner cannot reach the agent host on 7880/tcp. The runner security group must allow inbound 7880/tcp, 7881/tcp and 7900-7999/udp from itself (test/capacity/README.md)."
+            exit 1
+          fi
+          if timeout 10 bash -c "</dev/tcp/$AGENT_HOST_IP/7881"; then
+            echo "$AGENT_HOST_IP:7881/tcp (ICE over TCP) is open"
+          else
+            echo "::error::The publishers runner cannot reach the agent host on 7881/tcp (ICE over TCP). Add it to the runner security group together with 7900-7999/udp."
+            exit 1
+          fi
+          echo "UDP 7900-7999 cannot be probed without a listener; if it is blocked, the publishers silently fall back to ICE over TCP 7881."
       - name: Run the headless capacity probe
         working-directory: ./openvidu-agents/test
         env:

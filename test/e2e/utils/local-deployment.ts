@@ -81,13 +81,16 @@ export class LocalDeployment {
       );
     } while (statusCode !== "exited:0");
 
-    // Wait for the worker to register
+    // Wait for the worker to register. Local models load before registration:
+    // the float32 Nemotron export on the GPU image took 10 s to 190 s on a
+    // g4dn.xlarge depending on the EBS page cache (2.4 GB read + 15 s warm-up),
+    // and a test that starts before the agent exists misses the fixture's speech.
     await this.waitForAgentWorkerRegistered();
 
     console.log("Local deployment started");
   }
 
-  private static async waitForAgentWorkerRegistered(timeoutMs = 180000) {
+  private static async waitForAgentWorkerRegistered(timeoutMs = 360000) {
     const container = "agent-speech-processing";
     const start = Date.now();
     console.log(`Waiting for '${container}' worker to register...`);

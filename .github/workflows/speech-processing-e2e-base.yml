@@ -52,20 +52,10 @@ on:
         required: false
         default: "ubuntu-latest"
       gpu:
-        description: "Run the GPU-accelerated provider suite: build/use the -cuda12 sherpa and nemotron images and enable GPU passthrough (docker_options.gpus=all) to the agent container. Requires a GPU runner."
+        description: "Run the GPU-accelerated provider suite: build/use the -cuda12 sherpa image and enable GPU passthrough (docker_options.gpus=all) to the agent container. Requires a GPU runner."
         type: boolean
         required: false
         default: false
-      nemotron-precision:
-        description: "Inference precision for the nemotron provider (float32, float16 or bfloat16). Empty keeps the plugin default (float32). Currently honored by the capacity test."
-        type: string
-        required: false
-        default: ""
-      capacity-provider:
-        description: "Lane measured by the capacity test: 'nemotron' (NeMo plugin) or 'sherpa' (Nemotron 3.5 through the sherpa provider)"
-        type: string
-        required: false
-        default: "nemotron"
 jobs:
   test:
     timeout-minutes: 120
@@ -100,11 +90,6 @@ jobs:
         # graphs cannot run on the CUDA provider).
         run: ./download-models.sh --accel ${{ inputs.gpu && 'cuda12' || 'cpu' }}
 
-      - name: Download Nemotron STT model
-        if: ${{ inputs.gpu && inputs.docker-tag-agent-speech-processing == '' }}
-        working-directory: ./openvidu-agents/speech-processing
-        run: ./download-nemotron-model.sh
-
       - name: Checkout OpenVidu/openvidu
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -123,13 +108,12 @@ jobs:
           export GITHUB_TOKEN=${{ secrets.OPENVIDU_GITHUB_TOKEN }}
           ./build-sherpa.sh --no-cache --local-only
 
-      - name: Build agent containers [-sherpa-cuda12, -nemotron-cuda12]
+      - name: Build agent containers [-sherpa-cuda12]
         if: ${{ inputs.gpu && inputs.docker-tag-agent-speech-processing == '' }}
         run: |
           cd openvidu-agents-pro/speech-processing
           export GITHUB_TOKEN=${{ secrets.OPENVIDU_GITHUB_TOKEN }}
           ./build-sherpa.sh --no-cache --local-only --accel cuda12 --platform linux/amd64
-          ./build-nemotron.sh --no-cache --local-only --accel cuda12
 
       - name: Install openvidu-testapp dependencies
         working-directory: ./openvidu/openvidu-testapp
@@ -167,8 +151,6 @@ jobs:
           npm run ${{ inputs.test-npm-script }}
         env:
           RUN_MODE: CI
-          NEMOTRON_PRECISION: ${{ inputs.nemotron-precision }}
-          CAPACITY_PROVIDER: ${{ inputs.capacity-provider }}
           LOCAL_DEPLOYMENT_BASE_PATH: ../../openvidu-local-deployment
           PLAYWRIGHT_BROWSERS_PATH: /tmp/ms-playwright
           OPENVIDU_PRO_LICENSE: ${{ secrets.OPENVIDU_PRO_LICENSE }}

@@ -132,9 +132,8 @@ const STT_AI_PROVIDERS = [
       use_silero_vad: true,
     },
   },
-  // Nemotron 3.5 through the sherpa provider (see utils/models.ts), the lane
-  // meant to replace the `nemotron` provider below. Forced English first, then
-  // the model's automatic language detection.
+  // Nemotron 3.5 through the sherpa provider (see utils/models.ts): forced
+  // English first, then the model's automatic language detection.
   {
     sherpa: {
       model: SHERPA_NEMOTRON_MODEL,
@@ -148,12 +147,6 @@ const STT_AI_PROVIDERS = [
       model: SHERPA_NEMOTRON_MODEL,
       language: "auto",
       use_silero_vad: false,
-      max_concurrent_transcriptions: process.env.STT_ACCEL ? 4 : 1,
-    },
-  },
-  {
-    nemotron: {
-      model: "nemotron-3.5-asr-streaming-0.6b",
       max_concurrent_transcriptions: process.env.STT_ACCEL ? 4 : 1,
     },
   },
@@ -418,8 +411,8 @@ describeProviderTests(
  * accuracy of the provider entry as one machine-readable line
  * (`ACCURACY RESULT provider=... model=... ld=... wer=...`), also attached to
  * the test as an annotation so it reaches the CTRF report. Lanes that
- * transcribe the same audio in the same run (e.g. `nemotron` vs `sherpa` with
- * the Nemotron model) are compared on these lines.
+ * transcribe the same audio in the same run (e.g. the zipformer and Nemotron
+ * models of the `sherpa` provider) are compared on these lines.
  */
 function checkLevenshteinDistance(
   providerName: string,

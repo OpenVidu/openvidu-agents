@@ -1,5 +1,5 @@
 # GPU variant of "speech-processing-e2e.yml". Runs ONLY the GPU-compatible local
-# provider tests (sherpa + nemotron) on an AWS NVIDIA GPU EC2 runner.
+# provider tests (sherpa) on an AWS NVIDIA GPU EC2 runner.
 name: Speech Processing agent E2E tests (GPU)
 on:
   workflow_dispatch:

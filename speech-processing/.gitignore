@@ -7,8 +7,5 @@ sherpa-onnx-streaming-models/*
 !sherpa-onnx-streaming-models/README.md
 # Per-acceleration model staging directory created (and removed) by build-sherpa.sh
 sherpa-onnx-streaming-models-build/
-nemotron-models/*
-!nemotron-models/README.md
 /livekit-plugins-vosk/
 /livekit-plugins-sherpa/
-/livekit-plugins-nemotron/

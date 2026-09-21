@@ -12,9 +12,8 @@ import { SHERPA_NEMOTRON_MODEL } from "./utils/models";
 
 /**
  * Capacity probe: how many SIMULTANEOUS transcribed audio tracks can this
- * server sustain with the given STT provider? CAPACITY_PROVIDER selects the
- * lane: "nemotron" (NeMo plugin) or "sherpa" (the same Nemotron 3.5 model
- * through the sherpa provider).
+ * server sustain with the given STT provider (the sherpa provider serving the
+ * Nemotron 3.5 model, see utils/models.ts)?
  *
  * The test ramps up one publisher-only audio participant at a time (packed
  * into rooms of PUBLISHERS_PER_ROOM). A track only counts if its OWN final
@@ -30,31 +29,13 @@ import { SHERPA_NEMOTRON_MODEL } from "./utils/models";
  * to the log (grep for "CAPACITY RESULT").
  */
 
-const PROVIDERS: Record<string, Record<string, any>> = {
-  nemotron: {
-    nemotron: {
-      model: "nemotron-3.5-asr-streaming-0.6b",
-      // Optional inference precision override (float32 | float16 | bfloat16).
-      // Unset/empty values are filtered out by LocalDeployment.configureProvider,
-      // leaving the plugin's default (float32).
-      precision: process.env.NEMOTRON_PRECISION,
-    },
-  },
+const PROVIDER: Record<string, any> = {
   sherpa: {
-    sherpa: {
-      model: SHERPA_NEMOTRON_MODEL,
-      language: "en",
-      use_silero_vad: false,
-    },
+    model: SHERPA_NEMOTRON_MODEL,
+    language: "en",
+    use_silero_vad: false,
   },
 };
-const CAPACITY_PROVIDER = (process.env.CAPACITY_PROVIDER || "nemotron").trim();
-const PROVIDER = PROVIDERS[CAPACITY_PROVIDER];
-if (!PROVIDER) {
-  throw new Error(
-    `Unknown CAPACITY_PROVIDER "${CAPACITY_PROVIDER}" (expected one of: ${Object.keys(PROVIDERS).join(", ")})`,
-  );
-}
 
 // Safety ceiling so a surprisingly capable box cannot run the ramp forever.
 const HARD_CAP_TRACKS = 40;

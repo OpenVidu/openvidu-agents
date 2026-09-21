@@ -1,5 +1,5 @@
 # GPU variant of "speech-processing-memory-leak-e2e.yml". Runs ONLY the GPU-compatible
-# local provider memory-leak tests (sherpa + nemotron) on an AWS NVIDIA GPU EC2 runner
+# local provider memory-leak tests (sherpa) on an AWS NVIDIA GPU EC2 runner
 name: Speech Processing agent memory leak E2E tests (GPU)
 on:
   workflow_dispatch:

@@ -33,6 +33,10 @@ mode only allows a maximum of 8 participants across all rooms` in the server
 log). The agent image is the same on both editions and receives the Pro license
 through the operator.
 
+The `sherpa-model` input measures any other model of the image (for example the
+smaller English zipformer `sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06`)
+with the same ramp; the label of the result line carries the model.
+
 For the CPU vs GPU comparison, dispatch it twice with the same vCPU count and RAM:
 
 | Input | GPU host | CPU host |

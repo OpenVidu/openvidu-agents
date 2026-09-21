@@ -20,6 +20,7 @@
  *   STT_ACCEL               cuda12 to use the -cuda12 image with GPU passthrough (empty = CPU image)
  *   CAPACITY_PROVIDER_JSON  provider entry as in the e2e specs, default: the sherpa provider with
  *                           the Nemotron 3.5 model of e2e/utils/models.ts, forced English
+ *   CAPACITY_SHERPA_MODEL   sherpa model directory for the default provider (any model of the image)
  *   LOCAL_DEPLOYMENT_BASE_PATH  where openvidu-local-deployment is checked out (LocalDeployment default)
  *   OPENVIDU_PRO_LICENSE    forwarded to the operator by LocalDeployment (Pro plugins need it)
  *   HOLD_UNTIL_JOB, HOLD_MAX_MINUTES (default 75), HOLD_SAMPLE_SECONDS (default 15)
@@ -54,13 +55,15 @@ function providerConfig(): Record<string, any> {
   if (process.env.CAPACITY_PROVIDER_JSON) {
     return JSON.parse(process.env.CAPACITY_PROVIDER_JSON);
   }
-  return {
-    sherpa: {
-      model: SHERPA_NEMOTRON_MODEL,
-      language: "en",
-      use_silero_vad: false,
-    },
-  };
+  // CAPACITY_SHERPA_MODEL selects any model directory of the image; the
+  // Nemotron export of the accel is the default. Only the multilingual NeMo
+  // transducer takes a language prompt; zipformer models ignore the option.
+  const model = process.env.CAPACITY_SHERPA_MODEL || SHERPA_NEMOTRON_MODEL;
+  const sherpa: Record<string, any> = { model, use_silero_vad: false };
+  if (model.includes("nemotron")) {
+    sherpa.language = "en";
+  }
+  return { sherpa };
 }
 
 /** LAN_PRIVATE_IP as written by configure_lan_private_ip_linux.sh during LocalDeployment.start. */

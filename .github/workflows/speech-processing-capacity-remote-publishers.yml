@@ -74,6 +74,11 @@ on:
         options:
           - community
           - pro
+      sherpa-model:
+        description: "Sherpa model directory to measure; must be in the image. Empty: the Nemotron 3.5 export for the accel (int8 on cpu, float32 on cuda12). Smaller English model: sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06"
+        type: string
+        default: ""
+        required: false
       hard-cap:
         description: "Maximum number of tracks the ramp tries"
         type: string
@@ -216,6 +221,7 @@ jobs:
     env:
       STT_ACCEL: ${{ inputs.accel == 'cuda12' && 'cuda12' || '' }}
       DEPLOYMENT_EDITION: ${{ inputs.deployment-edition }}
+      CAPACITY_SHERPA_MODEL: ${{ inputs.sherpa-model }}
     steps:
       - name: Setup Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -385,7 +391,7 @@ jobs:
           LIVEKIT_API_KEY: devkey
           LIVEKIT_API_SECRET: secret
           CAPACITY_HARD_CAP: ${{ inputs.hard-cap }}
-          CAPACITY_LABEL: "${{ inputs.agent-instance-type }} ${{ inputs.accel }} ${{ inputs.deployment-edition }}"
+          CAPACITY_LABEL: "${{ inputs.agent-instance-type }} ${{ inputs.accel }} ${{ inputs.deployment-edition }} ${{ inputs.sherpa-model || 'nemotron-3.5' }}"
         run: npm run capacity:headless
 
   stop-agent-runner:

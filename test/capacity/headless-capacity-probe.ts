@@ -25,6 +25,8 @@
  *   CAPACITY_PUBLISHERS_PER_ROOM         default 3
  *   CAPACITY_VERIFY_TIMEOUT_MS           default 60000
  *   CAPACITY_MAX_CONSECUTIVE_FAILURES    default 2
+ *   CAPACITY_JOIN_ATTEMPTS               default 3: joins refused by the server are retried
+ *   CAPACITY_JOIN_RETRY_DELAY_MS         default 5000, pause between join attempts
  *   CAPACITY_RAMP_BUDGET_MS              default 40 min
  *   CAPACITY_LABEL                       free text echoed in the result line (e.g. "g4dn.xlarge cuda12")
  *
@@ -63,6 +65,10 @@ const TRACK_VERIFY_TIMEOUT_MS = Number(
 );
 const MAX_CONSECUTIVE_FAILURES = Number(
   process.env.CAPACITY_MAX_CONSECUTIVE_FAILURES || 2,
+);
+const JOIN_ATTEMPTS = Number(process.env.CAPACITY_JOIN_ATTEMPTS || 3);
+const JOIN_RETRY_DELAY_MS = Number(
+  process.env.CAPACITY_JOIN_RETRY_DELAY_MS || 5000,
 );
 const RAMP_BUDGET_MS = Number(
   process.env.CAPACITY_RAMP_BUDGET_MS || 40 * 60 * 1000,
@@ -320,6 +326,7 @@ async function main(): Promise<void> {
   const load = new PublisherHostLoad();
   let tracks = 0;
   let consecutiveFailures = 0;
+  let joinRetries = 0;
   let stopReason = `hard cap of ${HARD_CAP_TRACKS} tracks reached`;
   const rampDeadline = Date.now() + RAMP_BUDGET_MS;
 
@@ -334,9 +341,30 @@ async function main(): Promise<void> {
     }
     const index = publishers.length + 1;
     const roomName = `capacity-${RUN_ID}-room-${Math.floor(tracks / PUBLISHERS_PER_ROOM)}`;
-    const publisher = new Publisher(`capacity-pub-${index}`, roomName, audio);
+    let publisher = new Publisher(`capacity-pub-${index}`, roomName, audio);
     try {
-      await publisher.connect();
+      // A join the server refuses (HTTP 500 while it judges its node
+      // unavailable for a new room, for instance) is retried after a pause:
+      // a transient signaling error must not end the ramp, but every retry
+      // is logged and counted in the result.
+      for (let attempt = 1; ; attempt++) {
+        try {
+          await publisher.connect();
+          break;
+        } catch (error: any) {
+          await publisher.close();
+          if (attempt >= JOIN_ATTEMPTS) {
+            throw error;
+          }
+          joinRetries += 1;
+          log(
+            `Track ${tracks + 1}: join attempt ${attempt}/${JOIN_ATTEMPTS} failed ` +
+              `(${error.message}); retrying in ${JOIN_RETRY_DELAY_MS / 1000}s`,
+          );
+          await sleep(JOIN_RETRY_DELAY_MS);
+          publisher = new Publisher(`capacity-pub-${index}`, roomName, audio);
+        }
+      }
       await publisher.waitForOwnFinal(TRACK_VERIFY_TIMEOUT_MS);
       publishers.push(publisher);
       tracks += 1;
@@ -372,7 +400,7 @@ async function main(): Promise<void> {
     `CAPACITY RESULT: ${tracks} simultaneous transcribed tracks with headless publishers` +
       (LABEL ? ` [${LABEL}]` : "") +
       ` (agent host: ${LIVEKIT_URL}; stop reason: ${stopReason}; oldest track still transcribing ` +
-      `at full load: ${sustained}; finals per track: ${finalsPerTrack.join(",")}) ${load.sample()}`,
+      `at full load: ${sustained}; join retries: ${joinRetries}; finals per track: ${finalsPerTrack.join(",")}) ${load.sample()}`,
   );
 
   await Promise.all(publishers.map((p) => p.close()));

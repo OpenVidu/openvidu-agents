@@ -36,6 +36,8 @@ type Edition = "community" | "pro";
 
 const EDITION = (process.env.DEPLOYMENT_EDITION as Edition) || "community";
 const GPU = (process.env.STT_ACCEL || "").trim() === "cuda12";
+/** LiveKit server container of the local deployment (both editions). */
+const SERVER_CONTAINER = "openvidu";
 const LOCAL_DEPLOYMENT_BASE_PATH =
   process.env.LOCAL_DEPLOYMENT_BASE_PATH ||
   path.resolve(__dirname, "../../../openvidu-local-deployment");
@@ -134,8 +136,24 @@ async function hold(): Promise<void> {
       `sampling the host load every ${sampleSeconds}s`,
   );
   let lastPoll = 0;
+  let serverLogSince = new Date().toISOString();
   while (Date.now() < deadline) {
     log(`Host load ${sampleHostLoad({ gpu: GPU })}`);
+    // New warnings, errors and node-selection lines of the LiveKit server
+    // since the previous sample, so a refused join is explained in this log.
+    const now = new Date().toISOString();
+    try {
+      const lines = execCommand(
+        `docker logs ${SERVER_CONTAINER} --since ${serverLogSince} 2>&1 | ` +
+          `grep -iE "warn|error|available nodes|could not|limit" | head -20 || true`,
+      ).trim();
+      if (lines) {
+        console.log(`--- ${SERVER_CONTAINER} log since ${serverLogSince} ---\n${lines}`);
+      }
+    } catch {
+      // the server container may be gone during teardown
+    }
+    serverLogSince = now;
     try {
       const state = execCommand(
         `docker inspect -f "{{.State.Status}}" ${AGENT_CONTAINER}`,
@@ -167,16 +185,24 @@ async function hold(): Promise<void> {
   log(`Hold budget of ${maxMinutes} min exhausted; releasing the deployment`);
 }
 
-function stop(): void {
+function dumpLog(container: string, command: string): void {
   try {
-    console.log(`\n=== ${AGENT_CONTAINER} log tail ===\n`);
-    console.log(
-      execCommand(`docker logs --tail 300 ${AGENT_CONTAINER} 2>&1 || true`),
-    );
-    console.log(`\n=== end of ${AGENT_CONTAINER} log tail ===\n`);
+    console.log(`\n=== ${container} log ===\n`);
+    console.log(execCommand(`${command} 2>&1 || true`));
+    console.log(`\n=== end of ${container} log ===\n`);
   } catch (error: any) {
-    log(`Could not read the agent log: ${error.message}`);
+    log(`Could not read the ${container} log: ${error.message}`);
   }
+}
+
+function stop(): void {
+  dumpLog(AGENT_CONTAINER, `docker logs --tail 300 ${AGENT_CONTAINER}`);
+  // The server decides whether a new room gets a node: keep its warnings,
+  // errors and node-selection lines (a join refused with HTTP 500 shows here).
+  dumpLog(
+    SERVER_CONTAINER,
+    `docker logs ${SERVER_CONTAINER} 2>&1 | grep -iE "warn|error|available nodes|node selected|limit|could not|failed" | tail -200`,
+  );
   LocalDeployment.stop();
 }
 

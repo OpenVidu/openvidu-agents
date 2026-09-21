@@ -12,7 +12,7 @@ split the roles:
 | Script | Runs on | Does |
 | --- | --- | --- |
 | `agent-host.ts` | the machine under test | `start`: configure the agent provider in the local deployment, start it, wait for the agent worker. `hold`: keep it up while the publishers run, logging `Host load [...]` (agent CPU/RAM, other containers, host total, VRAM + GPU utilization) every 15 s. `stop`: dump the agent log tail, stop the deployment. |
-| `headless-capacity-probe.ts` | any other machine | LiveKit Node SDK publishers stream a WAV in a loop; a track counts when the agent's final transcription of it (`lk.transcription` text stream) arrives within 60 s; same ramp, stop rules and sustained check as the Playwright probe; prints `CAPACITY RESULT:`. One publisher costs about one Opus encoder, so a `c6i.xlarge` drives 40. |
+| `headless-capacity-probe.ts` | any other machine | LiveKit Node SDK publishers stream a WAV in a loop; a track counts when the agent's final transcription of it (`lk.transcription` text stream) arrives within 60 s; same ramp, stop rules and sustained check as the Playwright probe; prints `CAPACITY RESULT:`. Each publisher costs the probe process about 13 % of a core (Opus encoding), so the default `c6i.2xlarge` (8 vCPU) carries the 40-track hard cap with margin; the result line reports the publisher host's own load. |
 
 ## CI: `speech-processing-capacity-remote-publishers.yml`
 

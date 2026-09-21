@@ -62,9 +62,9 @@ on:
         default: ""
         required: false
       publisher-instance-type:
-        description: "EC2 instance type of the publishers runner (one Opus encoder per track; c6i.xlarge drives 40)"
+        description: "EC2 instance type of the publishers runner. Each track costs the probe process ~13% of a core (Opus encoding), so 8 vCPUs carry the 40-track hard cap with margin; the result line reports the publisher host's load"
         type: string
-        default: "c6i.xlarge"
+        default: "c6i.2xlarge"
         required: false
       deployment-edition:
         description: "OpenVidu local deployment edition to run on the agent host"

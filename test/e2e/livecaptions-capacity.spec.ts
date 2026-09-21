@@ -1,4 +1,6 @@
 import { test, expect, Page, Locator } from "@playwright/test";
+import fs from "fs";
+import os from "os";
 import { LocalDeployment } from "./utils/local-deployment";
 import { TESTAPP_URL } from "./config";
 import {
@@ -44,7 +46,8 @@ const MAX_CONSECUTIVE_FAILURES = 2;
 // A new track must receive its own final transcription within this window.
 const TRACK_VERIFY_TIMEOUT_MS = 60000;
 // Total time allowed for the ramp itself (excluding deployment start/stop).
-const RAMP_BUDGET_MS = 25 * 60 * 1000;
+// A track takes 30-60 s to add and verify; 40 tracks need up to 40 min.
+const RAMP_BUDGET_MS = 40 * 60 * 1000;
 const PUBLISHERS_PER_ROOM = 3;
 const PARTICIPANT_ACTION_TIMEOUT_MS = 10000;
 
@@ -53,33 +56,97 @@ const AGENT_CONTAINER = "agent-speech-processing";
 // Whether nvidia-smi works on this host; probed once, cached.
 let vramAvailable: boolean | null = null;
 
+/** Parse docker's "12.34%" into a number (per-core convention: 400% = 4 cores). */
+function parseDockerPercent(value: string): number {
+  const n = parseFloat(value.replace("%", ""));
+  return Number.isFinite(n) ? n : 0;
+}
+
 /**
- * One-line snapshot of the agent container's resource usage, to identify
- * WHICH resource saturates first as the ramp progresses. CPU% is docker's
- * per-core convention (400% = 4 cores fully busy). VRAM is host-wide
- * (nvidia-smi), only sampled on GPU runs.
+ * Host CPU time in jiffies from /proc/stat (Linux only): busy and total. Two
+ * snapshots around a sampling window give the host-wide utilization, which
+ * includes what runs outside containers: the Playwright browser publishing
+ * every track, and the runner itself.
+ */
+function readHostCpuJiffies(): { busy: number; total: number } | null {
+  try {
+    const line = fs.readFileSync("/proc/stat", "utf8").split("\n")[0];
+    const fields = line.trim().split(/\s+/).slice(1).map(Number);
+    if (fields.length < 5) {
+      return null;
+    }
+    const total = fields.reduce((a: number, b: number) => a + b, 0);
+    const idle = fields[3] + fields[4]; // idle + iowait
+    return { busy: total - idle, total };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * One-line snapshot of where the machine's resources go as the ramp
+ * progresses, to identify WHICH resource saturates first:
+ * - the agent container (CPU% in docker's per-core convention, 400% = 4 cores
+ *   fully busy, and RAM);
+ * - every other container, as a total plus the three largest consumers;
+ * - the host as a whole, busy % of all cores over the sampling window. The
+ *   difference to the containers' sum is the browser running the publishers
+ *   plus the runner, which share the box with the deployment in CI;
+ * - on GPU runs, VRAM and GPU utilization from nvidia-smi (host-wide).
  */
 function sampleAgentLoad(): string {
   const parts: string[] = [];
+  const before = readHostCpuJiffies();
   try {
-    const stats = execCommand(
-      `docker stats ${AGENT_CONTAINER} --no-stream --format "{{.CPUPerc}} {{.MemUsage}}"`,
+    // One docker stats call over every container. It takes ~2 s (docker
+    // samples twice to derive CPU%), which doubles as the host sampling window.
+    const rows = execCommand(
+      'docker stats --no-stream --format "{{.Name}} {{.CPUPerc}} {{.MemUsage}}"',
     )
       .trim()
-      .split(/\s+/);
-    parts.push(`agent CPU: ${stats[0]}`, `RAM: ${stats.slice(1).join(" ")}`);
+      .split("\n")
+      .map((line) => line.trim().split(/\s+/))
+      .filter((fields) => fields.length >= 2);
+    const agent = rows.find((fields) => fields[0] === AGENT_CONTAINER);
+    if (agent) {
+      parts.push(`agent CPU: ${agent[1]}`, `RAM: ${agent.slice(2).join(" ")}`);
+    } else {
+      parts.push("agent stats unavailable (container not found)");
+    }
+    const others = rows
+      .filter((fields) => fields[0] !== AGENT_CONTAINER)
+      .map((fields) => ({
+        name: fields[0],
+        cpu: parseDockerPercent(fields[1]),
+      }))
+      .sort((a, b) => b.cpu - a.cpu);
+    const othersTotal = others.reduce((sum, o) => sum + o.cpu, 0);
+    const top = others
+      .slice(0, 3)
+      .map((o) => `${o.name} ${o.cpu.toFixed(0)}%`)
+      .join(", ");
+    parts.push(`other containers: ${othersTotal.toFixed(0)}% (${top})`);
   } catch (error: any) {
-    parts.push(`agent stats unavailable (${error.message})`);
+    parts.push(`docker stats unavailable (${error.message})`);
+  }
+  const after = readHostCpuJiffies();
+  if (before && after && after.total > before.total) {
+    const cores = os.cpus().length;
+    const busy =
+      ((after.busy - before.busy) / (after.total - before.total)) * 100 * cores;
+    parts.push(`host: ${busy.toFixed(0)}% of ${cores * 100}% busy`);
   }
   if (process.env.STT_ACCEL && vramAvailable !== false) {
     try {
-      const vram = execCommand(
-        "nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits",
+      const [vram, util] = execCommand(
+        "nvidia-smi --query-gpu=memory.used,utilization.gpu --format=csv,noheader,nounits",
       )
         .trim()
-        .split("\n")[0];
+        .split("\n")[0]
+        .split(",")
+        .map((v) => v.trim());
       vramAvailable = true;
-      parts.push(`VRAM: ${vram} MiB`);
+      parts.push(`VRAM: ${vram} MiB`, `GPU util: ${util}%`);
     } catch {
       vramAvailable = false;
     }

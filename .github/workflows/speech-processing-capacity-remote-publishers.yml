@@ -43,7 +43,12 @@ on:
           - cuda12
           - cpu
       agent-image-id:
-        description: "AMI for the agent host. Empty: the GPU AMI variable when accel=cuda12, the standard AMI otherwise"
+        description: "AMI for the agent host. Empty: AWS_GITHUB_ACTIONS_GPU_AMI when accel=cuda12, else AWS_GITHUB_ACTIONS_AMI, falling back to the GPU AMI (the only one this repository can read; it boots fine without a GPU)"
+        type: string
+        default: ""
+        required: false
+      publisher-image-id:
+        description: "AMI for the publishers runner. Empty: AWS_GITHUB_ACTIONS_AMI, falling back to AWS_GITHUB_ACTIONS_GPU_AMI"
         type: string
         default: ""
         required: false
@@ -122,7 +127,7 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
           github-token: ${{ secrets.OPENVIDU_GITHUB_TOKEN }}
-          ec2-image-id: ${{ inputs.agent-image-id || (inputs.accel == 'cuda12' && (vars.AWS_GITHUB_ACTIONS_GPU_AMI || vars.AWS_GITHUB_ACTIONS_AMI) || vars.AWS_GITHUB_ACTIONS_AMI) }}
+          ec2-image-id: ${{ inputs.agent-image-id || (inputs.accel == 'cuda12' && vars.AWS_GITHUB_ACTIONS_GPU_AMI) || vars.AWS_GITHUB_ACTIONS_AMI || vars.AWS_GITHUB_ACTIONS_GPU_AMI }}
           subnet-id: ${{ secrets.AWS_SUBNET_ID }}
           security-group-id: ${{ secrets.AWS_SECURITY_GROUP_ID }}
           workflow-name: ${{ github.workflow }}
@@ -156,7 +161,7 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
           github-token: ${{ secrets.OPENVIDU_GITHUB_TOKEN }}
-          ec2-image-id: ${{ vars.AWS_GITHUB_ACTIONS_AMI }}
+          ec2-image-id: ${{ inputs.publisher-image-id || vars.AWS_GITHUB_ACTIONS_AMI || vars.AWS_GITHUB_ACTIONS_GPU_AMI }}
           subnet-id: ${{ secrets.AWS_SUBNET_ID }}
           security-group-id: ${{ secrets.AWS_SECURITY_GROUP_ID }}
           workflow-name: ${{ github.workflow }}

@@ -1,0 +1,339 @@
+# Transcription capacity of ONE agent host, measured from ANOTHER machine.
+#
+# The single-box probe (speech-processing-capacity-e2e-gpu.yml) shares the
+# runner between the deployment, the agent and a browser publishing every
+# track, so on a 4-vCPU box it measures the box, not the agent. Here two EC2
+# runners are started in the same subnet: the "Agent host" runs the OpenVidu
+# local deployment with the agent (GPU or CPU image), the "Publishers" runner
+# streams audio into it with LiveKit Node SDK participants
+# (test/capacity/headless-capacity-probe.ts) and counts the tracks whose
+# transcriptions keep arriving. Run it once with a GPU host and once with a
+# CPU host of the same vCPU count to compare the two images on equal terms:
+#   agent-instance-type=g4dn.xlarge accel=cuda12   (T4, 4 vCPU, 16 GiB)
+#   agent-instance-type=m6i.xlarge  accel=cpu      (4 vCPU, 16 GiB, no GPU)
+# Results: "CAPACITY RESULT" in the Publishers job, the agent host's load
+# samples ("Host load [...]") in the Agent host job.
+#
+# Prerequisites on the AWS side: the runner security group must allow inbound
+# traffic from itself on 7880/tcp (LiveKit HTTP/WS via Caddy), 7881/tcp (ICE
+# TCP) and 7900-7999/udp (media), and both instances must land in the same
+# subnet (they do: the same subnet-id is used). Nothing is exposed publicly.
+name: Speech Processing agent capacity, remote publishers
+on:
+  workflow_dispatch:
+    inputs:
+      agent-instance-type:
+        description: "EC2 instance type of the agent host (machine under test). GPU: g4dn.xlarge (T4). CPU-only of the same size: m6i.xlarge"
+        type: string
+        default: "g4dn.xlarge"
+        required: true
+      accel:
+        description: "Agent image to measure: cuda12 (float32 model, needs a GPU instance and the GPU AMI) or cpu (int8 model)"
+        type: choice
+        default: "cuda12"
+        required: true
+        options:
+          - cuda12
+          - cpu
+      agent-image-id:
+        description: "AMI for the agent host. Empty: the GPU AMI variable when accel=cuda12, the standard AMI otherwise"
+        type: string
+        default: ""
+        required: false
+      publisher-instance-type:
+        description: "EC2 instance type of the publishers runner (one Opus encoder per track; c6i.xlarge drives 40)"
+        type: string
+        default: "c6i.xlarge"
+        required: false
+      deployment-edition:
+        description: "OpenVidu local deployment edition to run on the agent host"
+        type: choice
+        default: "community"
+        required: true
+        options:
+          - community
+          - pro
+      hard-cap:
+        description: "Maximum number of tracks the ramp tries"
+        type: string
+        default: "40"
+        required: false
+      ref-openvidu-agents:
+        description: "Branch, tag or commit SHA to checkout in repository OpenVidu/openvidu-agents"
+        required: false
+        default: ""
+      ref-openvidu-agents-pro:
+        description: "Branch, tag or commit SHA to checkout in repository OpenVidu/openvidu-agents-pro"
+        required: false
+        default: ""
+      ref-openvidu-local-deployment:
+        description: "Branch, tag or commit SHA to checkout in repository OpenVidu/openvidu-local-deployment. Defaults to 'development'"
+        type: string
+        required: false
+        default: "development"
+      docker-tag-agent-speech-processing:
+        description: "Docker tag of the published agent-speech-processing-sherpa[-cuda12] image to measure. Empty: build it from the repository sources"
+        type: string
+        required: false
+        default: ""
+      rtc-engine:
+        description: "RTC engine to use"
+        type: choice
+        default: "pion"
+        required: true
+        options:
+          - mediasoup
+          - pion
+      ref-openvidu-pro-mediasoup:
+        description: 'Branch, tag or commit SHA to checkout in repository OpenVidu/openvidu-pro-mediasoup. If "default" mediasoup-worker binary will not be compiled: artifact from latest release of OpenVidu/openvidu-pro-mediasoup will be used'
+        type: string
+        default: "default"
+        required: true
+
+# The two long-running jobs watch each other through the Actions REST API.
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  start-agent-runner:
+    name: Prepare agent host runner
+    runs-on: ubuntu-latest
+    outputs:
+      label: ${{ steps.start-ec2-runner.outputs.label }}
+      ec2-instance-id: ${{ steps.start-ec2-runner.outputs.ec2-instance-id }}
+      private-ip: ${{ steps.private-ip.outputs.ip }}
+    steps:
+      - name: Start AWS EC2 Runner (agent host)
+        id: start-ec2-runner
+        uses: OpenVidu/actions/start-aws-runner@070fb73fda8fe7a08e28991b1c2d276f12a009ef # v1.0.22
+        with:
+          aws-instance-type: ${{ inputs.agent-instance-type }}
+          aws-volume-size: "150"
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          github-token: ${{ secrets.OPENVIDU_GITHUB_TOKEN }}
+          ec2-image-id: ${{ inputs.agent-image-id || (inputs.accel == 'cuda12' && (vars.AWS_GITHUB_ACTIONS_GPU_AMI || vars.AWS_GITHUB_ACTIONS_AMI) || vars.AWS_GITHUB_ACTIONS_AMI) }}
+          subnet-id: ${{ secrets.AWS_SUBNET_ID }}
+          security-group-id: ${{ secrets.AWS_SECURITY_GROUP_ID }}
+          workflow-name: ${{ github.workflow }}
+          repository-name: ${{ github.repository }}
+      - name: Read the agent host's private IP
+        id: private-ip
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          ip=$(aws ec2 describe-instances --instance-ids "${{ steps.start-ec2-runner.outputs.ec2-instance-id }}" \
+            --query 'Reservations[0].Instances[0].PrivateIpAddress' --output text)
+          echo "Agent host private IP: $ip"
+          echo "ip=$ip" >> "$GITHUB_OUTPUT"
+
+  start-publisher-runner:
+    name: Prepare publishers runner
+    runs-on: ubuntu-latest
+    outputs:
+      label: ${{ steps.start-ec2-runner.outputs.label }}
+      ec2-instance-id: ${{ steps.start-ec2-runner.outputs.ec2-instance-id }}
+    steps:
+      - name: Start AWS EC2 Runner (publishers)
+        id: start-ec2-runner
+        uses: OpenVidu/actions/start-aws-runner@070fb73fda8fe7a08e28991b1c2d276f12a009ef # v1.0.22
+        with:
+          aws-instance-type: ${{ inputs.publisher-instance-type }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          github-token: ${{ secrets.OPENVIDU_GITHUB_TOKEN }}
+          ec2-image-id: ${{ vars.AWS_GITHUB_ACTIONS_AMI }}
+          subnet-id: ${{ secrets.AWS_SUBNET_ID }}
+          security-group-id: ${{ secrets.AWS_SECURITY_GROUP_ID }}
+          workflow-name: ${{ github.workflow }}
+          repository-name: ${{ github.repository }}
+
+  agent-host:
+    # The Publishers job polls this job's steps by name: keep "Agent host" and
+    # the step "Start the agent deployment" stable.
+    name: Agent host
+    needs: start-agent-runner
+    runs-on: ${{ needs.start-agent-runner.outputs.label }}
+    timeout-minutes: 150
+    env:
+      STT_ACCEL: ${{ inputs.accel == 'cuda12' && 'cuda12' || '' }}
+      DEPLOYMENT_EDITION: ${{ inputs.deployment-edition }}
+    steps:
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+
+      - name: Install safe-chain
+        uses: OpenVidu/actions/install-safe-chain@070fb73fda8fe7a08e28991b1c2d276f12a009ef # v1.0.22
+
+      - name: Checkout OpenVidu/openvidu-agents
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref-openvidu-agents || github.sha }}
+          path: openvidu-agents
+
+      - name: Checkout OpenVidu/openvidu-agents-pro
+        if: ${{ inputs.docker-tag-agent-speech-processing == '' }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: OpenVidu/openvidu-agents-pro
+          ref: ${{ inputs.ref-openvidu-agents-pro || 'main' }}
+          token: ${{ secrets.OPENVIDU_GITHUB_TOKEN }}
+          path: openvidu-agents-pro
+
+      - name: Download STT model files
+        if: ${{ inputs.docker-tag-agent-speech-processing == '' }}
+        working-directory: ./openvidu-agents/speech-processing
+        run: ./download-models.sh --accel ${{ inputs.accel }}
+
+      - name: Build the agent image [-sherpa${{ inputs.accel == 'cuda12' && '-cuda12' || '' }}]
+        if: ${{ inputs.docker-tag-agent-speech-processing == '' }}
+        run: |
+          cd openvidu-agents-pro/speech-processing
+          export GITHUB_TOKEN=${{ secrets.OPENVIDU_GITHUB_TOKEN }}
+          ./build-sherpa.sh --no-cache --local-only --accel ${{ inputs.accel }} --platform linux/amd64
+
+      - name: Setup mediasoup-worker
+        if: ${{ inputs.rtc-engine == 'mediasoup' }}
+        id: setup-mediasoup-worker
+        uses: OpenVidu/actions/setup-mediasoup-worker@070fb73fda8fe7a08e28991b1c2d276f12a009ef # v1.0.22
+        with:
+          ref-openvidu-pro-mediasoup: ${{ inputs.ref-openvidu-pro-mediasoup }}
+          github-token: ${{ secrets.OPENVIDU_GITHUB_TOKEN }}
+
+      - name: Setup OpenVidu Local Deployment
+        uses: OpenVidu/actions/start-openvidu-local-deployment@070fb73fda8fe7a08e28991b1c2d276f12a009ef # v1.0.22
+        with:
+          ref-openvidu-local-deployment: ${{ inputs.ref-openvidu-local-deployment || 'development' }}
+          pre_startup_commands: "sed -i 's|docker_image: docker.io/openvidu/agent-speech-processing-cloud:main|docker_image: docker.io/openvidu/agent-speech-processing-sherpa${{ inputs.accel == 'cuda12' && '-cuda12' || '' }}:${{ inputs.docker-tag-agent-speech-processing || 'main' }}|g' agent-speech-processing.yaml"
+          mediasoup-worker-bin: ${{ steps.setup-mediasoup-worker.outputs.MEDIASOUP_WORKER_BIN }}
+          openvidu-edition: ${{ inputs.deployment-edition }}
+          rtc-engine: ${{ inputs.rtc-engine }}
+          github-token: ${{ secrets.OPENVIDU_GITHUB_TOKEN }}
+
+      - name: Install test dependencies
+        working-directory: ./openvidu-agents/test
+        run: npm ci
+
+      - name: Start the agent deployment
+        working-directory: ./openvidu-agents/test
+        env:
+          LOCAL_DEPLOYMENT_BASE_PATH: ../../openvidu-local-deployment
+          OPENVIDU_PRO_LICENSE: ${{ secrets.OPENVIDU_PRO_LICENSE }}
+        run: npm run capacity:agent-host -- start
+
+      - name: Hold the deployment while the publishers run
+        working-directory: ./openvidu-agents/test
+        env:
+          LOCAL_DEPLOYMENT_BASE_PATH: ../../openvidu-local-deployment
+          HOLD_UNTIL_JOB: Publishers
+          HOLD_MAX_MINUTES: "90"
+          GITHUB_TOKEN: ${{ github.token }}
+        run: npm run capacity:agent-host -- hold
+
+      - name: Stop the deployment
+        if: always()
+        working-directory: ./openvidu-agents/test
+        env:
+          LOCAL_DEPLOYMENT_BASE_PATH: ../../openvidu-local-deployment
+        run: npm run capacity:agent-host -- stop
+
+      - name: Clean up
+        if: always()
+        uses: OpenVidu/actions/cleanup@070fb73fda8fe7a08e28991b1c2d276f12a009ef # v1.0.22
+
+  publishers:
+    # Polled by the Agent host job by name: keep "Publishers".
+    name: Publishers
+    needs: [start-agent-runner, start-publisher-runner]
+    runs-on: ${{ needs.start-publisher-runner.outputs.label }}
+    timeout-minutes: 120
+    steps:
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+
+      - name: Install safe-chain
+        uses: OpenVidu/actions/install-safe-chain@070fb73fda8fe7a08e28991b1c2d276f12a009ef # v1.0.22
+
+      - name: Checkout OpenVidu/openvidu-agents
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref-openvidu-agents || github.sha }}
+          path: openvidu-agents
+
+      - name: Install test dependencies
+        working-directory: ./openvidu-agents/test
+        run: npm ci
+
+      - name: Wait for the agent host to be ready
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Ready = the "Start the agent deployment" step of the "Agent host" job
+          # succeeded (the agent worker has registered). Give up if that job fails.
+          for i in $(seq 1 240); do
+            jobs=$(curl -sS -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/jobs?per_page=100")
+            state=$(echo "$jobs" | jq -r '.jobs[] | select(.name=="Agent host") | .steps[] | select(.name=="Start the agent deployment") | "\(.status)/\(.conclusion)"')
+            job=$(echo "$jobs" | jq -r '.jobs[] | select(.name=="Agent host") | "\(.status)/\(.conclusion)"')
+            echo "Agent host job: $job; start step: $state"
+            case "$state" in
+              completed/success) echo "Agent host ready"; exit 0 ;;
+              completed/*) echo "Agent host failed to start"; exit 1 ;;
+            esac
+            case "$job" in
+              completed/*) echo "Agent host job ended before the deployment was ready"; exit 1 ;;
+            esac
+            sleep 30
+          done
+          echo "Timed out waiting for the agent host"; exit 1
+
+      - name: Run the headless capacity probe
+        working-directory: ./openvidu-agents/test
+        env:
+          LIVEKIT_URL: ws://${{ needs.start-agent-runner.outputs.private-ip }}:7880
+          LIVEKIT_API_KEY: devkey
+          LIVEKIT_API_SECRET: secret
+          CAPACITY_HARD_CAP: ${{ inputs.hard-cap }}
+          CAPACITY_LABEL: "${{ inputs.agent-instance-type }} ${{ inputs.accel }} ${{ inputs.deployment-edition }}"
+        run: npm run capacity:headless
+
+  stop-agent-runner:
+    name: Stop agent host runner
+    needs: [start-agent-runner, agent-host, publishers]
+    runs-on: ubuntu-latest
+    if: ${{ always() }}
+    steps:
+      - name: Stop AWS EC2 Runner
+        uses: OpenVidu/actions/stop-aws-runner@070fb73fda8fe7a08e28991b1c2d276f12a009ef # v1.0.22
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          github-token: ${{ secrets.OPENVIDU_GITHUB_TOKEN }}
+          label: ${{ needs.start-agent-runner.outputs.label }}
+          ec2-instance-id: ${{ needs.start-agent-runner.outputs.ec2-instance-id }}
+
+  stop-publisher-runner:
+    name: Stop publishers runner
+    needs: [start-publisher-runner, publishers]
+    runs-on: ubuntu-latest
+    if: ${{ always() }}
+    steps:
+      - name: Stop AWS EC2 Runner
+        uses: OpenVidu/actions/stop-aws-runner@070fb73fda8fe7a08e28991b1c2d276f12a009ef # v1.0.22
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          github-token: ${{ secrets.OPENVIDU_GITHUB_TOKEN }}
+          label: ${{ needs.start-publisher-runner.outputs.label }}
+          ec2-instance-id: ${{ needs.start-publisher-runner.outputs.ec2-instance-id }}

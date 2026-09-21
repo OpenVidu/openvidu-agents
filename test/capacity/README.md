@@ -1,0 +1,65 @@
+# Transcription capacity with remote publishers
+
+How many participants can one agent host transcribe at the same time, when the
+host runs nothing but the OpenVidu deployment and the agent?
+
+The Playwright probe (`e2e/livecaptions-capacity.spec.ts`) answers a different
+question: it runs the deployment, the agent **and** a browser publishing every
+track on the same machine, so on a 4-vCPU box it saturates the box (the browser
+starves first) at 12-13 tracks whatever the agent does. The two scripts here
+split the roles:
+
+| Script | Runs on | Does |
+| --- | --- | --- |
+| `agent-host.ts` | the machine under test | `start`: configure the agent provider in the local deployment, start it, wait for the agent worker. `hold`: keep it up while the publishers run, logging `Host load [...]` (agent CPU/RAM, other containers, host total, VRAM + GPU utilization) every 15 s. `stop`: dump the agent log tail, stop the deployment. |
+| `headless-capacity-probe.ts` | any other machine | LiveKit Node SDK publishers stream a WAV in a loop; a track counts when the agent's final transcription of it (`lk.transcription` text stream) arrives within 60 s; same ramp, stop rules and sustained check as the Playwright probe; prints `CAPACITY RESULT:`. One publisher costs about one Opus encoder, so a `c6i.xlarge` drives 40. |
+
+## CI: `speech-processing-capacity-remote-publishers.yml`
+
+Two EC2 runners in the same subnet. The agent host builds (or pulls) the sherpa
+image, starts the local deployment with GPU passthrough when `accel=cuda12`,
+prints `AGENT HOST READY url=ws://<private-ip>:7880` and holds; the publishers
+runner waits (through the Actions REST API) for that step to succeed, then runs
+the probe against the agent host's private IP and prints the result. Nothing is
+exposed publicly; the deployment is reached exactly as a LAN client would.
+
+For the CPU vs GPU comparison, dispatch it twice with the same vCPU count and RAM:
+
+| Input | GPU host | CPU host |
+| --- | --- | --- |
+| `agent-instance-type` | `g4dn.xlarge` (T4, 4 vCPU, 16 GiB) | `m6i.xlarge` (4 vCPU, 16 GiB) |
+| `accel` | `cuda12` (float32 export) | `cpu` (int8 export) |
+
+Read `CAPACITY RESULT` in the Publishers job and the `Host load` lines in the
+Agent host job: the agent's CPU per track, VRAM, GPU utilization, and whether
+`host` busy stays close to the containers' sum (it should, nothing else runs
+there). Note the CPUs differ (Cascade Lake on g4dn, Ice Lake on m6i), so quote
+the instance types with the numbers.
+
+**AWS prerequisites** (outside these repositories): the runner security group
+must allow inbound traffic **from itself** on 7880/tcp (LiveKit HTTP/WS through
+Caddy), 7881/tcp (ICE over TCP) and 7900-7999/udp (media); the standard runner
+AMI is used for the publishers, the GPU AMI for a `cuda12` agent host.
+
+## Running the probe by hand
+
+Against a deployment already running on this or another machine:
+
+```bash
+cd test && npm ci
+LIVEKIT_URL=ws://<deployment-ip>:7880 CAPACITY_HARD_CAP=12 npm run capacity:headless
+```
+
+Starting the deployment with the agent on the current machine (needs
+`openvidu-local-deployment` checked out next to this repository, Docker, and
+`OPENVIDU_PRO_LICENSE` for the sherpa image):
+
+```bash
+STT_ACCEL=cuda12 npm run capacity:agent-host -- start   # or without STT_ACCEL for the CPU image
+npm run capacity:agent-host -- hold                     # Ctrl-C when done, or HOLD_MAX_MINUTES=10
+npm run capacity:agent-host -- stop
+```
+
+Provider and model default to the sherpa provider with the Nemotron 3.5 model
+(`e2e/utils/models.ts`, forced English); override with `CAPACITY_PROVIDER_JSON`,
+e.g. `{"vosk":{"model":"vosk-model-en-us-0.22-lgraph","use_silero_vad":false}}`.

@@ -25,6 +25,14 @@ it then checks connectivity, runs the probe against the agent host's private IP
 and prints the result, and its completion releases the hold. Nothing is exposed
 publicly; the deployment is reached exactly as a LAN client would.
 
+Keep `deployment-edition` at `community` (the browser probe uses it too): the
+local Pro server runs in evaluation mode, which allows 8 participants across
+all rooms, agent participants included, and closes rooms after 5 minutes, so a
+ramp on it stops at 6 tracks with `HTTP 500` joins (`OpenVidu Pro evaluation
+mode only allows a maximum of 8 participants across all rooms` in the server
+log). The agent image is the same on both editions and receives the Pro license
+through the operator.
+
 For the CPU vs GPU comparison, dispatch it twice with the same vCPU count and RAM:
 
 | Input | GPU host | CPU host |

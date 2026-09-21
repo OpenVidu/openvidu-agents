@@ -67,7 +67,7 @@ on:
         default: "c6i.2xlarge"
         required: false
       deployment-edition:
-        description: "OpenVidu local deployment edition to run on the agent host"
+        description: "OpenVidu local deployment edition on the agent host. Keep community: the local Pro server runs in evaluation mode (8 participants across all rooms, agents included, and 5-minute rooms), which ends the ramp at 6 tracks; the agent image is the same and gets the Pro license through the operator"
         type: choice
         default: "community"
         required: true

@@ -20,6 +20,13 @@
 # subnet (they do: the same subnet-id is used). Nothing is exposed publicly.
 name: Speech Processing agent capacity, remote publishers
 on:
+  # The push trigger only registers this workflow with GitHub while it lives on
+  # a feature branch: workflow_dispatch answers 404 until the file has run once
+  # or reached the default branch. Every job is skipped on push, so no runner is
+  # started, and the branch filter makes it a no-op after the merge.
+  push:
+    branches: ["feat/sherpa-nemotron"]
+    paths: [".github/workflows/speech-processing-capacity-remote-publishers.yml"]
   workflow_dispatch:
     inputs:
       agent-instance-type:
@@ -98,6 +105,7 @@ permissions:
 jobs:
   start-agent-runner:
     name: Prepare agent host runner
+    if: ${{ github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     outputs:
       label: ${{ steps.start-ec2-runner.outputs.label }}
@@ -133,6 +141,7 @@ jobs:
 
   start-publisher-runner:
     name: Prepare publishers runner
+    if: ${{ github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     outputs:
       label: ${{ steps.start-ec2-runner.outputs.label }}
@@ -310,7 +319,7 @@ jobs:
     name: Stop agent host runner
     needs: [start-agent-runner, agent-host, publishers]
     runs-on: ubuntu-latest
-    if: ${{ always() }}
+    if: ${{ always() && github.event_name == 'workflow_dispatch' }}
     steps:
       - name: Stop AWS EC2 Runner
         uses: OpenVidu/actions/stop-aws-runner@070fb73fda8fe7a08e28991b1c2d276f12a009ef # v1.0.22
@@ -326,7 +335,7 @@ jobs:
     name: Stop publishers runner
     needs: [start-publisher-runner, publishers]
     runs-on: ubuntu-latest
-    if: ${{ always() }}
+    if: ${{ always() && github.event_name == 'workflow_dispatch' }}
     steps:
       - name: Stop AWS EC2 Runner
         uses: OpenVidu/actions/stop-aws-runner@070fb73fda8fe7a08e28991b1c2d276f12a009ef # v1.0.22

@@ -122,16 +122,17 @@ const LOCAL_STT_PROVIDERS: SttProviderConfig[] = [
   // utils/models.ts). GPU, measured on a T4 (run 35590603737): idle 4.15 GiB
   // RSS (ONNX Runtime keeps the 2.4 GB of float32 weights in host memory next
   // to the GPU copy; the NeMo plugin idled at 2.76 GiB) and 3445 MiB VRAM,
-  // 4.41 GiB / 3871 MiB with 12 tracks, clean return to baseline. CPU (int8):
-  // estimates from the 657 MB weights, to tighten from the first measured run.
+  // 4.41 GiB / 3871 MiB with 12 tracks, clean return to baseline. CPU (int8,
+  // run 35601280770 on ubuntu-latest): idle 1.17 GiB, 1.30 GiB with 12 tracks,
+  // clean return to baseline.
   {
     sherpa: {
       model: SHERPA_NEMOTRON_MODEL,
       language: "en",
       use_silero_vad: false,
     },
-    maxIdleMemoryMB: process.env.STT_ACCEL ? 4800 : 3000,
-    maxMemoryMB: process.env.STT_ACCEL ? 5500 : 4000,
+    maxIdleMemoryMB: process.env.STT_ACCEL ? 4800 : 1600,
+    maxMemoryMB: process.env.STT_ACCEL ? 5500 : 1800,
     maxTracks: 12,
     maxMemoryAfterTeardownMB: process.env.STT_ACCEL ? 5000 : "20%",
     // VRAM (GPU runs only): float32 weights + CUDA context, see above.

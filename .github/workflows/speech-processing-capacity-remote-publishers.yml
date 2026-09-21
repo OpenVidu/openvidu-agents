@@ -131,7 +131,9 @@ jobs:
         uses: OpenVidu/actions/start-aws-runner@070fb73fda8fe7a08e28991b1c2d276f12a009ef # v1.0.22
         with:
           aws-instance-type: ${{ inputs.agent-instance-type }}
-          aws-volume-size: "150"
+          # The GPU AMI needs room for the cuda12 image; the standard AMI ships a
+          # 200 GB snapshot and rejects smaller volumes, so it keeps its default.
+          aws-volume-size: ${{ inputs.accel == 'cuda12' && '150' || '' }}
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}

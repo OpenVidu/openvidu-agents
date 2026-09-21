@@ -14,6 +14,12 @@
 # Results: "CAPACITY RESULT" in the Publishers job, the agent host's load
 # samples ("Host load [...]") in the Agent host job.
 #
+# Order of events: the agent host instance starts first and builds or pulls
+# the image, starts the deployment and waits for the agent worker to register
+# ("Start the agent deployment"). Only then is the publishers instance
+# launched; it checks connectivity, runs the probe and exits, which releases
+# the agent host's hold. Both instances are terminated by the stop jobs.
+#
 # Prerequisites on the AWS side: one security group per role, both in the VPC
 # of the runner subnet. AWS_SECURITY_GROUP_ID_PUBLISHERS needs no inbound rule
 # (the publishers open every connection). AWS_SECURITY_GROUP_ID_AGENT_HOST must
@@ -147,14 +153,42 @@ jobs:
           echo "Agent host private IP: $ip"
           echo "ip=$ip" >> "$GITHUB_OUTPUT"
 
+  # The publishers instance is launched only once the agent host has its
+  # deployment up (image build included, 15-25 min), so it is not billed while
+  # idle. This job runs on a GitHub-hosted runner, free for a public repository.
   start-publisher-runner:
     name: Prepare publishers runner
+    needs: start-agent-runner
     if: ${{ github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     outputs:
       label: ${{ steps.start-ec2-runner.outputs.label }}
       ec2-instance-id: ${{ steps.start-ec2-runner.outputs.ec2-instance-id }}
     steps:
+      - name: Wait for the agent deployment to be up
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Ready = the "Start the agent deployment" step of the "Agent host" job
+          # succeeded (the agent worker has registered). Give up, without starting
+          # the instance, if that job ends first. 240 x 30 s = 2 h budget.
+          for i in $(seq 1 240); do
+            jobs=$(curl -sS -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/jobs?per_page=100")
+            state=$(echo "$jobs" | jq -r '.jobs[] | select(.name=="Agent host") | .steps[] | select(.name=="Start the agent deployment") | "\(.status)/\(.conclusion)"')
+            job=$(echo "$jobs" | jq -r '.jobs[] | select(.name=="Agent host") | "\(.status)/\(.conclusion)"')
+            echo "Agent host job: $job; start step: $state"
+            case "$state" in
+              completed/success) echo "Agent deployment is up; starting the publishers instance"; exit 0 ;;
+              completed/*) echo "Agent host failed to start the deployment"; exit 1 ;;
+            esac
+            case "$job" in
+              completed/*) echo "Agent host job ended before the deployment was up"; exit 1 ;;
+            esac
+            sleep 30
+          done
+          echo "Timed out waiting for the agent host"; exit 1
+
       - name: Start AWS EC2 Runner (publishers)
         id: start-ec2-runner
         uses: OpenVidu/actions/start-aws-runner@070fb73fda8fe7a08e28991b1c2d276f12a009ef # v1.0.22
@@ -290,13 +324,14 @@ jobs:
         working-directory: ./openvidu-agents/test
         run: npm ci
 
-      - name: Wait for the agent host to be ready
+      - name: Confirm the agent host is still up
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Ready = the "Start the agent deployment" step of the "Agent host" job
-          # succeeded (the agent worker has registered). Give up if that job fails.
-          for i in $(seq 1 240); do
+          # The publishers instance was launched after the "Start the agent
+          # deployment" step succeeded; re-check it (and that the job is still
+          # holding) before spending the ramp budget.
+          for i in $(seq 1 10); do
             jobs=$(curl -sS -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
               "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/jobs?per_page=100")
             state=$(echo "$jobs" | jq -r '.jobs[] | select(.name=="Agent host") | .steps[] | select(.name=="Start the agent deployment") | "\(.status)/\(.conclusion)"')
@@ -355,7 +390,7 @@ jobs:
     name: Stop agent host runner
     needs: [start-agent-runner, agent-host, publishers]
     runs-on: ubuntu-latest
-    if: ${{ always() && github.event_name == 'workflow_dispatch' }}
+    if: ${{ always() && github.event_name == 'workflow_dispatch' && needs.start-agent-runner.outputs.ec2-instance-id != '' }}
     steps:
       - name: Stop AWS EC2 Runner
         uses: OpenVidu/actions/stop-aws-runner@070fb73fda8fe7a08e28991b1c2d276f12a009ef # v1.0.22
@@ -371,7 +406,7 @@ jobs:
     name: Stop publishers runner
     needs: [start-publisher-runner, publishers]
     runs-on: ubuntu-latest
-    if: ${{ always() && github.event_name == 'workflow_dispatch' }}
+    if: ${{ always() && github.event_name == 'workflow_dispatch' && needs.start-publisher-runner.outputs.ec2-instance-id != '' }}
     steps:
       - name: Stop AWS EC2 Runner
         uses: OpenVidu/actions/stop-aws-runner@070fb73fda8fe7a08e28991b1c2d276f12a009ef # v1.0.22

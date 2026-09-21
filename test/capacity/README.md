@@ -18,10 +18,12 @@ split the roles:
 
 Two EC2 runners in the same subnet. The agent host builds (or pulls) the sherpa
 image, starts the local deployment with GPU passthrough when `accel=cuda12`,
-prints `AGENT HOST READY url=ws://<private-ip>:7880` and holds; the publishers
-runner waits (through the Actions REST API) for that step to succeed, then runs
-the probe against the agent host's private IP and prints the result. Nothing is
-exposed publicly; the deployment is reached exactly as a LAN client would.
+prints `AGENT HOST READY url=ws://<private-ip>:7880` and holds. The publishers
+instance is launched only when that step has succeeded (a GitHub-hosted job
+polls the Actions REST API for it), so it is not billed during the image build;
+it then checks connectivity, runs the probe against the agent host's private IP
+and prints the result, and its completion releases the hold. Nothing is exposed
+publicly; the deployment is reached exactly as a LAN client would.
 
 For the CPU vs GPU comparison, dispatch it twice with the same vCPU count and RAM:
 

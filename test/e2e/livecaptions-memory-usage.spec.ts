@@ -14,6 +14,7 @@ import {
   waitForEvent,
   waitForEventContentToStartWith,
 } from "./utils/helper";
+import { SHERPA_NEMOTRON_MODEL } from "./utils/models";
 
 // LiveKit server API, used to force-tear-down rooms and participants during the
 // leak-check teardown (see Step 4).
@@ -130,6 +131,23 @@ const LOCAL_STT_PROVIDERS: SttProviderConfig[] = [
     // still failing far before the T4's 15360 MiB is exhausted.
     maxIdleVramMB: 6500,
     maxVramMB: 9000,
+  },
+  // Nemotron 3.5 through the sherpa provider (int8 on CPU, float32 on GPU; see
+  // utils/models.ts). Caps are initial estimates from the model sizes (657 MB
+  // int8 / 2.4 GB float32 weights): tighten them from the first measured runs.
+  {
+    sherpa: {
+      model: SHERPA_NEMOTRON_MODEL,
+      language: "en",
+      use_silero_vad: false,
+    },
+    maxIdleMemoryMB: 3000,
+    maxMemoryMB: 4000,
+    maxTracks: 12,
+    maxMemoryAfterTeardownMB: process.env.STT_ACCEL ? 3500 : "20%",
+    // VRAM (GPU runs only): 2.4 GB of float32 weights + CUDA context.
+    maxIdleVramMB: 4500,
+    maxVramMB: 7000,
   },
 ];
 
@@ -781,10 +799,15 @@ function registerProviderMemoryTest(
 
   const providerConfig = provider[providerName];
   const useVad = providerConfig?.use_silero_vad;
-  const testLabel =
-    typeof useVad === "boolean"
-      ? `${providerName} (VAD ${useVad ? "enabled" : "disabled"})`
-      : providerName;
+  // Local providers appear several times (one entry per model / VAD setting), and
+  // Playwright rejects duplicate titles, so the label carries the model too.
+  const labelParts = [
+    providerConfig?.model ? `model ${providerConfig.model}` : "",
+    typeof useVad === "boolean" ? `VAD ${useVad ? "enabled" : "disabled"}` : "",
+  ].filter(Boolean);
+  const testLabel = labelParts.length
+    ? `${providerName} (${labelParts.join(", ")})`
+    : providerName;
 
   test.describe(testLabel, () => {
     test.beforeEach(async () => {

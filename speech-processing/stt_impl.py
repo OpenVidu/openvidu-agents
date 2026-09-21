@@ -283,6 +283,10 @@ SHERPA_MODEL_TO_LANGUAGE = {
     "sherpa-onnx-streaming-zipformer-en-2023-06-26-mobile": "en",
     "sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06": "en",
     "sherpa-onnx-nemotron-speech-streaming-en-0.6b-int8-2026-01-14": "en",
+    # Multilingual Nemotron 3.5 (40 locales in one model): the language is a per-stream
+    # prompt; "auto" selects the model's automatic language detection
+    "sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-320ms-int8-2026-06-11": "auto",
+    "sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-320ms-2026-06-11": "auto",
     "sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06": "en",
     # Chinese models
     "sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23": "zh",
@@ -1289,6 +1293,45 @@ def get_vosk_stt_impl(agent_config) -> stt.STT:
     return base_stt
 
 
+# Locales nvidia/nemotron-3.5-asr-streaming-0.6b is trained for (its model card lists
+# these 40). sherpa accepts them as "xx-YY", "xx_YY" or the bare "xx", case-insensitive,
+# plus "auto". Any other value is logged as unsupported on EVERY encoder chunk and
+# silently falls back to auto-detection, so it is validated here once, at startup.
+NEMOTRON_35_LOCALES = frozenset(
+    {
+        # Transcription-ready
+        "en-US", "en-GB", "es-US", "es-ES", "fr-FR", "fr-CA", "it-IT", "pt-BR", "pt-PT",
+        "nl-NL", "de-DE", "tr-TR", "ru-RU", "ar-AR", "hi-IN", "ja-JP", "ko-KR", "vi-VN",
+        "uk-UA",
+        # Broad-coverage
+        "pl-PL", "sv-SE", "cs-CZ", "nb-NO", "da-DK", "bg-BG", "fi-FI", "hr-HR", "sk-SK",
+        "zh-CN", "hu-HU", "ro-RO", "et-EE",
+        # Adaptation-ready (require fine-tuning for production use)
+        "el-GR", "lt-LT", "lv-LV", "mt-MT", "sl-SI", "he-IL", "th-TH", "nn-NO",
+    }
+)
+
+
+def _sherpa_model_is_multilingual_nemotron(model: str) -> bool:
+    return "nemotron-3.5-asr-streaming" in model
+
+
+def _validate_nemotron_language(language: str) -> None:
+    """Fail fast on a language the Nemotron 3.5 model has no prompt for."""
+    normalized = str(language).strip().strip("<>").replace("_", "-").lower()
+    if normalized in ("", "auto"):
+        return
+    accepted = {loc.lower() for loc in NEMOTRON_35_LOCALES}
+    accepted |= {loc.split("-")[0].lower() for loc in NEMOTRON_35_LOCALES}
+    if normalized not in accepted:
+        raise ValueError(
+            f"Wrong sherpa configuration. live_captions.sherpa.language '{language}' is not "
+            "a locale supported by the Nemotron 3.5 model. Use one of "
+            f"{', '.join(sorted(NEMOTRON_35_LOCALES))}, a bare language code such as 'en', "
+            "or 'auto' for automatic detection"
+        )
+
+
 def get_sherpa_stt_impl(agent_config) -> stt.STT:
     sherpa = _require_plugin("sherpa")
     # Mapping from model name patterns to recognizer types
@@ -1296,6 +1339,7 @@ def get_sherpa_stt_impl(agent_config) -> stt.STT:
     SHERPA_MODEL_TO_RECOGNIZER_TYPE = {
         "nemo-streaming-fast-conformer-ctc": "nemo_ctc",
         "nemo-streaming-fast-conformer-transducer": "transducer",
+        "nemotron-3.5-asr-streaming": "transducer",  # Multilingual Nemotron 3.5 (NeMo transducer)
         "nemotron-speech-streaming": "transducer",  # Nemotron uses transducer architecture
         "streaming-paraformer": "paraformer",
         "streaming-zipformer-small-ctc": "zipformer_ctc",
@@ -1329,10 +1373,20 @@ def get_sherpa_stt_impl(agent_config) -> stt.STT:
                 f"Auto-detected language '{detected_language}' from sherpa model '{model}'"
             )
             language = detected_language
+        elif _sherpa_model_is_multilingual_nemotron(model):
+            # One checkpoint, 40 locales: the language is a per-stream prompt,
+            # not a property of the model. Default to automatic detection.
+            language = "auto"
+            logging.info(
+                f"sherpa model '{model}' is multilingual: language will be auto-detected "
+                "(set live_captions.sherpa.language to pin a locale, which is more accurate)"
+            )
         else:
             logging.warning(
                 f"Could not auto-detect language from sherpa model '{model}'. Should be manually specified."
             )
+    elif _sherpa_model_is_multilingual_nemotron(model):
+        _validate_nemotron_language(language)
 
     # Auto-detect recognizer_type from model name if not provided
     if recognizer_type_str is NOT_PROVIDED:

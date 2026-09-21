@@ -61,6 +61,11 @@ on:
         type: string
         required: false
         default: ""
+      capacity-provider:
+        description: "Lane measured by the capacity test: 'nemotron' (NeMo plugin) or 'sherpa' (Nemotron 3.5 through the sherpa provider)"
+        type: string
+        required: false
+        default: "nemotron"
 jobs:
   test:
     timeout-minutes: 120
@@ -90,7 +95,10 @@ jobs:
 
       - name: Download STT model files
         working-directory: ./openvidu-agents/speech-processing
-        run: ./download-models.sh
+        # The Nemotron 3.5 export baked into the sherpa image follows the
+        # acceleration: int8 for the CPU image, float32 for -cuda12 (int8
+        # graphs cannot run on the CUDA provider).
+        run: ./download-models.sh --accel ${{ inputs.gpu && 'cuda12' || 'cpu' }}
 
       - name: Download Nemotron STT model
         if: ${{ inputs.gpu && inputs.docker-tag-agent-speech-processing == '' }}
@@ -160,6 +168,7 @@ jobs:
         env:
           RUN_MODE: CI
           NEMOTRON_PRECISION: ${{ inputs.nemotron-precision }}
+          CAPACITY_PROVIDER: ${{ inputs.capacity-provider }}
           LOCAL_DEPLOYMENT_BASE_PATH: ../../openvidu-local-deployment
           PLAYWRIGHT_BROWSERS_PATH: /tmp/ms-playwright
           OPENVIDU_PRO_LICENSE: ${{ secrets.OPENVIDU_PRO_LICENSE }}

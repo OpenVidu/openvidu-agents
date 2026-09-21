@@ -9,6 +9,7 @@ import {
   getEventText,
   countTotalEvents,
 } from "./utils/helper";
+import { SHERPA_NEMOTRON_MODEL } from "./utils/models";
 
 const STT_AI_PROVIDERS = [
   {
@@ -131,6 +132,25 @@ const STT_AI_PROVIDERS = [
       use_silero_vad: true,
     },
   },
+  // Nemotron 3.5 through the sherpa provider (see utils/models.ts), the lane
+  // meant to replace the `nemotron` provider below. Forced English first, then
+  // the model's automatic language detection.
+  {
+    sherpa: {
+      model: SHERPA_NEMOTRON_MODEL,
+      language: "en",
+      use_silero_vad: false,
+      max_concurrent_transcriptions: process.env.STT_ACCEL ? 4 : 1,
+    },
+  },
+  {
+    sherpa: {
+      model: SHERPA_NEMOTRON_MODEL,
+      language: "auto",
+      use_silero_vad: false,
+      max_concurrent_transcriptions: process.env.STT_ACCEL ? 4 : 1,
+    },
+  },
   {
     nemotron: {
       model: "nemotron-3.5-asr-streaming-0.6b",
@@ -185,9 +205,13 @@ function describeProviderTests(
   registerTests: ({
     provider,
     providerName,
+    providerLabel,
   }: {
     provider: (typeof STT_AI_PROVIDERS)[number];
     providerName: string;
+    // Unique per entry ("sherpa", "sherpa-2", ...): tells duplicate providers
+    // apart in the ACCURACY/LATENCY RESULT log lines
+    providerLabel: string;
   }) => void,
 ) {
   // Reuse provider-level setup/teardown across different test groups.
@@ -224,137 +248,197 @@ function describeProviderTests(
           LocalDeployment.stop();
         });
 
-        registerTests({ provider, providerName });
+        registerTests({
+          provider,
+          providerName,
+          providerLabel: uniqueTestName,
+        });
       });
     });
   });
 }
 
-describeProviderTests("Single user STT tests", ({ providerName }) => {
-  test(`testing simple STT with ${providerName}`, async ({ page }) => {
-    console.log(`Running simple test with provider: ${providerName}`);
-    await page.goto(TESTAPP_URL);
-    await page.click("#add-user-btn");
-    await page.click(".connect-btn");
-    const interimEvents = await waitForEvent(
-      page,
-      "interimTranscription",
-      1,
-      0,
-      20000,
-    );
-    console.log(`Interim transcription received from provider ${providerName}`);
-    const TIMEOUT_FINAL = providerName === "vosk" ? 50000 : 20000;
-    const finalEvents = await waitForEvent(
-      page,
-      "finalTranscription",
-      1,
-      0,
-      TIMEOUT_FINAL,
-    );
-    console.log(`Final transcription received from provider ${providerName}`);
-    const totalInterimEvents = await countTotalEvents(
-      page,
-      "interimTranscription",
-      0,
-    );
-    const totalFinalEvents = await countTotalEvents(
-      page,
-      "finalTranscription",
-      0,
-    );
-    if (totalInterimEvents === totalFinalEvents) {
-      console.warn(
-        `ATTENTION! Same number of interim and final events (${totalFinalEvents}) for provider ${providerName}.`,
-      );
-    }
-    let firstInterimEventText = await getEventText(interimEvents[0]);
-    firstInterimEventText = firstInterimEventText.replace(
-      /^TestParticipant0 is saying: /i,
-      "",
-    );
-    let lastFinalEventText = await getEventText(
-      finalEvents[finalEvents.length - 1],
-    );
-    lastFinalEventText = lastFinalEventText.replace(
-      /^TestParticipant0 said: /i,
-      "",
-    );
-    if (firstInterimEventText === lastFinalEventText) {
-      console.warn(
-        `ATTENTION! First interim and last final transcription are identical ("${lastFinalEventText}") for provider ${providerName}.\nNo real interim transcriptions supported by provider ${providerName}`,
-      );
-    } else {
-      console.log(`Final transcription: "${lastFinalEventText}"`);
-    }
-    checkLevenshteinDistance(providerName, lastFinalEventText);
-  });
-});
+/** Model configured for a provider entry, or "" for providers without one. */
+function providerModel(
+  provider: (typeof STT_AI_PROVIDERS)[number],
+  providerName: string,
+): string {
+  return (provider as any)[providerName]?.model ?? "";
+}
 
-describeProviderTests("Multi-user STT tests", ({ providerName }) => {
-  test(`testing multiple users STT with ${providerName}`, async ({ page }) => {
-    console.log(`Running multi-user test with provider: ${providerName}`);
-
-    const providerConfig = STT_AI_PROVIDERS.find(
-      (p) => Object.keys(p)[0] === providerName,
-    ) as any;
-    const maxConcurrentTranscriptions =
-      providerConfig[providerName].max_concurrent_transcriptions;
-    const NUM_USERS = maxConcurrentTranscriptions
-      ? Math.min(4, maxConcurrentTranscriptions)
-      : 4;
-
-    await page.goto(TESTAPP_URL);
-    for (let i = 0; i < NUM_USERS; i++) {
+describeProviderTests(
+  "Single user STT tests",
+  ({ provider, providerName, providerLabel }) => {
+    test(`testing simple STT with ${providerName}`, async ({ page }) => {
+      console.log(`Running simple test with provider: ${providerName}`);
+      await page.goto(TESTAPP_URL);
       await page.click("#add-user-btn");
-      await page.click(`#openvidu-instance-${i} .subscriber-checkbox`);
-      await page.click(`#room-options-btn-${i}`);
-      await page.click("#video-capture-false");
-      await page.click("#close-dialog-btn");
-    }
-    for (let i = 0; i < NUM_USERS; i++) {
-      const connectButtons = await page.$$(".connect-btn");
-      await connectButtons[i].click();
-    }
-    // Check that each user has received at least one final transcription event for every other user (and itself)
-    const promises = [];
-    // Local providers need headroom: vosk and sherpa's native endpointing (VAD off)
-    const TIMEOUT = ["vosk", "sherpa"].includes(providerName) ? 50000 : 20000;
-    for (let user = 0; user < NUM_USERS; user++) {
-      for (let otherUser = 0; otherUser < NUM_USERS; otherUser++) {
-        promises.push(
-          waitForEventContentToStartWith(
-            page,
-            "finalTranscription",
-            `TestParticipant${otherUser} said: `,
-            1,
-            user,
-            TIMEOUT,
-          ),
+      await page.click(".connect-btn");
+      // Wall-clock latency from connect to the first interim and first final
+      // caption: chunk size and endpointing differ between local models, so the
+      // lanes are compared on this too (grep "LATENCY RESULT").
+      const connectedAt = Date.now();
+      const interimEvents = await waitForEvent(
+        page,
+        "interimTranscription",
+        1,
+        0,
+        20000,
+      );
+      const firstInterimMs = Date.now() - connectedAt;
+      console.log(
+        `Interim transcription received from provider ${providerName}`,
+      );
+      const TIMEOUT_FINAL = providerName === "vosk" ? 50000 : 20000;
+      const finalEvents = await waitForEvent(
+        page,
+        "finalTranscription",
+        1,
+        0,
+        TIMEOUT_FINAL,
+      );
+      const firstFinalMs = Date.now() - connectedAt;
+      console.log(`Final transcription received from provider ${providerName}`);
+      console.log(
+        `LATENCY RESULT provider=${providerLabel} model=${providerModel(provider, providerName)} ` +
+          `first_interim_ms=${firstInterimMs} first_final_ms=${firstFinalMs}`,
+      );
+      const totalInterimEvents = await countTotalEvents(
+        page,
+        "interimTranscription",
+        0,
+      );
+      const totalFinalEvents = await countTotalEvents(
+        page,
+        "finalTranscription",
+        0,
+      );
+      if (totalInterimEvents === totalFinalEvents) {
+        console.warn(
+          `ATTENTION! Same number of interim and final events (${totalFinalEvents}) for provider ${providerName}.`,
         );
       }
-    }
-    console.log(`Waiting for ${promises.length} final transcription events`);
-    const elements = await Promise.all(promises);
-    console.log(
-      `All final transcription events received for provider ${providerName}`,
-    );
-    for (const el of elements) {
-      const firstEl = el[0];
-      const text = await getEventText(firstEl);
-      const strippedText = text.replace(/^TestParticipant\d+ said: /i, "");
-      checkLevenshteinDistance(providerName, strippedText);
-    }
-  });
-});
+      let firstInterimEventText = await getEventText(interimEvents[0]);
+      firstInterimEventText = firstInterimEventText.replace(
+        /^TestParticipant0 is saying: /i,
+        "",
+      );
+      let lastFinalEventText = await getEventText(
+        finalEvents[finalEvents.length - 1],
+      );
+      lastFinalEventText = lastFinalEventText.replace(
+        /^TestParticipant0 said: /i,
+        "",
+      );
+      if (firstInterimEventText === lastFinalEventText) {
+        console.warn(
+          `ATTENTION! First interim and last final transcription are identical ("${lastFinalEventText}") for provider ${providerName}.\nNo real interim transcriptions supported by provider ${providerName}`,
+        );
+      } else {
+        console.log(`Final transcription: "${lastFinalEventText}"`);
+      }
+      checkLevenshteinDistance(
+        providerLabel,
+        lastFinalEventText,
+        providerModel(provider, providerName),
+      );
+    });
+  },
+);
 
+describeProviderTests(
+  "Multi-user STT tests",
+  ({ provider, providerName, providerLabel }) => {
+    test(`testing multiple users STT with ${providerName}`, async ({
+      page,
+    }) => {
+      console.log(`Running multi-user test with provider: ${providerName}`);
+
+      const providerConfig = provider as any;
+      const maxConcurrentTranscriptions =
+        providerConfig[providerName].max_concurrent_transcriptions;
+      const NUM_USERS = maxConcurrentTranscriptions
+        ? Math.min(4, maxConcurrentTranscriptions)
+        : 4;
+
+      await page.goto(TESTAPP_URL);
+      for (let i = 0; i < NUM_USERS; i++) {
+        await page.click("#add-user-btn");
+        await page.click(`#openvidu-instance-${i} .subscriber-checkbox`);
+        await page.click(`#room-options-btn-${i}`);
+        await page.click("#video-capture-false");
+        await page.click("#close-dialog-btn");
+      }
+      for (let i = 0; i < NUM_USERS; i++) {
+        const connectButtons = await page.$$(".connect-btn");
+        await connectButtons[i].click();
+      }
+      // Check that each user has received at least one final transcription event for every other user (and itself)
+      const promises = [];
+      // Local providers need headroom: vosk and sherpa's native endpointing (VAD off)
+      const TIMEOUT = ["vosk", "sherpa"].includes(providerName) ? 50000 : 20000;
+      for (let user = 0; user < NUM_USERS; user++) {
+        for (let otherUser = 0; otherUser < NUM_USERS; otherUser++) {
+          promises.push(
+            waitForEventContentToStartWith(
+              page,
+              "finalTranscription",
+              `TestParticipant${otherUser} said: `,
+              1,
+              user,
+              TIMEOUT,
+            ),
+          );
+        }
+      }
+      console.log(`Waiting for ${promises.length} final transcription events`);
+      const elements = await Promise.all(promises);
+      console.log(
+        `All final transcription events received for provider ${providerName}`,
+      );
+      for (const el of elements) {
+        const firstEl = el[0];
+        const text = await getEventText(firstEl);
+        const strippedText = text.replace(/^TestParticipant\d+ said: /i, "");
+        checkLevenshteinDistance(
+          providerLabel,
+          strippedText,
+          providerModel(provider, providerName),
+        );
+      }
+    });
+  },
+);
+
+/**
+ * Asserts the transcription of the fixture's first sentence and reports the
+ * accuracy of the provider entry as one machine-readable line
+ * (`ACCURACY RESULT provider=... model=... ld=... wer=...`), also attached to
+ * the test as an annotation so it reaches the CTRF report. Lanes that
+ * transcribe the same audio in the same run (e.g. `nemotron` vs `sherpa` with
+ * the Nemotron model) are compared on these lines.
+ */
 function checkLevenshteinDistance(
   providerName: string,
   transcribedText: string,
+  model = "",
 ) {
   // Compare only first sentence of the transcription.
   transcribedText = transcribedText.split(".")[0];
   let expectedText = AUDIO_TRANSCRIPTIONS[0];
+  const wer = wordErrorRate(expectedText, transcribedText);
+  const ldFull = getLevenshteinDistance(expectedText, transcribedText);
+  const accuracyLine =
+    `ACCURACY RESULT provider=${providerName} model=${model} ` +
+    `ld=${ldFull} wer=${wer.toFixed(3)} transcribed="${transcribedText}"`;
+  console.log(accuracyLine);
+  try {
+    test
+      .info()
+      .annotations.push({ type: "accuracy", description: accuracyLine });
+  } catch {
+    // Not inside a test: log line only
+  }
   // Comparing equal-length prefixes tolerates both while still checking word
   // accuracy; the minimum-coverage guard keeps fragments and garbage failing.
   const minLen = Math.min(transcribedText.length, expectedText.length);
@@ -375,22 +459,48 @@ function checkLevenshteinDistance(
   console.log(`Levenshtein distance is ${LD}`);
 }
 
+/** Remove all punctuation, trailing and leading spaces, and convert to lowercase. */
+function normalizeTranscript(text: string): string {
+  return text
+    .replace(/[^\w\s]|_/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
 function getLevenshteinDistance(
   expectedText: string,
   transcribedText: string,
 ): number {
   // Use fast-levenshtein NPM library
   const levenshtein = require("fast-levenshtein");
-  // Remove all punctuation, trailing and leading spaces, and convert to lowercase
-  expectedText = expectedText
-    .replace(/[^\w\s]|_/g, "")
-    .replace(/\s+/g, " ")
-    .trim()
-    .toLowerCase();
-  transcribedText = transcribedText
-    .replace(/[^\w\s]|_/g, "")
-    .replace(/\s+/g, " ")
-    .trim()
-    .toLowerCase();
-  return levenshtein.get(transcribedText, expectedText);
+  return levenshtein.get(
+    normalizeTranscript(transcribedText),
+    normalizeTranscript(expectedText),
+  );
+}
+
+/**
+ * Word error rate: word-level edit distance (substitutions + insertions +
+ * deletions) divided by the number of reference words, on the same
+ * normalization as the character-level check.
+ */
+function wordErrorRate(expectedText: string, transcribedText: string): number {
+  const ref = normalizeTranscript(expectedText).split(" ").filter(Boolean);
+  const hyp = normalizeTranscript(transcribedText).split(" ").filter(Boolean);
+  if (ref.length === 0) {
+    return hyp.length === 0 ? 0 : 1;
+  }
+  // Standard dynamic-programming edit distance over words.
+  let previous = Array.from({ length: hyp.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= ref.length; i++) {
+    const current = [i];
+    for (let j = 1; j <= hyp.length; j++) {
+      const substitution =
+        previous[j - 1] + (ref[i - 1] === hyp[j - 1] ? 0 : 1);
+      current[j] = Math.min(previous[j] + 1, current[j - 1] + 1, substitution);
+    }
+    previous = current;
+  }
+  return previous[hyp.length] / ref.length;
 }

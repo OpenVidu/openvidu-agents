@@ -1,6 +1,8 @@
 # Capacity probe: measures the maximum number of SIMULTANEOUS transcribed audio
-# tracks the nemotron provider sustains on an AWS NVIDIA GPU EC2 runner. The
-# measured capacity is printed in the test log (grep for "CAPACITY RESULT").
+# tracks a Nemotron 3.5 lane sustains on an AWS NVIDIA GPU EC2 runner: the
+# nemotron provider (NeMo plugin) or the sherpa provider serving the same model,
+# selected with "capacity-provider". The measured capacity is printed in the
+# test log (grep for "CAPACITY RESULT").
 name: Speech Processing agent transcription capacity E2E test (GPU)
 on:
   workflow_dispatch:
@@ -42,8 +44,16 @@ on:
         description: "Docker tag for all agent-speech-processing containers. If not provided, the containers will be built from the repository sources"
         type: string
         required: false
+      capacity-provider:
+        description: "Lane to measure: nemotron (NeMo plugin) or sherpa (Nemotron 3.5 through the sherpa provider)"
+        type: choice
+        default: "nemotron"
+        required: true
+        options:
+          - nemotron
+          - sherpa
       nemotron-precision:
-        description: "Inference precision for the nemotron provider"
+        description: "Inference precision for the nemotron provider (nemotron lane only)"
         type: choice
         default: "float32"
         required: false
@@ -103,6 +113,7 @@ jobs:
       ref-openvidu-pro-mediasoup: ${{ inputs.ref-openvidu-pro-mediasoup }}
       test-npm-script: test:e2e:capacity:gpu
       nemotron-precision: ${{ inputs.nemotron-precision }}
+      capacity-provider: ${{ inputs.capacity-provider }}
       runs-on: ${{ needs.start-runner.outputs.label || 'ubuntu-latest' }}
       gpu: true
 

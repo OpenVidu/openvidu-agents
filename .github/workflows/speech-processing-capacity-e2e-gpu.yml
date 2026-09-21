@@ -77,7 +77,7 @@ jobs:
           github-token: ${{ secrets.OPENVIDU_GITHUB_TOKEN }}
           ec2-image-id: ${{ inputs.aws-image-id || vars.AWS_GITHUB_ACTIONS_GPU_AMI || vars.AWS_GITHUB_ACTIONS_AMI }}
           subnet-id: ${{ secrets.AWS_SUBNET_ID }}
-          security-group-id: ${{ secrets.AWS_SECURITY_GROUP_ID }}
+          security-group-id: ${{ secrets.AWS_SECURITY_GROUP_ID_AGENT_HOST || secrets.AWS_SECURITY_GROUP_ID }}
           workflow-name: ${{ github.workflow }}
           repository-name: ${{ github.repository }}
 

@@ -36,10 +36,17 @@ Agent host job: the agent's CPU per track, VRAM, GPU utilization, and whether
 there). Note the CPUs differ (Cascade Lake on g4dn, Ice Lake on m6i), so quote
 the instance types with the numbers.
 
-**AWS prerequisites** (outside these repositories): the runner security group
-must allow inbound traffic **from itself** on 7880/tcp (LiveKit HTTP/WS through
-Caddy), 7881/tcp (ICE over TCP) and 7900-7999/udp (media); the standard runner
-AMI is used for the publishers, the GPU AMI for a `cuda12` agent host.
+**AWS prerequisites** (outside these repositories): one security group per
+role, both in the VPC of the runner subnet, stored in the repository secrets
+`AWS_SECURITY_GROUP_ID_AGENT_HOST` and `AWS_SECURITY_GROUP_ID_PUBLISHERS` (the
+workflow falls back to `AWS_SECURITY_GROUP_ID` when one is missing). The
+publishers group needs no inbound rule: the publishers open every connection
+and security groups are stateful. The agent-host group must allow inbound
+7880/tcp (LiveKit HTTP/WS through Caddy), 7881/tcp (ICE over TCP) and
+7900-7999/udp (media) **with the publishers group as source**; outbound stays
+at the default "all traffic" (GitHub, image pulls, model downloads). The
+standard runner AMI is used for the publishers, the GPU AMI for a `cuda12`
+agent host.
 
 ## Running the probe by hand
 

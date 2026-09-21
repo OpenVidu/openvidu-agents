@@ -14,10 +14,13 @@
 # Results: "CAPACITY RESULT" in the Publishers job, the agent host's load
 # samples ("Host load [...]") in the Agent host job.
 #
-# Prerequisites on the AWS side: the runner security group must allow inbound
-# traffic from itself on 7880/tcp (LiveKit HTTP/WS via Caddy), 7881/tcp (ICE
-# TCP) and 7900-7999/udp (media), and both instances must land in the same
-# subnet (they do: the same subnet-id is used). Nothing is exposed publicly.
+# Prerequisites on the AWS side: one security group per role, both in the VPC
+# of the runner subnet. AWS_SECURITY_GROUP_ID_PUBLISHERS needs no inbound rule
+# (the publishers open every connection). AWS_SECURITY_GROUP_ID_AGENT_HOST must
+# allow inbound 7880/tcp (LiveKit HTTP/WS via Caddy), 7881/tcp (ICE over TCP)
+# and 7900-7999/udp (media) with the publishers group as source. Either secret
+# missing falls back to AWS_SECURITY_GROUP_ID. Both instances land in the same
+# subnet (the same subnet-id is used). Nothing is exposed publicly.
 name: Speech Processing agent capacity, remote publishers
 on:
   # The push trigger only registers this workflow with GitHub while it lives on
@@ -129,7 +132,7 @@ jobs:
           github-token: ${{ secrets.OPENVIDU_GITHUB_TOKEN }}
           ec2-image-id: ${{ inputs.agent-image-id || (inputs.accel == 'cuda12' && vars.AWS_GITHUB_ACTIONS_GPU_AMI) || vars.AWS_GITHUB_ACTIONS_AMI || vars.AWS_GITHUB_ACTIONS_GPU_AMI }}
           subnet-id: ${{ secrets.AWS_SUBNET_ID }}
-          security-group-id: ${{ secrets.AWS_SECURITY_GROUP_ID }}
+          security-group-id: ${{ secrets.AWS_SECURITY_GROUP_ID_AGENT_HOST || secrets.AWS_SECURITY_GROUP_ID }}
           workflow-name: ${{ github.workflow }}
           repository-name: ${{ github.repository }}
       - name: Read the agent host's private IP
@@ -163,7 +166,7 @@ jobs:
           github-token: ${{ secrets.OPENVIDU_GITHUB_TOKEN }}
           ec2-image-id: ${{ inputs.publisher-image-id || vars.AWS_GITHUB_ACTIONS_AMI || vars.AWS_GITHUB_ACTIONS_GPU_AMI }}
           subnet-id: ${{ secrets.AWS_SUBNET_ID }}
-          security-group-id: ${{ secrets.AWS_SECURITY_GROUP_ID }}
+          security-group-id: ${{ secrets.AWS_SECURITY_GROUP_ID_PUBLISHERS || secrets.AWS_SECURITY_GROUP_ID }}
           workflow-name: ${{ github.workflow }}
           repository-name: ${{ github.repository }}
 
@@ -328,13 +331,13 @@ jobs:
             sleep 5
           done
           if [ -z "$ok" ]; then
-            echo "::error::The publishers runner cannot reach the agent host on 7880/tcp. The runner security group must allow inbound 7880/tcp, 7881/tcp and 7900-7999/udp from itself (test/capacity/README.md)."
+            echo "::error::The publishers runner cannot reach the agent host on 7880/tcp. The agent-host security group (AWS_SECURITY_GROUP_ID_AGENT_HOST) must allow inbound 7880/tcp, 7881/tcp and 7900-7999/udp from the publishers group (AWS_SECURITY_GROUP_ID_PUBLISHERS); see test/capacity/README.md."
             exit 1
           fi
           if timeout 10 bash -c "</dev/tcp/$AGENT_HOST_IP/7881"; then
             echo "$AGENT_HOST_IP:7881/tcp (ICE over TCP) is open"
           else
-            echo "::error::The publishers runner cannot reach the agent host on 7881/tcp (ICE over TCP). Add it to the runner security group together with 7900-7999/udp."
+            echo "::error::The publishers runner cannot reach the agent host on 7881/tcp (ICE over TCP). Add it to the agent-host security group together with 7900-7999/udp, with the publishers group as source."
             exit 1
           fi
           echo "UDP 7900-7999 cannot be probed without a listener; if it is blocked, the publishers silently fall back to ICE over TCP 7881."

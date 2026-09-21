@@ -396,11 +396,17 @@ async function main(): Promise<void> {
   }
 
   const finalsPerTrack = publishers.map((p) => p.finals);
+  // Tracks that produced a final during the last verify window: an agent that
+  // accepted the ramp but fell behind shows here as k/N well below N.
+  const liveAtEnd = publishers.filter(
+    (p) => Date.now() - p.lastFinalAt < TRACK_VERIFY_TIMEOUT_MS,
+  ).length;
   log(
     `CAPACITY RESULT: ${tracks} simultaneous transcribed tracks with headless publishers` +
       (LABEL ? ` [${LABEL}]` : "") +
       ` (agent host: ${LIVEKIT_URL}; stop reason: ${stopReason}; oldest track still transcribing ` +
-      `at full load: ${sustained}; join retries: ${joinRetries}; finals per track: ${finalsPerTrack.join(",")}) ${load.sample()}`,
+      `at full load: ${sustained}; tracks with a final in the last ${TRACK_VERIFY_TIMEOUT_MS / 1000}s: ` +
+      `${liveAtEnd}/${tracks}; join retries: ${joinRetries}; finals per track: ${finalsPerTrack.join(",")}) ${load.sample()}`,
   );
 
   await Promise.all(publishers.map((p) => p.close()));

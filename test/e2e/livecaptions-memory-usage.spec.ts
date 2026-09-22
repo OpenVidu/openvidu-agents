@@ -789,8 +789,10 @@ function registerProviderMemoryTest(
 
   const providerConfig = provider[providerName];
   const useVad = providerConfig?.use_silero_vad;
-  // Local providers appear several times (one entry per model / VAD setting), and
-  // Playwright rejects duplicate titles, so the label carries the model too.
+  // Local providers appear several times (one entry per model / VAD setting).
+  // Playwright rejects duplicate titles, and the CI report (CTRF) prints only
+  // the test title, not the describe label, so both carry the model and VAD
+  // setting; the provider name stays in them for the `--grep sherpa` filters.
   const labelParts = [
     providerConfig?.model ? `model ${providerConfig.model}` : "",
     typeof useVad === "boolean" ? `VAD ${useVad ? "enabled" : "disabled"}` : "",
@@ -823,7 +825,7 @@ function registerProviderMemoryTest(
       LocalDeployment.stop();
     });
 
-    test(`memory usage should not exceed provider limit with ${providerName}`, async ({
+    test(`memory usage should not exceed provider limit with ${testLabel}`, async ({
       page,
     }) => {
       // The chaos soak runs for soakDurationMs, far longer than the

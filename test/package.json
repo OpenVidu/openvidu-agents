@@ -7,7 +7,8 @@
     "test:e2e:gpu": "STT_ACCEL=cuda12 playwright test --project=livecaptions --grep sherpa",
     "test:e2e:memory:gpu": "STT_ACCEL=cuda12 playwright test --project=livecaptions-memory-usage --grep sherpa",
     "capacity:headless": "ts-node --transpile-only capacity/headless-capacity-probe.ts",
-    "capacity:agent-host": "ts-node --transpile-only capacity/agent-host.ts"
+    "capacity:agent-host": "ts-node --transpile-only capacity/agent-host.ts",
+    "capacity:summarize": "ts-node --transpile-only capacity/summarize-run.ts"
   },
   "devDependencies": {
     "@livekit/rtc-node": "^0.13.30",

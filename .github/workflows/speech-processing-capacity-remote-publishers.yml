@@ -66,8 +66,16 @@ on:
         options:
           - community
           - pro
-      sherpa-model:
-        description: "Sherpa model directory to measure; must be in the image. Empty: the Nemotron 3.5 export for the accel (int8 on cpu, float32 on cuda12). Smaller English model: sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06"
+      provider:
+        description: "Local STT provider to measure. sherpa builds the agent-speech-processing-sherpa[-cuda12] image from the sources (or pulls docker-tag-agent-speech-processing); vosk pulls the published agent-speech-processing-vosk image and ignores accel"
+        type: choice
+        default: "sherpa"
+        required: true
+        options:
+          - sherpa
+          - vosk
+      model:
+        description: "Model directory to measure; must be in the provider's image. Empty: sherpa uses the Nemotron 3.5 export of the accel (int8 on cpu, float32 on cuda12), vosk uses vosk-model-en-us-0.22-lgraph. Examples: sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06, vosk-model-small-en-in-0.4"
         type: string
         default: ""
         required: false
@@ -90,7 +98,7 @@ on:
         required: false
         default: "development"
       docker-tag-agent-speech-processing:
-        description: "Docker tag of the published agent-speech-processing-sherpa[-cuda12] image to measure. Empty: build it from the repository sources"
+        description: "Docker tag of the published agent image to measure. Empty: sherpa is built from the repository sources, vosk uses the published main tag"
         type: string
         required: false
         default: ""
@@ -209,9 +217,10 @@ jobs:
     runs-on: ${{ needs.start-agent-runner.outputs.label }}
     timeout-minutes: 150
     env:
-      STT_ACCEL: ${{ inputs.accel == 'cuda12' && 'cuda12' || '' }}
+      STT_ACCEL: ${{ inputs.provider == 'sherpa' && inputs.accel == 'cuda12' && 'cuda12' || '' }}
       DEPLOYMENT_EDITION: ${{ inputs.deployment-edition }}
-      CAPACITY_SHERPA_MODEL: ${{ inputs.sherpa-model }}
+      CAPACITY_PROVIDER: ${{ inputs.provider }}
+      CAPACITY_MODEL: ${{ inputs.model }}
     steps:
       - name: Setup Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -228,7 +237,7 @@ jobs:
           path: openvidu-agents
 
       - name: Checkout OpenVidu/openvidu-agents-pro
-        if: ${{ inputs.docker-tag-agent-speech-processing == '' }}
+        if: ${{ inputs.provider == 'sherpa' && inputs.docker-tag-agent-speech-processing == '' }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: OpenVidu/openvidu-agents-pro
@@ -237,12 +246,12 @@ jobs:
           path: openvidu-agents-pro
 
       - name: Download STT model files
-        if: ${{ inputs.docker-tag-agent-speech-processing == '' }}
+        if: ${{ inputs.provider == 'sherpa' && inputs.docker-tag-agent-speech-processing == '' }}
         working-directory: ./openvidu-agents/speech-processing
         run: ./download-models.sh --accel ${{ inputs.accel }}
 
       - name: Build the agent image [-sherpa${{ inputs.accel == 'cuda12' && '-cuda12' || '' }}]
-        if: ${{ inputs.docker-tag-agent-speech-processing == '' }}
+        if: ${{ inputs.provider == 'sherpa' && inputs.docker-tag-agent-speech-processing == '' }}
         run: |
           cd openvidu-agents-pro/speech-processing
           export GITHUB_TOKEN=${{ secrets.OPENVIDU_GITHUB_TOKEN }}
@@ -260,7 +269,7 @@ jobs:
         uses: OpenVidu/actions/start-openvidu-local-deployment@070fb73fda8fe7a08e28991b1c2d276f12a009ef # v1.0.22
         with:
           ref-openvidu-local-deployment: ${{ inputs.ref-openvidu-local-deployment || 'development' }}
-          pre_startup_commands: "sed -i 's|docker_image: docker.io/openvidu/agent-speech-processing-cloud:main|docker_image: docker.io/openvidu/agent-speech-processing-sherpa${{ inputs.accel == 'cuda12' && '-cuda12' || '' }}:${{ inputs.docker-tag-agent-speech-processing || 'main' }}|g' agent-speech-processing.yaml"
+          pre_startup_commands: "sed -i 's|docker_image: docker.io/openvidu/agent-speech-processing-cloud:main|docker_image: docker.io/openvidu/agent-speech-processing-${{ inputs.provider == 'vosk' && 'vosk' || format('sherpa{0}', inputs.accel == 'cuda12' && '-cuda12' || '') }}:${{ inputs.docker-tag-agent-speech-processing || 'main' }}|g' agent-speech-processing.yaml"
           mediasoup-worker-bin: ${{ steps.setup-mediasoup-worker.outputs.MEDIASOUP_WORKER_BIN }}
           openvidu-edition: ${{ inputs.deployment-edition }}
           rtc-engine: ${{ inputs.rtc-engine }}
@@ -381,7 +390,7 @@ jobs:
           LIVEKIT_API_KEY: devkey
           LIVEKIT_API_SECRET: secret
           CAPACITY_HARD_CAP: ${{ inputs.hard-cap }}
-          CAPACITY_LABEL: "${{ inputs.agent-instance-type }} ${{ inputs.accel }} ${{ inputs.deployment-edition }} ${{ inputs.sherpa-model || 'nemotron-3.5' }}"
+          CAPACITY_LABEL: "${{ inputs.agent-instance-type }} ${{ inputs.provider == 'vosk' && 'cpu' || inputs.accel }} ${{ inputs.deployment-edition }} ${{ inputs.provider }} ${{ inputs.model || (inputs.provider == 'vosk' && 'vosk-model-en-us-0.22-lgraph' || 'nemotron-3.5') }}"
         run: npm run capacity:headless
 
   stop-agent-runner:

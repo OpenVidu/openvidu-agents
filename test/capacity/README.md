@@ -32,9 +32,12 @@ mode only allows a maximum of 8 participants across all rooms` in the server
 log). The agent image is the same on both editions and receives the Pro license
 through the operator.
 
-The `sherpa-model` input measures any other model of the image (for example the
-smaller English zipformer `sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06`)
-with the same ramp; the label of the result line carries the model.
+The `provider` (`sherpa` or `vosk`) and `model` inputs select what is measured:
+any model directory of that provider's image, with the same ramp for all of
+them. `sherpa` builds the image from the sources (or pulls
+`docker-tag-agent-speech-processing`); `vosk` pulls the published
+`agent-speech-processing-vosk` image and ignores `accel`. The result label
+carries the provider and the model.
 
 For the CPU vs GPU comparison, dispatch it twice with the same vCPU count and RAM:
 
@@ -83,3 +86,32 @@ npm run capacity:agent-host -- stop
 Provider and model default to the sherpa provider with the Nemotron 3.5 model
 (`e2e/utils/models.ts`, forced English); override with `CAPACITY_PROVIDER_JSON`,
 e.g. `{"vosk":{"model":"vosk-model-en-us-0.22-lgraph","use_silero_vad":false}}`.
+
+## Rebuilding the capacity table of the docs
+
+The table under "Capacity estimate of local provider models" in
+`openvidu.io/docs/docs/ai/live-captions.md` is one dispatch per row, all on the
+`community` edition with the default publishers instance:
+
+| Docs row | `provider` | `model` | `agent-instance-type` / `accel` |
+| --- | --- | --- | --- |
+| Vosk small models | `vosk` | `vosk-model-small-en-in-0.4` (the only small English model in the image; its transcripts of the US English fixture are poor, which does not matter for a capacity count) | `m6i.2xlarge` / `cpu` |
+| Vosk `vosk-model-en-us-0.22-lgraph` | `vosk` | empty | `m6i.2xlarge` / `cpu` |
+| Sherpa Kroko | `sherpa` | `sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06` | `m6i.2xlarge` / `cpu` |
+| Sherpa multilingual zipformer | `sherpa` | `sherpa-onnx-streaming-zipformer-ar_en_id_ja_ru_th_vi_zh-2025-02-10` | `m6i.2xlarge` / `cpu` |
+| Sherpa Nemotron 3.5 int8 | `sherpa` | empty | `m6i.2xlarge` / `cpu` |
+| Sherpa Nemotron 3.5 float32 | `sherpa` | empty | `g4dn.2xlarge` / `cuda12` (the T4 is the limit; `g4dn.xlarge` gives the 4-vCPU figure) |
+
+A 4-vCPU host (`m6i.xlarge`) gives half the tracks of the 8-vCPU one for every
+CPU model; measure whichever is cheaper and scale. When the run is over:
+
+```sh
+npm run capacity:summarize -- <run-id>
+```
+
+prints the track count and how the ramp ended, the agent's CPU at full load
+and the derived cost per track, the tracks-per-8-vCPUs figure, and a Markdown
+row skeleton for the docs table (the quality column is filled by hand from the
+e2e accuracy runs). Adding a model to the table is adding it to the image
+(`speech-processing/download-models.sh`), dispatching one run and pasting the
+row.

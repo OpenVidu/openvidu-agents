@@ -20,7 +20,8 @@
  *   STT_ACCEL               cuda12 to use the -cuda12 image with GPU passthrough (empty = CPU image)
  *   CAPACITY_PROVIDER_JSON  provider entry as in the e2e specs, default: the sherpa provider with
  *                           the Nemotron 3.5 model of e2e/utils/models.ts, forced English
- *   CAPACITY_SHERPA_MODEL   sherpa model directory for the default provider (any model of the image)
+ *   CAPACITY_PROVIDER       sherpa (default) or vosk
+ *   CAPACITY_MODEL          model directory of that provider's image (defaults: Nemotron 3.5 / vosk-model-en-us-0.22-lgraph)
  *   LOCAL_DEPLOYMENT_BASE_PATH  where openvidu-local-deployment is checked out (LocalDeployment default)
  *   OPENVIDU_PRO_LICENSE    forwarded to the operator by LocalDeployment (Pro plugins need it)
  *   HOLD_UNTIL_JOB, HOLD_MAX_MINUTES (default 75), HOLD_SAMPLE_SECONDS (default 15)
@@ -55,15 +56,20 @@ function providerConfig(): Record<string, any> {
   if (process.env.CAPACITY_PROVIDER_JSON) {
     return JSON.parse(process.env.CAPACITY_PROVIDER_JSON);
   }
-  // CAPACITY_SHERPA_MODEL selects any model directory of the image; the
-  // Nemotron export of the accel is the default. Only the multilingual NeMo
-  // transducer takes a language prompt; zipformer models ignore the option.
-  const model = process.env.CAPACITY_SHERPA_MODEL || SHERPA_NEMOTRON_MODEL;
-  const sherpa: Record<string, any> = { model, use_silero_vad: false };
-  if (model.includes("nemotron")) {
-    sherpa.language = "en";
+  // CAPACITY_PROVIDER (sherpa, the default, or vosk) and CAPACITY_MODEL (any
+  // model directory of that provider's image) select what is measured. The
+  // defaults are the Nemotron export of the accel for sherpa and the large
+  // English model for vosk. Only the multilingual NeMo transducer takes a
+  // language prompt; zipformer and vosk models ignore the option.
+  const provider = process.env.CAPACITY_PROVIDER || "sherpa";
+  const model =
+    process.env.CAPACITY_MODEL ||
+    (provider === "vosk" ? "vosk-model-en-us-0.22-lgraph" : SHERPA_NEMOTRON_MODEL);
+  const config: Record<string, any> = { model, use_silero_vad: false };
+  if (provider === "sherpa" && model.includes("nemotron")) {
+    config.language = "en";
   }
-  return { sherpa };
+  return { [provider]: config };
 }
 
 /** LAN_PRIVATE_IP as written by configure_lan_private_ip_linux.sh during LocalDeployment.start. */

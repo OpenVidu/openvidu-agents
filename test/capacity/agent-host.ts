@@ -203,7 +203,7 @@ async function hold(): Promise<void> {
     // enough on its own.
     const now = new Date().toISOString();
     for (const [container, filter] of [
-      [SERVER_CONTAINER, `grep -iE "warn|error|available nodes|could not|limit" | grep -vE "webhook|pion.ice|data channel"`],
+      [SERVER_CONTAINER, `grep -iE "warn|error|available nodes|could not|limit|closed|timeout|reconnect|participant (left|closed|removed)" | grep -vE "webhook|pion.ice|data channel|Failed to ping"`],
       [AGENT_CONTAINER, `grep -E "WARNING|ERROR|Traceback|job (ended|failed)|received job|shutting down" | grep -vE "skipping user input|event loop blocked|pre-connect audio handler"`],
     ] as Array<[string, string]>) {
       try {

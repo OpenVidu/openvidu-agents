@@ -821,6 +821,62 @@ async def entrypoint(ctx: JobContext):
 #     await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
 
 
+LOCAL_STT_PROVIDERS = ("vosk", "sherpa")
+
+
+def _resolve_job_executor_type(
+    stt_provider, configured, env_override: str = ""
+) -> JobExecutorType:
+    """The executor livekit-agents runs this agent's Room jobs with.
+
+    - PROCESS for every cloud provider. Each Room job runs in its own OS
+      process, so ALL resources (including native SDK memory) are reclaimed by
+      the kernel when the Room closes, hung jobs can be killed, and
+      job_memory_warn_mb/job_memory_limit_mb are actually enforced.
+      Non-streaming cloud providers (openai, azure_openai, groq, fal, clova,
+      spitch, simplismart, and the default elevenlabs/mistralai models) need
+      the Silero VAD StreamAdapter wrapper: each warm job subprocess loads its
+      own VAD copy in prewarm() (+~23 MB per concurrent Room, loaded off the
+      caption critical path).
+    - For vosk/sherpa (with or without VAD) the `job_executor` YAML property
+      (`configured`, default thread) decides: `thread` runs every Room as a
+      thread of one process sharing a single copy of the local ASR model;
+      `process` runs every Room in its own process with its own model copy,
+      loaded in prewarm().
+
+    `env_override` is the JOB_EXECUTOR_TYPE env var, a testing escape hatch
+    that wins for any provider. Raises ValueError on an invalid `configured`.
+    """
+    job_executor = str(configured if configured is not None else "thread").strip().lower()
+    if job_executor not in ("thread", "process"):
+        raise ValueError(
+            f"job_executor must be 'thread' or 'process', got '{configured}'"
+        )
+
+    override = (env_override or "").strip().lower()
+    if override in ("thread", "process"):
+        job_executor_type = (
+            JobExecutorType.THREAD if override == "thread" else JobExecutorType.PROCESS
+        )
+        logging.info(
+            f"Job executor type overridden via JOB_EXECUTOR_TYPE env: "
+            f"{job_executor_type.name}"
+        )
+        return job_executor_type
+    if override:
+        logging.warning(
+            f"Unrecognized JOB_EXECUTOR_TYPE value '{env_override}' - ignoring it"
+        )
+
+    if stt_provider in LOCAL_STT_PROVIDERS:
+        return (
+            JobExecutorType.THREAD
+            if job_executor == "thread"
+            else JobExecutorType.PROCESS
+        )
+    return JobExecutorType.PROCESS
+
+
 def prewarm(proc: JobProcess):
     in_job_subprocess = _is_job_subprocess()
     if in_job_subprocess and _early_log_handler is not None:
@@ -866,6 +922,24 @@ def prewarm(proc: JobProcess):
         # Don't load it here to save memory. It will be loaded on-demand if needed.
         logging.debug("Silero VAD not preloaded - will be loaded on-demand if needed")
 
+    if in_job_subprocess:
+        # `job_executor: process` with vosk/sherpa: this job subprocess holds
+        # its own copy of the local ASR model, so load it now, before a Room is
+        # assigned to it. Both helpers check the provider and never raise.
+        try:
+            agent_config = OpenViduAgent.get_instance().get_agent_config()
+        except (
+            Exception,
+            SystemExit,
+        ) as e:  # noqa: BLE001 - prewarm must never kill the process (config loader calls exit())
+            logging.warning(
+                f"Prewarm: agent configuration unavailable, the ASR model will "
+                f"load with the first Room: {e}"
+            )
+        else:
+            _preload_vosk_model(agent_config)
+            _preload_sherpa_model(agent_config)
+
     # ######################################
     # TODO: use turn detection when required
     # ######################################
@@ -897,22 +971,22 @@ def _preload_silero_vad() -> None:
 
 
 def _preload_vosk_model(agent_config) -> None:
-    """Preload Vosk model into memory for sharing across threads.
+    """Preload the Vosk model into this process.
 
-    When using JobExecutorType.THREAD, all agent threads share the same process memory.
-    This function loads the Vosk model once at startup so all subsequent STT instances
-    reuse the cached model via livekit-plugins-vosk's internal _ModelCache.
+    Every STT instance created later in the process (the worker's threads under
+    JobExecutorType.THREAD, or the Rooms of a job subprocess under PROCESS)
+    reuses the cached model via livekit-plugins-vosk's internal _ModelCache.
     """
     try:
         stt_provider = agent_config.get("live_captions", {}).get("provider")
         if stt_provider == "vosk":
-            logging.info("Preloading Vosk model for shared thread-based execution...")
+            logging.info("Preloading Vosk model into this process...")
             # Creating an STT instance triggers model loading into the cache
             stt_impl = get_stt_impl(agent_config)
             # Force model loading by calling a method that requires the model
             # The model will be cached and shared across all thread-based jobs
             logging.info(
-                "Vosk model preloaded successfully. Will be shared across all agent threads"
+                "Vosk model preloaded successfully. Every Room of this process reuses it"
             )
     except Exception as e:
         logging.warning(
@@ -921,16 +995,16 @@ def _preload_vosk_model(agent_config) -> None:
 
 
 def _preload_sherpa_model(agent_config) -> None:
-    """Preload sherpa model into memory for sharing across threads.
+    """Preload the sherpa model into this process.
 
-    When using JobExecutorType.THREAD, all agent threads share the same process memory.
-    This function loads the sherpa model once at startup so all subsequent STT instances
-    reuse the cached recognizer via livekit-plugins-sherpa's internal _RecognizerCache.
+    Every STT instance created later in the process (the worker's threads under
+    JobExecutorType.THREAD, or the Rooms of a job subprocess under PROCESS)
+    reuses the cached recognizer via livekit-plugins-sherpa's internal _RecognizerCache.
     """
     try:
         stt_provider = agent_config.get("live_captions", {}).get("provider")
         if stt_provider == "sherpa":
-            logging.info("Preloading sherpa model for shared thread-based execution...")
+            logging.info("Preloading sherpa model into this process...")
             # Creating an STT instance triggers recognizer loading into the cache
             stt_impl = get_stt_impl(agent_config)
 
@@ -959,7 +1033,7 @@ def _preload_sherpa_model(agent_config) -> None:
                         f"pay the one-time initialization cost): {warmup_error}"
                     )
             logging.info(
-                "sherpa model preloaded successfully. Will be shared across all agent threads"
+                "sherpa model preloaded successfully. Every Room of this process reuses it"
             )
     except Exception as e:
         logging.warning(
@@ -1013,67 +1087,29 @@ if __name__ == "__main__":
         logging.error("load_threshold must be a number between 0 and 1")
         sys.exit(1)
 
-    # Decide the job executor type from the configured provider:
-    #  - PROCESS for every cloud provider. Each Room job runs in its own OS
-    #    process, so ALL resources (including native SDK memory) are reclaimed
-    #    by the kernel when the Room closes, hung jobs can be killed, and
-    #    job_memory_warn_mb/job_memory_limit_mb are actually enforced.
-    #    Non-streaming cloud providers (openai, azure_openai, groq, fal, clova,
-    #    spitch, simplismart, and the default elevenlabs/mistralai models) need
-    #    the Silero VAD StreamAdapter wrapper: each warm job subprocess loads
-    #    its own VAD copy in prewarm() (+~23 MB per concurrent Room, loaded off
-    #    the caption critical path).
-    #  - THREAD only for vosk/sherpa (with or without VAD): their large
-    #    local ASR models are shared across jobs by design, and one process is
-    #    what lets every job reuse a single copy.
-    # Env override for testing: JOB_EXECUTOR_TYPE=thread|process. Note that
-    # forcing 'process' for vosk/sherpa makes every job child load its
-    # own copy of the ASR model on the job critical path — testing escape hatch only.
     provider_requires_vad = stt_provider_requires_vad(agent_config)
     stt_provider = agent_config.get("live_captions", {}).get("provider")
+    is_local_provider = stt_provider in LOCAL_STT_PROVIDERS
 
     # Report retired config keys in the agent configuration file not longer
     # supported by the provider plugin
     warn_about_retired_keys(agent_config, stt_provider)
 
-    _executor_override = os.getenv("JOB_EXECUTOR_TYPE", "").strip().lower()
-    if _executor_override in ("thread", "process"):
-        job_executor_type = (
-            JobExecutorType.THREAD
-            if _executor_override == "thread"
-            else JobExecutorType.PROCESS
+    # PROCESS for cloud providers; the `job_executor` YAML property for
+    # vosk/sherpa; JOB_EXECUTOR_TYPE env overrides (see the function).
+    try:
+        job_executor_type = _resolve_job_executor_type(
+            stt_provider,
+            config_manager.optional_string_value("job_executor", "thread"),
+            os.getenv("JOB_EXECUTOR_TYPE", ""),
         )
-        logging.info(
-            f"Job executor type overridden via JOB_EXECUTOR_TYPE env: "
-            f"{job_executor_type.name}"
-        )
-        if job_executor_type == JobExecutorType.PROCESS and stt_provider in (
-            "vosk",
-            "sherpa",
-        ):
-            logging.warning(
-                "JOB_EXECUTOR_TYPE=process forced for a local-model provider: "
-                "every Room job subprocess will load its own copy of the ASR "
-                "model on the job critical path"
-            )
-    elif _executor_override:
-        logging.warning(
-            f"Unrecognized JOB_EXECUTOR_TYPE value '{_executor_override}' - "
-            f"ignoring and selecting automatically"
-        )
-        job_executor_type = (
-            JobExecutorType.THREAD
-            if stt_provider in ("vosk", "sherpa")
-            else JobExecutorType.PROCESS
-        )
-    elif stt_provider in ("vosk", "sherpa"):
-        job_executor_type = JobExecutorType.THREAD
-    else:
-        job_executor_type = JobExecutorType.PROCESS
+    except ValueError as e:
+        logging.error(str(e))
+        sys.exit(1)
 
     logging.info(
         f"Using job executor type {job_executor_type.name} for provider "
-        f"'{stt_provider}' (local ASR model: {stt_provider in ('vosk', 'sherpa')}, "
+        f"'{stt_provider}' (local ASR model: {is_local_provider}, "
         f"needs Silero VAD: {provider_requires_vad})"
     )
 
@@ -1085,10 +1121,12 @@ if __name__ == "__main__":
         # asynchronously in the background.
         server_kwargs["num_idle_processes"] = 2
         # Job subprocess initialization (prewarm) may import the provider
-        # plugin and load the Silero VAD; give it comfortable headroom over
-        # livekit's 10s default so a CPU-busy host cannot kill warm children
-        # mid-initialization.
-        server_kwargs["initialize_process_timeout"] = 60.0
+        # plugin and load the Silero VAD, plus the local ASR model for
+        # vosk/sherpa; give it comfortable headroom over livekit's 10s default
+        # so a CPU-busy host cannot kill warm children mid-initialization.
+        server_kwargs["initialize_process_timeout"] = (
+            120.0 if is_local_provider else 60.0
+        )
         if provider_requires_vad:
             # Import (only) the silero plugin in the supervisor so it gets
             # registered with livekit and therefore included in the forkserver

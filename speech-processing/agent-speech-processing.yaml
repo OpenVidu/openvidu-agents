@@ -7,6 +7,11 @@ enabled: true
 # Maximum CPU load threshold for the agent to accept new jobs. Value between 0 and 1.
 load_threshold: 0.7
 
+# How the agent runs its Rooms when the provider is local (vosk, sherpa) [thread, process]
+# - thread: all Rooms run in the same process sharing the same model. Lower memory usage, but upper limit of 20 concurrent audio tracks due to CPU constraints.
+# - process: each Room runs in its own process with its own copy of the model. Higher memory usage, but upper limit of concurrent audio tracks scales with CPUs.
+job_executor: thread
+
 # Log level for the agent [DEBUG, INFO, WARN, ERROR, CRITICAL]
 log_level: INFO
 

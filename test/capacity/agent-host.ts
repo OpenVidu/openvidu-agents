@@ -196,19 +196,26 @@ async function hold(): Promise<void> {
     const sample = sampleHostLoad({ gpu: GPU });
     log(`Host load ${sample}`);
     fs.appendFileSync(SAMPLES_FILE, `${new Date().toISOString()} Host load ${sample}\n`);
-    // New warnings, errors and node-selection lines of the LiveKit server
-    // since the previous sample, so a refused join is explained in this log.
+    // New warnings and errors of the LiveKit server and of the agent since the
+    // previous sample, so a refused join or a stalled agent is explained here
+    // with its time. The agent's per-utterance and per-loop-tick chatter is
+    // filtered out; the 300-line tail dumped at `stop` never reaches back far
+    // enough on its own.
     const now = new Date().toISOString();
-    try {
-      const lines = execCommand(
-        `docker logs ${SERVER_CONTAINER} --since ${serverLogSince} 2>&1 | ` +
-          `grep -iE "warn|error|available nodes|could not|limit" | head -20 || true`,
-      ).trim();
-      if (lines) {
-        console.log(`--- ${SERVER_CONTAINER} log since ${serverLogSince} ---\n${lines}`);
+    for (const [container, filter] of [
+      [SERVER_CONTAINER, `grep -iE "warn|error|available nodes|could not|limit" | grep -vE "webhook|pion.ice|data channel"`],
+      [AGENT_CONTAINER, `grep -E "WARNING|ERROR|Traceback|job (ended|failed)|received job|shutting down" | grep -vE "skipping user input|event loop blocked|pre-connect audio handler"`],
+    ] as Array<[string, string]>) {
+      try {
+        const lines = execCommand(
+          `docker logs ${container} --since ${serverLogSince} 2>&1 | ${filter} | head -25 || true`,
+        ).trim();
+        if (lines) {
+          console.log(`--- ${container} log since ${serverLogSince} ---\n${lines}`);
+        }
+      } catch {
+        // the container may be gone during teardown
       }
-    } catch {
-      // the server container may be gone during teardown
     }
     serverLogSince = now;
     try {
@@ -334,7 +341,11 @@ async function summary(): Promise<void> {
 }
 
 function stop(): void {
-  dumpLog(AGENT_CONTAINER, `docker logs --tail 300 ${AGENT_CONTAINER}`);
+  // Without the per-utterance chatter, so the tail reaches back to the ramp.
+  dumpLog(
+    AGENT_CONTAINER,
+    `docker logs ${AGENT_CONTAINER} 2>&1 | grep -vE "FINAL|INTERIM|PARTIAL|skipping user input|event loop blocked|\\"level\\": \\"(INFO|DEBUG)\\"" | tail -600`,
+  );
   dumpLog(OPERATOR_CONTAINER, `docker logs --tail 100 ${OPERATOR_CONTAINER}`);
   // The server decides whether a new room gets a node: keep its warnings,
   // errors and node-selection lines (a join refused with HTTP 500 shows here).

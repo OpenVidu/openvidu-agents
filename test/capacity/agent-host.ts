@@ -13,6 +13,9 @@
  *                                          HOLD_SAMPLE_SECONDS; returns when the GitHub
  *                                          Actions job named HOLD_UNTIL_JOB (same run)
  *                                          completes, or after HOLD_MAX_MINUTES
+ *   ts-node capacity/agent-host.ts summary combine the samples `hold` wrote (CAPACITY_SAMPLES_FILE)
+ *                                          with the Publishers job's result (GitHub API) into the
+ *                                          capacity figures; appended to GITHUB_STEP_SUMMARY when set
  *   ts-node capacity/agent-host.ts stop    dump the agent's log tail and stop the deployment
  *
  * Configuration (environment):
@@ -25,6 +28,7 @@
  *   LOCAL_DEPLOYMENT_BASE_PATH  where openvidu-local-deployment is checked out (LocalDeployment default)
  *   OPENVIDU_PRO_LICENSE    forwarded to the operator by LocalDeployment (Pro plugins need it)
  *   HOLD_UNTIL_JOB, HOLD_MAX_MINUTES (default 75), HOLD_SAMPLE_SECONDS (default 15)
+ *   CAPACITY_SAMPLES_FILE   where `hold` appends its timestamped samples for `summary` (default capacity-host-load.log)
  *   GITHUB_TOKEN, GITHUB_REPOSITORY, GITHUB_RUN_ID  for the job poll (set by GitHub Actions)
  */
 import fs from "fs";
@@ -33,6 +37,17 @@ import { LocalDeployment } from "../e2e/utils/local-deployment";
 import { execCommand } from "../e2e/utils/helper";
 import { AGENT_CONTAINER, sampleHostLoad } from "../e2e/utils/host-load";
 import { SHERPA_NEMOTRON_MODEL } from "../e2e/utils/models";
+import {
+  HostSample,
+  PROGRESS_RE,
+  RESULT_MARKER,
+  parseResultLine,
+  parseSampleLine,
+  renderMarkdown,
+  renderText,
+  splitTimestampedLine,
+  summarize,
+} from "./summary";
 
 type Edition = "community" | "pro";
 
@@ -40,6 +55,8 @@ const EDITION = (process.env.DEPLOYMENT_EDITION as Edition) || "community";
 const GPU = (process.env.STT_ACCEL || "").trim() === "cuda12";
 /** LiveKit server container of the local deployment (both editions). */
 const SERVER_CONTAINER = "openvidu";
+/** Timestamped `Host load [...]` samples written by `hold`, read by `summary`. */
+const SAMPLES_FILE = process.env.CAPACITY_SAMPLES_FILE || "capacity-host-load.log";
 const LOCAL_DEPLOYMENT_BASE_PATH =
   process.env.LOCAL_DEPLOYMENT_BASE_PATH ||
   path.resolve(__dirname, "../../../openvidu-local-deployment");
@@ -147,7 +164,9 @@ async function hold(): Promise<void> {
   let lastPoll = 0;
   let serverLogSince = new Date().toISOString();
   while (Date.now() < deadline) {
-    log(`Host load ${sampleHostLoad({ gpu: GPU })}`);
+    const sample = sampleHostLoad({ gpu: GPU });
+    log(`Host load ${sample}`);
+    fs.appendFileSync(SAMPLES_FILE, `${new Date().toISOString()} Host load ${sample}\n`);
     // New warnings, errors and node-selection lines of the LiveKit server
     // since the previous sample, so a refused join is explained in this log.
     const now = new Date().toISOString();
@@ -204,6 +223,87 @@ function dumpLog(container: string, command: string): void {
   }
 }
 
+/** GitHub REST call with the workflow token; `raw` follows the log redirect without forwarding the token. */
+async function githubApi(path: string, raw = false): Promise<string> {
+  const token = process.env.GITHUB_TOKEN;
+  const repository = process.env.GITHUB_REPOSITORY;
+  if (!token || !repository) {
+    throw new Error("GITHUB_TOKEN and GITHUB_REPOSITORY are required");
+  }
+  const url = `https://api.github.com/repos/${repository}${path}`;
+  const headers = { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" };
+  if (!raw) {
+    const response = await fetch(url, { headers });
+    if (!response.ok) {
+      throw new Error(`GitHub API ${response.status} for ${path}`);
+    }
+    return response.text();
+  }
+  // The logs endpoint answers 302 with a signed URL that rejects extra auth headers.
+  const first = await fetch(url, { headers, redirect: "manual" });
+  const location = first.headers.get("location");
+  const response = location ? await fetch(location) : first;
+  if (!response.ok) {
+    throw new Error(`GitHub API ${response.status} for ${path} (logs)`);
+  }
+  return response.text();
+}
+
+/**
+ * The agent host knows the CPU, the publishers know the tracks: once the
+ * Publishers job is complete, join both into the capacity figures. Never fails
+ * the job: a missing result (the probe did not run) is reported and that is all.
+ */
+async function summary(): Promise<void> {
+  const runId = process.env.GITHUB_RUN_ID;
+  if (!runId) {
+    log("GITHUB_RUN_ID is not set; nothing to summarize");
+    return;
+  }
+  let samples: HostSample[] = [];
+  try {
+    samples = fs
+      .readFileSync(SAMPLES_FILE, "utf8")
+      .split("\n")
+      .flatMap((raw) => {
+        const l = splitTimestampedLine(raw);
+        const s = l && parseSampleLine(l.text, l.time);
+        return s ? [s] : [];
+      });
+  } catch (error: any) {
+    log(`No samples file ${SAMPLES_FILE} (${error.message}); nothing to summarize`);
+    return;
+  }
+  const jobs = JSON.parse(await githubApi(`/actions/runs/${runId}/jobs?per_page=100`)) as {
+    jobs: Array<{ id: number; name: string; status: string; conclusion: string | null }>;
+  };
+  const publishers = jobs.jobs.find((j) => j.name === "Publishers");
+  if (!publishers || publishers.status !== "completed") {
+    log(`Publishers job ${publishers ? publishers.status : "not found"}; nothing to summarize`);
+    return;
+  }
+  const lines = (await githubApi(`/actions/jobs/${publishers.id}/logs`, true))
+    .split("\n")
+    .flatMap((raw) => {
+      const l = splitTimestampedLine(raw);
+      return l ? [l] : [];
+    });
+  const resultLine = lines.find((l) => l.text.includes(RESULT_MARKER));
+  const result = resultLine && parseResultLine(resultLine.text);
+  if (!resultLine || !result) {
+    log(`Publishers job ${publishers.conclusion} without a ${RESULT_MARKER} line; nothing to summarize`);
+    return;
+  }
+  const lastAccepted = [...lines].reverse().find((l) => PROGRESS_RE.test(l.text));
+  const rampEnd = lastAccepted ? lastAccepted.time : resultLine.time - 60_000;
+  const capacity = summarize(result, samples, rampEnd, resultLine.time);
+  console.log(renderText(capacity));
+  if (process.env.GITHUB_STEP_SUMMARY) {
+    fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, renderMarkdown(capacity));
+    log("Summary written to the job summary");
+  }
+}
+
 function stop(): void {
   dumpLog(AGENT_CONTAINER, `docker logs --tail 300 ${AGENT_CONTAINER}`);
   // The server decides whether a new room gets a node: keep its warnings,
@@ -224,11 +324,14 @@ async function main(): Promise<void> {
     case "hold":
       await hold();
       break;
+    case "summary":
+      await summary();
+      break;
     case "stop":
       stop();
       break;
     default:
-      console.error("usage: agent-host.ts start|hold|stop");
+      console.error("usage: agent-host.ts start|hold|summary|stop");
       process.exit(2);
   }
 }

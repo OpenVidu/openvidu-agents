@@ -400,13 +400,37 @@ async function main(): Promise<void> {
   const liveAtEnd = publishers.filter(
     (p) => Date.now() - p.lastFinalAt < TRACK_VERIFY_TIMEOUT_MS,
   ).length;
-  log(
+  const resultLine =
     `CAPACITY RESULT: ${tracks} simultaneous transcribed tracks with headless publishers` +
-      (LABEL ? ` [${LABEL}]` : "") +
-      ` (agent host: ${LIVEKIT_URL}; stop reason: ${stopReason}; oldest track still transcribing ` +
-      `at full load: ${sustained}; tracks with a final in the last ${TRACK_VERIFY_TIMEOUT_MS / 1000}s: ` +
-      `${liveAtEnd}/${tracks}; join retries: ${joinRetries}; finals per track: ${finalsPerTrack.join(",")}) ${load.sample()}`,
-  );
+    (LABEL ? ` [${LABEL}]` : "") +
+    ` (agent host: ${LIVEKIT_URL}; stop reason: ${stopReason}; oldest track still transcribing ` +
+    `at full load: ${sustained}; tracks with a final in the last ${TRACK_VERIFY_TIMEOUT_MS / 1000}s: ` +
+    `${liveAtEnd}/${tracks}; join retries: ${joinRetries}; finals per track: ${finalsPerTrack.join(",")}) ${load.sample()}`;
+  log(resultLine);
+  // In GitHub Actions, the publishers' half of the picture goes to the job
+  // summary; the agent host adds the CPU figures (tracks per vCPU) to its own
+  // once this job is complete.
+  if (process.env.GITHUB_STEP_SUMMARY) {
+    fs.appendFileSync(
+      process.env.GITHUB_STEP_SUMMARY,
+      [
+        `### Capacity probe${LABEL ? `: ${LABEL}` : ""}`,
+        "",
+        "| Metric | Value |",
+        "| --- | --- |",
+        `| Simultaneous transcribed tracks | **${tracks}** |`,
+        `| Stop reason | ${stopReason} |`,
+        `| Oldest track still transcribing at full load | ${sustained ? "yes" : "no"} |`,
+        `| Tracks with a final in the last ${TRACK_VERIFY_TIMEOUT_MS / 1000} s | ${liveAtEnd}/${tracks} |`,
+        `| Join retries | ${joinRetries} |`,
+        `| Finals per track | ${finalsPerTrack.join(", ") || "none"} |`,
+        `| Agent host | ${LIVEKIT_URL} |`,
+        "",
+        "The agent host job's summary adds the CPU behind these tracks (CPU per track, tracks per vCPU).",
+        "",
+      ].join("\n"),
+    );
+  }
 
   await Promise.all(publishers.map((p) => p.close()));
   await dispose();

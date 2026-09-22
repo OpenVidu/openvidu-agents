@@ -10,7 +10,7 @@ whatever the agent did. The two scripts here split the roles:
 
 | Script | Runs on | Does |
 | --- | --- | --- |
-| `agent-host.ts` | the machine under test | `start`: configure the agent provider in the local deployment, start it, wait for the agent worker. `hold`: keep it up while the publishers run, logging `Host load [...]` (agent CPU/RAM, other containers, host total, VRAM + GPU utilization) every 15 s. `stop`: dump the agent log tail, stop the deployment. |
+| `agent-host.ts` | the machine under test | `start`: configure the agent provider in the local deployment, start it, wait for the agent worker. `hold`: keep it up while the publishers run, logging and recording `Host load [...]` (agent CPU/RAM, other containers, host total, VRAM + GPU utilization) every 15 s. `stop`: dump the agent log tail, stop the deployment. |
 | `headless-capacity-probe.ts` | any other machine | LiveKit Node SDK publishers stream a WAV in a loop; a track counts when the agent's final transcription of it (`lk.transcription` text stream) arrives within 60 s; the ramp adds one publisher at a time and re-checks the oldest track at the end; prints `CAPACITY RESULT:`. Each publisher costs the probe process about 13 % of a core (Opus encoding), so the default `c6i.2xlarge` (8 vCPU) carries the 40-track hard cap with margin; the result line reports the publisher host's own load. |
 
 ## CI: `speech-processing-capacity-remote-publishers.yml`
@@ -103,7 +103,11 @@ The table under "Capacity estimate of local provider models" in
 | Sherpa Nemotron 3.5 float32 | `sherpa` | empty | `g4dn.2xlarge` / `cuda12` (the T4 is the limit; `g4dn.xlarge` gives the 4-vCPU figure) |
 
 A 4-vCPU host (`m6i.xlarge`) gives half the tracks of the 8-vCPU one for every
-CPU model; measure whichever is cheaper and scale. When the run is over:
+CPU model; measure whichever is cheaper and scale. Every run writes its figures
+to the GitHub **job summaries**: the Publishers job reports the tracks and how the
+ramp ended, the Agent host job adds the CPU behind them (agent CPU at full load,
+CPU per track, tracks per vCPU and per 8 vCPUs, GPU utilization) and the row
+skeleton for the docs table. The same figures for any past run:
 
 ```sh
 npm run capacity:summarize -- <run-id>

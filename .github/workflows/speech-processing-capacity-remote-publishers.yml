@@ -292,8 +292,20 @@ jobs:
           LOCAL_DEPLOYMENT_BASE_PATH: ../../openvidu-local-deployment
           HOLD_UNTIL_JOB: Publishers
           HOLD_MAX_MINUTES: "90"
+          CAPACITY_SAMPLES_FILE: ${{ runner.temp }}/capacity-host-load.log
           GITHUB_TOKEN: ${{ github.token }}
         run: npm run capacity:agent-host -- hold
+
+      # Tracks come from the Publishers job, the CPU behind them from the
+      # samples above: CPU per track, tracks per vCPU and per 8 vCPUs land in
+      # this job's summary.
+      - name: Summarize the capacity figures
+        if: always()
+        working-directory: ./openvidu-agents/test
+        env:
+          CAPACITY_SAMPLES_FILE: ${{ runner.temp }}/capacity-host-load.log
+          GITHUB_TOKEN: ${{ github.token }}
+        run: npm run capacity:agent-host -- summary
 
       - name: Stop the deployment
         if: always()

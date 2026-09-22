@@ -265,6 +265,13 @@ jobs:
           ref-openvidu-pro-mediasoup: ${{ inputs.ref-openvidu-pro-mediasoup }}
           github-token: ${{ secrets.OPENVIDU_GITHUB_TOKEN }}
 
+      # A published image is pulled here, in its own step, so a Docker Hub
+      # failure (rate limit, missing tag) is visible instead of surfacing as a
+      # worker that never registers while the operator retries in the background.
+      - name: Pull the published agent image
+        if: ${{ inputs.provider == 'vosk' || inputs.docker-tag-agent-speech-processing != '' }}
+        run: docker pull docker.io/openvidu/agent-speech-processing-${{ inputs.provider == 'vosk' && 'vosk' || format('sherpa{0}', inputs.accel == 'cuda12' && '-cuda12' || '') }}:${{ inputs.docker-tag-agent-speech-processing || 'main' }}
+
       - name: Setup OpenVidu Local Deployment
         uses: OpenVidu/actions/start-openvidu-local-deployment@070fb73fda8fe7a08e28991b1c2d276f12a009ef # v1.0.22
         with:

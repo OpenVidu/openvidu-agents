@@ -55,6 +55,8 @@ const EDITION = (process.env.DEPLOYMENT_EDITION as Edition) || "community";
 const GPU = (process.env.STT_ACCEL || "").trim() === "cuda12";
 /** LiveKit server container of the local deployment (both editions). */
 const SERVER_CONTAINER = "openvidu";
+/** The operator creates the agent container from agent-speech-processing.yaml (pulls its image). */
+const OPERATOR_CONTAINER = "operator";
 /** Timestamped `Host load [...]` samples written by `hold`, read by `summary`. */
 const SAMPLES_FILE = process.env.CAPACITY_SAMPLES_FILE || "capacity-host-load.log";
 const LOCAL_DEPLOYMENT_BASE_PATH =
@@ -112,6 +114,27 @@ async function start(): Promise<void> {
   // when STT_ACCEL is set), the Pro license, runs configure_lan_private_ip_linux.sh,
   // `docker compose up -d` and waits for the agent worker to register.
   await LocalDeployment.start(EDITION, provider, undefined, "automatic");
+  // LocalDeployment.start tolerates a worker that never registered (the e2e
+  // specs then fail on their own assertions). Here the publishers would be
+  // launched against nothing, so the operator's and the agent's logs are
+  // dumped and the step fails instead.
+  let agentState = "";
+  try {
+    agentState = execCommand(`docker inspect -f "{{.State.Status}}" ${AGENT_CONTAINER}`).trim();
+  } catch {
+    agentState = "missing";
+  }
+  const registered =
+    agentState === "running" &&
+    execCommand(`docker logs ${AGENT_CONTAINER} 2>&1 || true`).includes("registered worker");
+  if (!registered) {
+    dumpLog(OPERATOR_CONTAINER, `docker logs --tail 200 ${OPERATOR_CONTAINER}`);
+    dumpLog(AGENT_CONTAINER, `docker logs --tail 200 ${AGENT_CONTAINER}`);
+    throw new Error(
+      `agent container ${AGENT_CONTAINER} is ${agentState} and its worker has not registered; ` +
+        `see the operator log above (image pull or agent start failure)`,
+    );
+  }
   const ip = deploymentIp();
   // Caddy publishes LiveKit's HTTP/WS on 7880 and RTC uses 7881/tcp + 7900-7999/udp
   // on the same address (openvidu-local-deployment/<edition>/docker-compose.yaml).
@@ -306,6 +329,7 @@ async function summary(): Promise<void> {
 
 function stop(): void {
   dumpLog(AGENT_CONTAINER, `docker logs --tail 300 ${AGENT_CONTAINER}`);
+  dumpLog(OPERATOR_CONTAINER, `docker logs --tail 100 ${OPERATOR_CONTAINER}`);
   // The server decides whether a new room gets a node: keep its warnings,
   // errors and node-selection lines (a join refused with HTTP 500 shows here).
   dumpLog(

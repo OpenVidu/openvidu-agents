@@ -26,7 +26,7 @@
 # and 7900-7999/udp (media) with the publishers group as source. Either secret
 # missing falls back to AWS_SECURITY_GROUP_ID. Both instances land in the same
 # subnet (the same subnet-id is used). Nothing is exposed publicly.
-name: Speech Processing agent capacity, remote publishers
+name: Speech Processing agent capacity
 on:
   workflow_dispatch:
     inputs:

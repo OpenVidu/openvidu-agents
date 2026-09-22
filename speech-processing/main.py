@@ -945,6 +945,19 @@ def _preload_sherpa_model(agent_config) -> None:
             # Force model loading by ensuring the recognizer is created
             # The _ensure_recognizer() method loads the model into _RecognizerCache
             asyncio.run(sherpa_stt._ensure_recognizer())
+            # Absorb the one-time first-inference costs (CUDA context and cuDNN
+            # algorithm search on GPU images, thread pools and arenas on CPU) with
+            # a short silent utterance, so the first participant's audio is not
+            # decoded in a burst behind that stall (seen as a 13 s first caption on
+            # a T4). Non-fatal: the first utterance simply pays the cost instead.
+            if hasattr(sherpa_stt, "warmup"):
+                try:
+                    asyncio.run(sherpa_stt.warmup())
+                except Exception as warmup_error:
+                    logging.warning(
+                        f"sherpa warm-up failed (non-fatal, first utterance will "
+                        f"pay the one-time initialization cost): {warmup_error}"
+                    )
             logging.info(
                 "sherpa model preloaded successfully. Will be shared across all agent threads"
             )
@@ -953,51 +966,6 @@ def _preload_sherpa_model(agent_config) -> None:
             f"Failed to preload sherpa model: {e}. Model will be loaded on first use."
         )
 
-
-def _preload_nemotron_model(agent_config) -> None:
-    """Preload the Nemotron model into memory for sharing across threads.
-
-    When using JobExecutorType.THREAD, all agent threads share the same process
-    memory. This loads the ~2.4 GB GPU model once at startup so all subsequent
-    STT instances reuse the cached model via livekit-plugins-nemotron's internal
-    _ModelCache, instead of paying the multi-second load on the caption path.
-    """
-    try:
-        stt_provider = agent_config.get("live_captions", {}).get("provider")
-        if stt_provider == "nemotron":
-            logging.info(
-                "Preloading nemotron model for shared thread-based execution..."
-            )
-            # Creating an STT instance triggers model loading into the cache.
-            stt_impl = get_stt_impl(agent_config)
-
-            # If wrapped in VADTriggeredSTT, get the underlying nemotron STT.
-            from vad_stt_wrapper import VADTriggeredSTT
-
-            if isinstance(stt_impl, VADTriggeredSTT):
-                nemo_stt = stt_impl._stt
-            else:
-                nemo_stt = stt_impl
-
-            # Force model loading by ensuring it is in the shared cache.
-            asyncio.run(nemo_stt._ensure_model())
-            # Absorb the one-time lazy-init cost (numba JIT of the RNNT greedy decoder, ~3.5s on CPU)
-            # with a dummy utterance, so the first real caption is as fast as subsequent ones.
-            # Non-fatal: on failure the first utterance simply pays that cost instead.
-            try:
-                asyncio.run(nemo_stt.warmup())
-            except Exception as warmup_error:
-                logging.warning(
-                    f"nemotron warm-up failed (non-fatal, first utterance will "
-                    f"pay the one-time JIT cost): {warmup_error}"
-                )
-            logging.info(
-                "nemotron model preloaded successfully. Will be shared across all agent threads"
-            )
-    except Exception as e:
-        logging.warning(
-            f"Failed to preload nemotron model: {e}. Model will be loaded on first use."
-        )
 
 def _exit_on_stop_signal_during_startup(signum: int, frame) -> None:
     logging.info(
@@ -1055,11 +1023,11 @@ if __name__ == "__main__":
     #    the Silero VAD StreamAdapter wrapper: each warm job subprocess loads
     #    its own VAD copy in prewarm() (+~23 MB per concurrent Room, loaded off
     #    the caption critical path).
-    #  - THREAD only for vosk/sherpa/nemotron (with or without VAD): their large
+    #  - THREAD only for vosk/sherpa (with or without VAD): their large
     #    local ASR models are shared across jobs by design, and one process is
     #    what lets every job reuse a single copy.
     # Env override for testing: JOB_EXECUTOR_TYPE=thread|process. Note that
-    # forcing 'process' for vosk/sherpa/nemotron makes every job child load its
+    # forcing 'process' for vosk/sherpa makes every job child load its
     # own copy of the ASR model on the job critical path — testing escape hatch only.
     provider_requires_vad = stt_provider_requires_vad(agent_config)
     stt_provider = agent_config.get("live_captions", {}).get("provider")
@@ -1082,7 +1050,6 @@ if __name__ == "__main__":
         if job_executor_type == JobExecutorType.PROCESS and stt_provider in (
             "vosk",
             "sherpa",
-            "nemotron",
         ):
             logging.warning(
                 "JOB_EXECUTOR_TYPE=process forced for a local-model provider: "
@@ -1096,17 +1063,17 @@ if __name__ == "__main__":
         )
         job_executor_type = (
             JobExecutorType.THREAD
-            if stt_provider in ("vosk", "sherpa", "nemotron")
+            if stt_provider in ("vosk", "sherpa")
             else JobExecutorType.PROCESS
         )
-    elif stt_provider in ("vosk", "sherpa", "nemotron"):
+    elif stt_provider in ("vosk", "sherpa"):
         job_executor_type = JobExecutorType.THREAD
     else:
         job_executor_type = JobExecutorType.PROCESS
 
     logging.info(
         f"Using job executor type {job_executor_type.name} for provider "
-        f"'{stt_provider}' (local ASR model: {stt_provider in ('vosk', 'sherpa', 'nemotron')}, "
+        f"'{stt_provider}' (local ASR model: {stt_provider in ('vosk', 'sherpa')}, "
         f"needs Silero VAD: {provider_requires_vad})"
     )
 
@@ -1178,7 +1145,6 @@ if __name__ == "__main__":
             )
         _preload_vosk_model(agent_config)
         _preload_sherpa_model(agent_config)
-        _preload_nemotron_model(agent_config)
     else:
         logging.info(
             "Skipping model preloads: PROCESS executor prewarms per-job subprocesses"

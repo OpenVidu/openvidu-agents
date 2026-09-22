@@ -14,6 +14,7 @@ import {
   waitForEvent,
   waitForEventContentToStartWith,
 } from "./utils/helper";
+import { SHERPA_NEMOTRON_MODEL } from "./utils/models";
 
 // LiveKit server API, used to force-tear-down rooms and participants during the
 // leak-check teardown (see Step 4).
@@ -117,19 +118,26 @@ const LOCAL_STT_PROVIDERS: SttProviderConfig[] = [
     maxIdleVramMB: 200,
     maxVramMB: 2500,
   },
+  // Nemotron 3.5 through the sherpa provider (int8 on CPU, float32 on GPU; see
+  // utils/models.ts). GPU, measured on a T4 (run 35590603737): idle 4.15 GiB
+  // RSS (ONNX Runtime keeps the 2.4 GB of float32 weights in host memory next
+  // to the GPU copy; the NeMo plugin idled at 2.76 GiB) and 3445 MiB VRAM,
+  // 4.41 GiB / 3871 MiB with 12 tracks, clean return to baseline. CPU (int8,
+  // run 35601280770 on ubuntu-latest): idle 1.17 GiB, 1.30 GiB with 12 tracks,
+  // clean return to baseline.
   {
-    nemotron: {
-      model: "nemotron-3.5-asr-streaming-0.6b",
+    sherpa: {
+      model: SHERPA_NEMOTRON_MODEL,
+      language: "en",
+      use_silero_vad: false,
     },
-    maxIdleMemoryMB: 3000,
-    maxMemoryMB: 3000,
+    maxIdleMemoryMB: process.env.STT_ACCEL ? 4800 : 1600,
+    maxMemoryMB: process.env.STT_ACCEL ? 5500 : 1800,
     maxTracks: 12,
-    maxMemoryAfterTeardownMB: "20%",
-    // VRAM (GPU runs only): fp32 model + CUDA context measured ~5000 MiB on a
-    // T4 at load; leave headroom for cuDNN workspaces under 12 tracks while
-    // still failing far before the T4's 15360 MiB is exhausted.
-    maxIdleVramMB: 6500,
-    maxVramMB: 9000,
+    maxMemoryAfterTeardownMB: process.env.STT_ACCEL ? 5000 : "20%",
+    // VRAM (GPU runs only): float32 weights + CUDA context, see above.
+    maxIdleVramMB: 4000,
+    maxVramMB: 4500,
   },
 ];
 
@@ -312,7 +320,7 @@ function getGpuVramUsedMB(): number {
  * Assert, from the agent container's own logs, that the provider actually
  * validated and is using GPU acceleration. A container that silently fell
  * back to CPU would otherwise produce meaningless "passing" GPU memory
- * numbers. Both the sherpa and nemotron plugins run GPU readiness checks at
+ * numbers. The sherpa plugin runs GPU readiness checks at
  * model preload (before the worker registers, so the markers are guaranteed
  * to be in the logs once the deployment is up) and log a VRAM-delta residency
  * confirmation after loading the model onto the GPU.
@@ -781,10 +789,17 @@ function registerProviderMemoryTest(
 
   const providerConfig = provider[providerName];
   const useVad = providerConfig?.use_silero_vad;
-  const testLabel =
-    typeof useVad === "boolean"
-      ? `${providerName} (VAD ${useVad ? "enabled" : "disabled"})`
-      : providerName;
+  // Local providers appear several times (one entry per model / VAD setting).
+  // Playwright rejects duplicate titles, and the CI report (CTRF) prints only
+  // the test title, not the describe label, so both carry the model and VAD
+  // setting; the provider name stays in them for the `--grep sherpa` filters.
+  const labelParts = [
+    providerConfig?.model ? `model ${providerConfig.model}` : "",
+    typeof useVad === "boolean" ? `VAD ${useVad ? "enabled" : "disabled"}` : "",
+  ].filter(Boolean);
+  const testLabel = labelParts.length
+    ? `${providerName} (${labelParts.join(", ")})`
+    : providerName;
 
   test.describe(testLabel, () => {
     test.beforeEach(async () => {
@@ -810,7 +825,7 @@ function registerProviderMemoryTest(
       LocalDeployment.stop();
     });
 
-    test(`memory usage should not exceed provider limit with ${providerName}`, async ({
+    test(`memory usage should not exceed provider limit with ${testLabel}`, async ({
       page,
     }) => {
       // The chaos soak runs for soakDurationMs, far longer than the

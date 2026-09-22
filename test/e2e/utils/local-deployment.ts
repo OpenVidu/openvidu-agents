@@ -81,13 +81,16 @@ export class LocalDeployment {
       );
     } while (statusCode !== "exited:0");
 
-    // Wait for the worker to register (nemotron takes longer)
+    // Wait for the worker to register. Local models load before registration:
+    // the float32 Nemotron export on the GPU image took 10 s to 190 s on a
+    // g4dn.xlarge depending on the EBS page cache (2.4 GB read + 15 s warm-up),
+    // and a test that starts before the agent exists misses the fixture's speech.
     await this.waitForAgentWorkerRegistered();
 
     console.log("Local deployment started");
   }
 
-  private static async waitForAgentWorkerRegistered(timeoutMs = 180000) {
+  private static async waitForAgentWorkerRegistered(timeoutMs = 360000) {
     const container = "agent-speech-processing";
     const start = Date.now();
     console.log(`Waiting for '${container}' worker to register...`);
@@ -159,7 +162,7 @@ export class LocalDeployment {
         doc.setIn(["live_captions", providerName, key], value);
       }
     }
-    // GPU acceleration: when STT_ACCEL is set, the GPU-capable local providers (sherpa, nemotron) use their "-cudaXX"
+    // GPU acceleration: when STT_ACCEL is set, the GPU-capable local provider (sherpa) uses its "-cudaXX"
     // image, request GPU passthrough to the agent container via the `docker_options.gpus`, and run their CUDA runtime.
     // Empty/unset => CPU images (default, unchanged behavior)
     const accel = (process.env.STT_ACCEL || "").trim(); // "" | "cuda12"
@@ -177,17 +180,6 @@ export class LocalDeployment {
       if (gpu) {
         doc.setIn(["docker_options", "gpus"], "all");
         doc.setIn(["live_captions", "sherpa", "provider"], "cuda");
-      }
-      this.setOpenViduProLicenseInOperatorService(customLicense);
-    } else if (providerName === "nemotron") {
-      const suffix = gpu ? "-cuda12" : "";
-      doc.set(
-        "docker_image",
-        `openvidu/agent-speech-processing-nemotron${suffix}:main`,
-      );
-      if (gpu) {
-        doc.setIn(["docker_options", "gpus"], "all");
-        doc.setIn(["live_captions", "nemotron", "device"], "cuda");
       }
       this.setOpenViduProLicenseInOperatorService(customLicense);
     } else {

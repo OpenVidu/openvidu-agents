@@ -32,9 +32,6 @@ def _plugin_candidates(plugin_name: str):
     if plugin_name == "sherpa":
         # the unified (compiled) image ships sherpa as openvidu_unified.sherpa
         yield "openvidu_unified.sherpa"
-    if plugin_name == "nemotron":
-        # the unified (compiled) image ships nemotron as openvidu_unified.nemotron
-        yield "openvidu_unified.nemotron"
 
 
 def plugin_is_available(plugin_name: str) -> bool:
@@ -163,16 +160,7 @@ def stt_provider_requires_vad(agent_config) -> bool:
     if stt_provider is None:
         return False
 
-    # Scenario 1a: Nemotron has NO built-in end-of-utterance detection, so it
-    # ALWAYS requires a Silero VAD wrapper to finalize transcripts. This is not
-    # configurable (a bare nemotron STT could only ever emit interim results).
-    if stt_provider == "nemotron":
-        logging.info(
-            "Provider 'nemotron' has no built-in endpointing - VAD always required"
-        )
-        return True
-
-    # Scenario 1a-bis: speechmatics streams, but its default EXTERNAL turn detection
+    # Scenario 1a: speechmatics streams, but its default EXTERNAL turn detection
     # closes turns from a VAD rather than from the service. get_speechmatics_stt_impl
     # hands it the shared model, so preload it here instead of letting the first
     # participant pay the load (or the plugin fall back to a per-STT copy).
@@ -283,6 +271,10 @@ SHERPA_MODEL_TO_LANGUAGE = {
     "sherpa-onnx-streaming-zipformer-en-2023-06-26-mobile": "en",
     "sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06": "en",
     "sherpa-onnx-nemotron-speech-streaming-en-0.6b-int8-2026-01-14": "en",
+    # Multilingual Nemotron 3.5 (40 locales in one model): the language is a per-stream
+    # prompt; "auto" selects the model's automatic language detection
+    "sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-320ms-int8-2026-06-11": "auto",
+    "sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-320ms-2026-06-11": "auto",
     "sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06": "en",
     # Chinese models
     "sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23": "zh",
@@ -531,11 +523,6 @@ STT_PROVIDERS = {
     "sherpa": STTProviderConfig(
         impl_function=None,
         plugin_module="livekit.plugins.sherpa",
-        plugin_class="STT",
-    ),
-    "nemotron": STTProviderConfig(
-        impl_function=None,
-        plugin_module="livekit.plugins.nemotron",
         plugin_class="STT",
     ),
 }
@@ -1289,6 +1276,45 @@ def get_vosk_stt_impl(agent_config) -> stt.STT:
     return base_stt
 
 
+# Locales nvidia/nemotron-3.5-asr-streaming-0.6b is trained for (its model card lists
+# these 40). sherpa accepts them as "xx-YY", "xx_YY" or the bare "xx", case-insensitive,
+# plus "auto". Any other value is logged as unsupported on EVERY encoder chunk and
+# silently falls back to auto-detection, so it is validated here once, at startup.
+NEMOTRON_35_LOCALES = frozenset(
+    {
+        # Transcription-ready
+        "en-US", "en-GB", "es-US", "es-ES", "fr-FR", "fr-CA", "it-IT", "pt-BR", "pt-PT",
+        "nl-NL", "de-DE", "tr-TR", "ru-RU", "ar-AR", "hi-IN", "ja-JP", "ko-KR", "vi-VN",
+        "uk-UA",
+        # Broad-coverage
+        "pl-PL", "sv-SE", "cs-CZ", "nb-NO", "da-DK", "bg-BG", "fi-FI", "hr-HR", "sk-SK",
+        "zh-CN", "hu-HU", "ro-RO", "et-EE",
+        # Adaptation-ready (require fine-tuning for production use)
+        "el-GR", "lt-LT", "lv-LV", "mt-MT", "sl-SI", "he-IL", "th-TH", "nn-NO",
+    }
+)
+
+
+def _sherpa_model_is_multilingual_nemotron(model: str) -> bool:
+    return "nemotron-3.5-asr-streaming" in model
+
+
+def _validate_nemotron_language(language: str) -> None:
+    """Fail fast on a language the Nemotron 3.5 model has no prompt for."""
+    normalized = str(language).strip().strip("<>").replace("_", "-").lower()
+    if normalized in ("", "auto"):
+        return
+    accepted = {loc.lower() for loc in NEMOTRON_35_LOCALES}
+    accepted |= {loc.split("-")[0].lower() for loc in NEMOTRON_35_LOCALES}
+    if normalized not in accepted:
+        raise ValueError(
+            f"Wrong sherpa configuration. live_captions.sherpa.language '{language}' is not "
+            "a locale supported by the Nemotron 3.5 model. Use one of "
+            f"{', '.join(sorted(NEMOTRON_35_LOCALES))}, a bare language code such as 'en', "
+            "or 'auto' for automatic detection"
+        )
+
+
 def get_sherpa_stt_impl(agent_config) -> stt.STT:
     sherpa = _require_plugin("sherpa")
     # Mapping from model name patterns to recognizer types
@@ -1296,6 +1322,7 @@ def get_sherpa_stt_impl(agent_config) -> stt.STT:
     SHERPA_MODEL_TO_RECOGNIZER_TYPE = {
         "nemo-streaming-fast-conformer-ctc": "nemo_ctc",
         "nemo-streaming-fast-conformer-transducer": "transducer",
+        "nemotron-3.5-asr-streaming": "transducer",  # Multilingual Nemotron 3.5 (NeMo transducer)
         "nemotron-speech-streaming": "transducer",  # Nemotron uses transducer architecture
         "streaming-paraformer": "paraformer",
         "streaming-zipformer-small-ctc": "zipformer_ctc",
@@ -1329,10 +1356,20 @@ def get_sherpa_stt_impl(agent_config) -> stt.STT:
                 f"Auto-detected language '{detected_language}' from sherpa model '{model}'"
             )
             language = detected_language
+        elif _sherpa_model_is_multilingual_nemotron(model):
+            # One checkpoint, 40 locales: the language is a per-stream prompt,
+            # not a property of the model. Default to automatic detection.
+            language = "auto"
+            logging.info(
+                f"sherpa model '{model}' is multilingual: language will be auto-detected "
+                "(set live_captions.sherpa.language to pin a locale, which is more accurate)"
+            )
         else:
             logging.warning(
                 f"Could not auto-detect language from sherpa model '{model}'. Should be manually specified."
             )
+    elif _sherpa_model_is_multilingual_nemotron(model):
+        _validate_nemotron_language(language)
 
     # Auto-detect recognizer_type from model name if not provided
     if recognizer_type_str is NOT_PROVIDED:
@@ -1416,73 +1453,6 @@ def get_sherpa_stt_impl(agent_config) -> stt.STT:
     return base_stt
 
 
-def get_nemotron_stt_impl(agent_config) -> stt.STT:
-    nemotron = _require_plugin("nemotron")
-
-    config_manager = ConfigManager(agent_config, "live_captions.nemotron")
-
-    model = config_manager.mandatory_value(
-        "model",
-        "Wrong nemotron configuration. live_captions.nemotron.model must be set",
-    )
-    language = config_manager.configured_string_value("language")
-    sample_rate = config_manager.configured_numeric_value("sample_rate")
-    partial_results = config_manager.configured_boolean_value("partial_results")
-    device = config_manager.configured_string_value("device")
-    precision = config_manager.configured_string_value("precision")
-    att_context_size = config_manager.configured_list_value("att_context_size", int)
-
-    # Nemotron is a single multilingual checkpoint (40 language-locales); the
-    # language is a runtime setting, not a per-model fact. Default to automatic
-    # detection when not provided.
-    if language is NOT_PROVIDED:
-        language = "auto"
-
-    kwargs = {
-        k: v
-        for k, v in {
-            "model": model,
-            "language": language,
-            "sample_rate": sample_rate,
-            "partial_results": partial_results,
-            "device": device,
-            # Passed as a plain string; nemotron.STT stores it and maps it to a
-            # torch dtype at load time (unknown values fall back to float32).
-            "precision": precision,
-            "att_context_size": att_context_size,
-        }.items()
-        if v is not NOT_PROVIDED
-    }
-
-    base_stt = nemotron.STT(**kwargs)
-
-    # Nemotron has NO built-in end-of-utterance detection, so a Silero VAD wrapper
-    # is ALWAYS required to finalize transcripts - it is not configurable. A bare
-    # nemotron STT could only ever emit interim results, never a FINAL_TRANSCRIPT
-    # (unlike vosk/sherpa, which have native EOU and expose a use_silero_vad
-    # toggle). If silero is unavailable we FAIL FAST rather than silently returning
-    # a base STT that never finalizes. This mirrors stt_provider_requires_vad,
-    # which always returns True for nemotron.
-    silero = _load_plugin("silero")
-    if silero is None:
-        raise ValueError(
-            "nemotron has no built-in end-of-utterance detection and requires "
-            "the Silero VAD plugin to finalize transcripts, but the silero "
-            "plugin is not available in this container. Use the correct Docker "
-            "image (silero must be baked into the nemotron image)."
-        )
-    logging.info(
-        "Using Silero VAD wrapper around nemotron STT (this model has no "
-        "built-in endpointing). Final transcripts are forced by Silero VAD detection"
-    )
-    vad_model = _get_cached_silero_vad(load_if_missing=True)
-    return VADTriggeredSTT(
-        stt_impl=base_stt,
-        vad_impl=vad_model,
-        flush_delay=0.4,  # Give Nemotron 400ms to catch up after VAD detection
-    )
-
-
 # Initialize the registry with implementation functions
 def _initialize_stt_registry():
     """Initialize the STT provider registry with implementation functions.
@@ -1515,7 +1485,6 @@ def _initialize_stt_registry():
         "simplismart": get_simplismart_stt_impl,
         "vosk": get_vosk_stt_impl,
         "sherpa": get_sherpa_stt_impl,
-        "nemotron": get_nemotron_stt_impl,
     }
 
     # Validate that all registered providers have implementation functions
@@ -1573,6 +1542,17 @@ def get_stt_impl(agent_config) -> stt.STT:
     if stt_provider is None:
         raise ValueError("live_captions.provider not defined in agent configuration")
 
+    if stt_provider == "nemotron":
+        # Removed provider (never released): the same model is served by sherpa.
+        raise ValueError(
+            "STT provider 'nemotron' was removed. NVIDIA Nemotron 3.5 is served by "
+            "provider 'sherpa': set live_captions.sherpa.model to "
+            "'sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-320ms-int8-2026-06-11' "
+            "(CPU image agent-speech-processing-sherpa) or "
+            "'sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-320ms-2026-06-11' "
+            "(GPU image agent-speech-processing-sherpa-cuda12), and "
+            "live_captions.sherpa.language to a locale or 'auto'"
+        )
     if stt_provider not in STT_PROVIDERS:
         raise ValueError(
             f"Unknown STT provider: {stt_provider}. "

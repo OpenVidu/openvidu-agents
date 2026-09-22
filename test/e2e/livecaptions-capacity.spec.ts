@@ -1,5 +1,6 @@
 import { test, expect, Page, Locator } from "@playwright/test";
 import { LocalDeployment } from "./utils/local-deployment";
+import { AGENT_CONTAINER, sampleHostLoad } from "./utils/host-load";
 import { TESTAPP_URL } from "./config";
 import {
   downloadFile,
@@ -8,10 +9,12 @@ import {
   waitForEvent,
   waitForEventContentToStartWith,
 } from "./utils/helper";
+import { SHERPA_NEMOTRON_MODEL } from "./utils/models";
 
 /**
  * Capacity probe: how many SIMULTANEOUS transcribed audio tracks can this
- * server sustain with the given STT provider?
+ * server sustain with the given STT provider (the sherpa provider serving the
+ * Nemotron 3.5 model, see utils/models.ts)?
  *
  * The test ramps up one publisher-only audio participant at a time (packed
  * into rooms of PUBLISHERS_PER_ROOM). A track only counts if its OWN final
@@ -27,13 +30,11 @@ import {
  * to the log (grep for "CAPACITY RESULT").
  */
 
-const PROVIDER = {
-  nemotron: {
-    model: "nemotron-3.5-asr-streaming-0.6b",
-    // Optional inference precision override (float32 | float16 | bfloat16).
-    // Unset/empty values are filtered out by LocalDeployment.configureProvider,
-    // leaving the plugin's default (float32).
-    precision: process.env.NEMOTRON_PRECISION,
+const PROVIDER: Record<string, any> = {
+  sherpa: {
+    model: SHERPA_NEMOTRON_MODEL,
+    language: "en",
+    use_silero_vad: false,
   },
 };
 
@@ -44,47 +45,20 @@ const MAX_CONSECUTIVE_FAILURES = 2;
 // A new track must receive its own final transcription within this window.
 const TRACK_VERIFY_TIMEOUT_MS = 60000;
 // Total time allowed for the ramp itself (excluding deployment start/stop).
-const RAMP_BUDGET_MS = 25 * 60 * 1000;
+// A track takes 30-60 s to add and verify; 40 tracks need up to 40 min.
+const RAMP_BUDGET_MS = 40 * 60 * 1000;
 const PUBLISHERS_PER_ROOM = 3;
 const PARTICIPANT_ACTION_TIMEOUT_MS = 10000;
 
-const AGENT_CONTAINER = "agent-speech-processing";
-
-// Whether nvidia-smi works on this host; probed once, cached.
-let vramAvailable: boolean | null = null;
-
 /**
- * One-line snapshot of the agent container's resource usage, to identify
- * WHICH resource saturates first as the ramp progresses. CPU% is docker's
- * per-core convention (400% = 4 cores fully busy). VRAM is host-wide
- * (nvidia-smi), only sampled on GPU runs.
+ * Where the machine's resources go as the ramp progresses (see
+ * utils/host-load.ts): the agent container, the other containers, the host as
+ * a whole (the difference is the browser running the publishers plus the
+ * runner, which share this box with the deployment in CI) and, on GPU runs,
+ * VRAM and GPU utilization.
  */
 function sampleAgentLoad(): string {
-  const parts: string[] = [];
-  try {
-    const stats = execCommand(
-      `docker stats ${AGENT_CONTAINER} --no-stream --format "{{.CPUPerc}} {{.MemUsage}}"`,
-    )
-      .trim()
-      .split(/\s+/);
-    parts.push(`agent CPU: ${stats[0]}`, `RAM: ${stats.slice(1).join(" ")}`);
-  } catch (error: any) {
-    parts.push(`agent stats unavailable (${error.message})`);
-  }
-  if (process.env.STT_ACCEL && vramAvailable !== false) {
-    try {
-      const vram = execCommand(
-        "nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits",
-      )
-        .trim()
-        .split("\n")[0];
-      vramAvailable = true;
-      parts.push(`VRAM: ${vram} MiB`);
-    } catch {
-      vramAvailable = false;
-    }
-  }
-  return `[${parts.join(" | ")}]`;
+  return sampleHostLoad();
 }
 
 test.beforeAll(async () => {
@@ -112,7 +86,7 @@ test.describe("Transcribed tracks capacity probe", () => {
     if (testInfo.status === "failed") {
       try {
         console.log("\n=== Docker logs for failed test ===\n");
-        console.log(execCommand("docker logs agent-speech-processing"));
+        console.log(execCommand(`docker logs ${AGENT_CONTAINER}`));
         console.log("\n=== End of Docker logs ===\n");
       } catch (error: any) {
         console.log("Failed to get docker logs:", error.message);
@@ -203,8 +177,8 @@ test.describe("Transcribed tracks capacity probe", () => {
 
     console.log(
       `CAPACITY RESULT: ${tracks} simultaneous transcribed tracks with ` +
-        `${providerName} (stop reason: ${stopReason}; oldest track still ` +
-        `transcribing at full load: ${sustained}) ${sampleAgentLoad()}`,
+        `${providerName} (model: ${PROVIDER[providerName].model}; stop reason: ${stopReason}; ` +
+        `oldest track still transcribing at full load: ${sustained}) ${sampleAgentLoad()}`,
     );
 
     expect(tracks).toBeGreaterThan(0);

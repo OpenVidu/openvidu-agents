@@ -2,11 +2,13 @@
   "name": "openvidu-agents-e2e-tests",
   "version": "1.0.0",
   "scripts": {
-    "test:e2e": "playwright test --project=livecaptions --project=livecaptions-processing-dispatch --project=livecaptions-wrong-license --grep-invert nemotron",
-    "test:e2e:memory": "playwright test --project=livecaptions-memory-usage --grep-invert nemotron",
-    "test:e2e:gpu": "STT_ACCEL=cuda12 playwright test --project=livecaptions --grep \"sherpa|nemotron\"",
-    "test:e2e:memory:gpu": "STT_ACCEL=cuda12 playwright test --project=livecaptions-memory-usage --grep \"sherpa|nemotron\"",
-    "test:e2e:capacity:gpu": "STT_ACCEL=cuda12 playwright test --project=livecaptions-capacity"
+    "test:e2e": "playwright test --project=livecaptions --project=livecaptions-processing-dispatch --project=livecaptions-wrong-license",
+    "test:e2e:memory": "playwright test --project=livecaptions-memory-usage",
+    "test:e2e:gpu": "STT_ACCEL=cuda12 playwright test --project=livecaptions --grep sherpa",
+    "test:e2e:memory:gpu": "STT_ACCEL=cuda12 playwright test --project=livecaptions-memory-usage --grep sherpa",
+    "test:e2e:capacity:gpu": "STT_ACCEL=cuda12 playwright test --project=livecaptions-capacity",
+    "capacity:headless": "ts-node --transpile-only capacity/headless-capacity-probe.ts",
+    "capacity:agent-host": "ts-node --transpile-only capacity/agent-host.ts"
   },
   "devDependencies": {
     "@livekit/rtc-node": "^0.13.30",

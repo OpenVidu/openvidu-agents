@@ -1,6 +1,7 @@
 # Capacity probe: measures the maximum number of SIMULTANEOUS transcribed audio
-# tracks the nemotron provider sustains on an AWS NVIDIA GPU EC2 runner. The
-# measured capacity is printed in the test log (grep for "CAPACITY RESULT").
+# tracks the sherpa provider sustains with the Nemotron 3.5 model on an AWS
+# NVIDIA GPU EC2 runner. The measured capacity is printed in the test log (grep
+# for "CAPACITY RESULT").
 name: Speech Processing agent transcription capacity E2E test (GPU)
 on:
   workflow_dispatch:
@@ -42,15 +43,6 @@ on:
         description: "Docker tag for all agent-speech-processing containers. If not provided, the containers will be built from the repository sources"
         type: string
         required: false
-      nemotron-precision:
-        description: "Inference precision for the nemotron provider"
-        type: choice
-        default: "float32"
-        required: false
-        options:
-          - float32
-          - float16
-          - bfloat16
       rtc-engine:
         description: "RTC engine to use"
         type: choice
@@ -85,7 +77,7 @@ jobs:
           github-token: ${{ secrets.OPENVIDU_GITHUB_TOKEN }}
           ec2-image-id: ${{ inputs.aws-image-id || vars.AWS_GITHUB_ACTIONS_GPU_AMI || vars.AWS_GITHUB_ACTIONS_AMI }}
           subnet-id: ${{ secrets.AWS_SUBNET_ID }}
-          security-group-id: ${{ secrets.AWS_SECURITY_GROUP_ID }}
+          security-group-id: ${{ secrets.AWS_SECURITY_GROUP_ID_AGENT_HOST || secrets.AWS_SECURITY_GROUP_ID }}
           workflow-name: ${{ github.workflow }}
           repository-name: ${{ github.repository }}
 
@@ -102,7 +94,6 @@ jobs:
       rtc-engine: ${{ inputs.rtc-engine }}
       ref-openvidu-pro-mediasoup: ${{ inputs.ref-openvidu-pro-mediasoup }}
       test-npm-script: test:e2e:capacity:gpu
-      nemotron-precision: ${{ inputs.nemotron-precision }}
       runs-on: ${{ needs.start-runner.outputs.label || 'ubuntu-latest' }}
       gpu: true
 

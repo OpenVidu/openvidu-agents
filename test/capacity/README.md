@@ -11,7 +11,7 @@ whatever the agent did. The two scripts here split the roles:
 | Script | Runs on | Does |
 | --- | --- | --- |
 | `agent-host.ts` | the machine under test | `start`: configure the agent provider in the local deployment, start it, wait for the agent worker. `hold`: keep it up while the publishers run, logging and recording `Host load [...]` (agent CPU/RAM, other containers, host total, VRAM + GPU utilization) every 15 s. `stop`: dump the agent log tail, stop the deployment. |
-| `headless-capacity-probe.ts` | any other machine | LiveKit Node SDK publishers stream a WAV in a loop; a track counts when the agent's final transcription of it (`lk.transcription` text stream) arrives within 60 s; the ramp adds one publisher at a time and re-checks the oldest track at the end; prints `CAPACITY RESULT:`. Each publisher costs the probe process about 13 % of a core (Opus encoding), so the default `c6i.2xlarge` (8 vCPU) carries the 40-track hard cap with margin; the result line reports the publisher host's own load. |
+| `headless-capacity-probe.ts` | any other machine | LiveKit Node SDK publishers stream a WAV in a loop, the publishers of each room in their own worker process (`publisher-worker.ts`; one Node process saturates at 15-20 publishers and stops counting finals that keep arriving); a track counts when the agent's final transcription of it (`lk.transcription` text stream) arrives within 60 s; the ramp adds one publisher at a time and re-checks the oldest track at the end; prints `CAPACITY RESULT:`. Each publisher costs the probe process about 13 % of a core (Opus encoding), so the default `c6i.2xlarge` (8 vCPU) carries the 40-track hard cap with margin; the result line reports the publisher host's own load. |
 
 ## CI: `speech-processing-capacity-remote-publishers.yml`
 
@@ -114,7 +114,9 @@ npm run capacity:summarize -- <run-id>
 ```
 
 prints the track count and how the ramp ended, the agent's CPU at full load
-and the derived cost per track, the tracks-per-8-vCPUs figure, and a Markdown
+and the derived cost per track, the tracks-per-8-vCPUs figure, a warning when
+the ramp was accepted but degraded or when the publishers' own host was near
+saturation (then the count is the probe's limit, not the agent's), and a Markdown
 row skeleton for the docs table (the quality column is filled by hand from the
 e2e accuracy runs). Adding a model to the table is adding it to the image
 (`speech-processing/download-models.sh`), dispatching one run and pasting the

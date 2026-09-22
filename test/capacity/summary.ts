@@ -18,6 +18,8 @@ export interface ProbeResult {
   liveAtEnd: string;
   joinRetries: number;
   finalsPerTrack: number[];
+  /** publisher host busy at the end as a fraction of its cores (0-1), from the result line's load suffix; -1 when the line lacks the core total */
+  publisherHostBusy: number;
   resultLine: string;
 }
 
@@ -45,6 +47,8 @@ export interface CapacitySummary {
   gpuAtPlateau?: number;
   vram?: number;
   degraded: boolean;
+  /** the publishers' own host was near saturation: the count is a probe limit, not the agent's */
+  publisherLimited: boolean;
 }
 
 export const RESULT_MARKER = "CAPACITY RESULT:";
@@ -71,6 +75,10 @@ export function parseResultLine(text: string): ProbeResult | null {
     liveAtEnd: details.match(/tracks with a final in the last \d+s: (\d+\/\d+)/)?.[1] ?? "",
     joinRetries: Number(detail("join retries") ?? 0),
     finalsPerTrack: finals ? finals.split(",").map(Number).filter((n) => !Number.isNaN(n)) : [],
+    publisherHostBusy: (() => {
+      const b = text.match(/publisher host: (\d+)% of (\d+)% busy/);
+      return b ? Number(b[1]) / Number(b[2]) : -1;
+    })(),
     resultLine: text.slice(text.indexOf(RESULT_MARKER)),
   };
 }
@@ -146,6 +154,7 @@ export function summarize(
     gpuAtPlateau: gpu ? Math.max(...plateau.map((s) => s.gpuUtil ?? 0)) : undefined,
     vram: gpu ? Math.max(...plateau.map((s) => s.vram ?? 0)) : undefined,
     degraded,
+    publisherLimited: result.publisherHostBusy >= 0.85,
   };
 }
 
@@ -163,6 +172,11 @@ export function renderText(s: CapacitySummary): string {
   if (s.degraded) {
     lines.push(
       `  WARNING: accepted-then-degraded ramp; ${r.tracks} is what the agent accepted, the sustained capacity is lower (last count with every track live).`,
+    );
+  }
+  if (s.publisherLimited) {
+    lines.push(
+      `  WARNING: the publishers' host was ${Math.round(r.publisherHostBusy * 100)}% busy at the end; the count may be the probe's limit, use a bigger publisher instance.`,
     );
   }
   lines.push(
@@ -194,6 +208,9 @@ export function renderMarkdown(s: CapacitySummary): string {
         : `~${s.tracksPer8Vcpu}`,
     ],
   ];
+  if (s.publisherLimited) {
+    rows.push(["Publishers host", `${Math.round(r.publisherHostBusy * 100)} % busy at the end: the count may be the probe's limit, not the agent's`]);
+  }
   if (s.gpu) {
     rows.push(["GPU utilization", `${s.gpuAtPlateau} % at full load, ${s.gpuPeak} % peak`], ["VRAM", `${s.vram} MiB`]);
   }

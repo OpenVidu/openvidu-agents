@@ -11,300 +11,166 @@
  * re-checks the OLDEST track for a fresh final so the result means "N tracks
  * sustained".
  *
- * Because it needs no browser, the probe runs on a machine other than the
- * agent host (see .github/workflows/speech-processing-capacity-remote-publishers.yml),
- * so the agent host's CPU, RAM and GPU are measured alone. A Node publisher
- * costs about one Opus encoder per track, so a small instance drives dozens.
+ * The publishers of each room live in their own child process
+ * (publisher-worker.ts): one Node process saturates at 15-20 publishers and
+ * then stops counting finals that keep arriving, which would look like the
+ * agent's limit.
  *
  * Configuration (environment):
- *   LIVEKIT_URL                          ws://<agent-host>:7880 (default ws://localhost:7880)
- *   LIVEKIT_API_KEY / LIVEKIT_API_SECRET devkey / secret (the local deployment's)
- *   CAPACITY_AUDIO_FILE                  16-bit PCM WAV to loop (default: e2e/resources/stt-test.wav, downloaded if missing)
+ *   LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET   the agent host (ws://<ip>:7880, devkey/secret)
+ *   CAPACITY_AUDIO_FILE                  WAV to loop (default e2e/resources/stt-test.wav, downloaded if missing)
  *   CAPACITY_HARD_CAP                    default 40
- *   CAPACITY_PUBLISHERS_PER_ROOM         default 3
+ *   CAPACITY_PUBLISHERS_PER_ROOM         default 3 (= publishers per worker process)
  *   CAPACITY_VERIFY_TIMEOUT_MS           default 60000
  *   CAPACITY_MAX_CONSECUTIVE_FAILURES    default 2
  *   CAPACITY_JOIN_ATTEMPTS               default 3: joins refused by the server are retried
  *   CAPACITY_JOIN_RETRY_DELAY_MS         default 5000, pause between join attempts
  *   CAPACITY_RAMP_BUDGET_MS              default 40 min
- *   CAPACITY_LABEL                       free text echoed in the result line (e.g. "g4dn.xlarge cuda12")
+ *   CAPACITY_LABEL                       free text added to the result line
  *
  * Result: one `CAPACITY RESULT:` line, plus one `Capacity so far:` line per
- * track with the publisher host's load (to show it is not the bottleneck).
+ * accepted track with the publisher host's own load, so a saturated publisher
+ * machine is visible. In GitHub Actions the result is also appended to the
+ * job summary. Exit code 1 when no track was transcribed at all.
  */
+import { ChildProcess, fork } from "child_process";
 import fs from "fs";
+import os from "os";
 import path from "path";
-import { AccessToken } from "livekit-server-sdk";
-import {
-  AudioFrame,
-  AudioSource,
-  LocalAudioTrack,
-  Room,
-  TrackPublishOptions,
-  TrackSource,
-  dispose,
-} from "@livekit/rtc-node";
 import { downloadFile } from "../e2e/utils/helper";
 import { hostBusyPercent, readHostCpuJiffies } from "../e2e/utils/host-load";
+import { SAMPLE_RATE, loadWavAsMono48k, log, sleep } from "./publisher";
 
 const LIVEKIT_URL = process.env.LIVEKIT_URL || "ws://localhost:7880";
-const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY || "devkey";
-const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET || "secret";
 const AUDIO_FILE =
-  process.env.CAPACITY_AUDIO_FILE ||
-  path.join(__dirname, "..", "e2e", "resources", "stt-test.wav");
-const AUDIO_URL =
-  "https://s3.eu-west-1.amazonaws.com/public.openvidu.io/stt-test.wav";
+  process.env.CAPACITY_AUDIO_FILE || path.join(__dirname, "..", "e2e", "resources", "stt-test.wav");
+const AUDIO_URL = "https://s3.eu-west-1.amazonaws.com/public.openvidu.io/stt-test.wav";
 const HARD_CAP_TRACKS = Number(process.env.CAPACITY_HARD_CAP || 40);
-const PUBLISHERS_PER_ROOM = Number(
-  process.env.CAPACITY_PUBLISHERS_PER_ROOM || 3,
-);
-const TRACK_VERIFY_TIMEOUT_MS = Number(
-  process.env.CAPACITY_VERIFY_TIMEOUT_MS || 60000,
-);
-const MAX_CONSECUTIVE_FAILURES = Number(
-  process.env.CAPACITY_MAX_CONSECUTIVE_FAILURES || 2,
-);
+const PUBLISHERS_PER_ROOM = Number(process.env.CAPACITY_PUBLISHERS_PER_ROOM || 3);
+const TRACK_VERIFY_TIMEOUT_MS = Number(process.env.CAPACITY_VERIFY_TIMEOUT_MS || 60000);
+const MAX_CONSECUTIVE_FAILURES = Number(process.env.CAPACITY_MAX_CONSECUTIVE_FAILURES || 2);
 const JOIN_ATTEMPTS = Number(process.env.CAPACITY_JOIN_ATTEMPTS || 3);
-const JOIN_RETRY_DELAY_MS = Number(
-  process.env.CAPACITY_JOIN_RETRY_DELAY_MS || 5000,
-);
-const RAMP_BUDGET_MS = Number(
-  process.env.CAPACITY_RAMP_BUDGET_MS || 40 * 60 * 1000,
-);
+const JOIN_RETRY_DELAY_MS = Number(process.env.CAPACITY_JOIN_RETRY_DELAY_MS || 5000);
+const RAMP_BUDGET_MS = Number(process.env.CAPACITY_RAMP_BUDGET_MS || 40 * 60 * 1000);
 const LABEL = process.env.CAPACITY_LABEL || "";
 const RUN_ID = Date.now().toString(36);
 
-// The SDK encodes Opus at 48 kHz; frames of 100 ms keep the FFI call rate low
-// (10/s per track) and the SDK's queue (~1 s) paces the playout.
-const SAMPLE_RATE = 48000;
-const FRAME_MS = 100;
-const FRAME_SAMPLES = (SAMPLE_RATE * FRAME_MS) / 1000;
+/** One publisher-worker.ts process, addressed with request/reply messages. */
+class Worker {
+  private readonly proc: ChildProcess;
+  private readonly pending = new Map<number, { resolve: (v: any) => void; reject: (e: Error) => void }>();
+  private nextId = 1;
 
-const TRANSCRIPTION_TOPIC = "lk.transcription";
-
-function log(message: string): void {
-  console.log(`${new Date().toISOString()} ${message}`);
-}
-
-/** Decode a 16-bit PCM RIFF/WAVE file to mono 48 kHz samples. */
-function loadWavAsMono48k(file: string): Int16Array {
-  const buf = fs.readFileSync(file);
-  if (
-    buf.toString("ascii", 0, 4) !== "RIFF" ||
-    buf.toString("ascii", 8, 12) !== "WAVE"
-  ) {
-    throw new Error(`${file} is not a RIFF/WAVE file`);
-  }
-  let offset = 12;
-  let channels = 0;
-  let rate = 0;
-  let bits = 0;
-  let data: Buffer | null = null;
-  while (offset + 8 <= buf.length) {
-    const id = buf.toString("ascii", offset, offset + 4);
-    const size = buf.readUInt32LE(offset + 4);
-    const body = offset + 8;
-    if (id === "fmt ") {
-      const format = buf.readUInt16LE(body);
-      if (format !== 1) {
-        throw new Error(
-          `${file}: only PCM WAV is supported (format ${format})`,
-        );
-      }
-      channels = buf.readUInt16LE(body + 2);
-      rate = buf.readUInt32LE(body + 4);
-      bits = buf.readUInt16LE(body + 14);
-    } else if (id === "data") {
-      data = buf.subarray(body, Math.min(body + size, buf.length));
-    }
-    offset = body + size + (size % 2);
-  }
-  if (!data || !channels || !rate || bits !== 16) {
-    throw new Error(
-      `${file}: unsupported WAV layout (channels=${channels}, rate=${rate}, bits=${bits})`,
-    );
-  }
-  const frames = Math.floor(data.length / 2 / channels);
-  const mono = new Float32Array(frames);
-  for (let i = 0; i < frames; i++) {
-    let sum = 0;
-    for (let c = 0; c < channels; c++) {
-      sum += data.readInt16LE((i * channels + c) * 2);
-    }
-    mono[i] = sum / channels;
-  }
-  if (rate === SAMPLE_RATE) {
-    return Int16Array.from(mono, (v) => Math.round(v));
-  }
-  // Linear interpolation is enough for speech going into an Opus encoder.
-  const outLength = Math.floor((frames * SAMPLE_RATE) / rate);
-  const out = new Int16Array(outLength);
-  const step = rate / SAMPLE_RATE;
-  for (let i = 0; i < outLength; i++) {
-    const pos = i * step;
-    const i0 = Math.floor(pos);
-    const i1 = Math.min(i0 + 1, frames - 1);
-    const frac = pos - i0;
-    out[i] = Math.round(mono[i0] * (1 - frac) + mono[i1] * frac);
-  }
-  return out;
-}
-
-async function buildToken(identity: string, roomName: string): Promise<string> {
-  const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
-    identity,
-    name: identity,
-    ttl: "3h",
-  });
-  at.addGrant({
-    room: roomName,
-    roomJoin: true,
-    canPublish: true,
-    canPublishData: true,
-    // Publisher-only: transcriptions arrive as text streams, no media
-    // subscription is needed.
-    canSubscribe: false,
-  });
-  return at.toJwt();
-}
-
-class Publisher {
-  readonly room = new Room();
-  private source: AudioSource | null = null;
-  private track: LocalAudioTrack | null = null;
-  private feeding: Promise<void> | null = null;
-  private stopped = false;
-  private position = 0;
-  finals = 0;
-  lastFinalAt = 0;
-  lastFinalText = "";
-
-  constructor(
-    readonly identity: string,
-    readonly roomName: string,
-    private readonly audio: Int16Array,
-  ) {}
-
-  async connect(): Promise<void> {
-    // Finals of this participant only: the agent sends the text stream on
-    // behalf of the transcribed participant, so the sender identity is ours.
-    this.room.registerTextStreamHandler(
-      TRANSCRIPTION_TOPIC,
-      async (reader, participantInfo) => {
-        const text = await reader.readAll();
-        const isFinal =
-          reader.info.attributes?.["lk.transcription_final"] === "true";
-        if (
-          participantInfo.identity !== this.identity ||
-          !isFinal ||
-          !text.trim()
-        ) {
-          return;
-        }
-        this.finals += 1;
-        this.lastFinalAt = Date.now();
-        this.lastFinalText = text.trim();
-      },
-    );
-    const token = await buildToken(this.identity, this.roomName);
-    await this.room.connect(LIVEKIT_URL, token, {
-      autoSubscribe: false,
-      dynacast: false,
+  constructor(readonly index: number) {
+    this.proc = fork(path.join(__dirname, "publisher-worker.ts"), [], {
+      execArgv: ["-r", require.resolve("ts-node/register/transpile-only")],
+      env: { ...process.env, CAPACITY_AUDIO_FILE: AUDIO_FILE },
+      stdio: ["ignore", "inherit", "inherit", "ipc"],
     });
-    if (!this.room.localParticipant) {
-      throw new Error(
-        `${this.identity}: connected without a local participant`,
-      );
-    }
-    this.source = new AudioSource(SAMPLE_RATE, 1);
-    this.track = LocalAudioTrack.createAudioTrack(
-      `${this.identity}-audio`,
-      this.source,
-    );
-    const options = new TrackPublishOptions();
-    options.source = TrackSource.SOURCE_MICROPHONE;
-    await this.room.localParticipant.publishTrack(this.track, options);
-    this.feeding = this.feed();
-  }
-
-  /** Push the looped WAV; captureFrame blocks while the SDK's queue is full, which paces us. */
-  private async feed(): Promise<void> {
-    const source = this.source!;
-    try {
-      while (!this.stopped) {
-        const chunk = new Int16Array(FRAME_SAMPLES);
-        for (let i = 0; i < FRAME_SAMPLES; i++) {
-          chunk[i] = this.audio[this.position];
-          this.position = (this.position + 1) % this.audio.length;
-        }
-        await source.captureFrame(
-          new AudioFrame(chunk, SAMPLE_RATE, 1, FRAME_SAMPLES),
-        );
-      }
-    } catch (error: any) {
-      if (!this.stopped) {
-        log(`${this.identity}: audio feed stopped: ${error.message}`);
-      }
-    }
-  }
-
-  /** Resolve once a final for this participant arrives, or throw at the deadline. */
-  async waitForOwnFinal(timeoutMs: number, after = 0): Promise<void> {
-    const deadline = Date.now() + timeoutMs;
-    while (Date.now() < deadline) {
-      if (this.finals > after) {
+    this.proc.on("message", (msg: any) => {
+      const waiter = this.pending.get(msg.id);
+      if (!waiter) {
         return;
       }
-      await sleep(250);
-    }
-    throw new Error(
-      `${this.identity}: no final transcription within ${timeoutMs / 1000}s ` +
-        `(${this.finals} finals so far in room ${this.roomName})`,
-    );
+      this.pending.delete(msg.id);
+      msg.ok ? waiter.resolve(msg) : waiter.reject(new Error(msg.message));
+    });
+    this.proc.on("exit", (code) => {
+      for (const waiter of this.pending.values()) {
+        waiter.reject(new Error(`publisher worker ${this.index} exited (${code})`));
+      }
+      this.pending.clear();
+    });
   }
 
-  async close(): Promise<void> {
-    this.stopped = true;
-    try {
-      await this.source?.close();
-    } catch {
-      // ignore
+  get pid(): number | undefined {
+    return this.proc.pid;
+  }
+
+  request(message: Record<string, unknown>, timeoutMs = 0): Promise<any> {
+    const id = this.nextId++;
+    return new Promise((resolve, reject) => {
+      this.pending.set(id, { resolve, reject });
+      if (timeoutMs > 0) {
+        setTimeout(() => {
+          if (this.pending.delete(id)) {
+            reject(new Error(`publisher worker ${this.index}: no reply to ${message.type} in ${timeoutMs / 1000}s`));
+          }
+        }, timeoutMs).unref();
+      }
+      this.proc.send({ id, ...message });
+    });
+  }
+
+  async exit(): Promise<void> {
+    if (this.proc.exitCode !== null) {
+      return;
     }
-    if (this.feeding) {
-      await this.feeding.catch(() => undefined);
-    }
-    try {
-      await this.room.disconnect();
-    } catch {
-      // ignore
-    }
+    await this.request({ type: "exit" }, 15_000).catch(() => undefined);
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(() => {
+        this.proc.kill();
+        resolve();
+      }, 5_000);
+      this.proc.once("exit", () => {
+        clearTimeout(timer);
+        resolve();
+      });
+    });
   }
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+/** CPU jiffies (user + system) of a process, from /proc; null off Linux. */
+function processJiffies(pid: number): number | null {
+  try {
+    const stat = fs.readFileSync(`/proc/${pid}/stat`, "utf8");
+    const fields = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
+    return Number(fields[11]) + Number(fields[12]);
+  } catch {
+    return null;
+  }
 }
 
-/** The publisher host's own load since the previous call: host busy % and this process' CPU %. */
+/** The publisher host's own load since the previous call: host busy % and the probe processes' CPU %. */
 class PublisherHostLoad {
   private lastJiffies = readHostCpuJiffies();
-  private lastCpu = process.cpuUsage();
+  private lastProc = new Map<number, number>();
   private lastAt = Date.now();
+
+  constructor(private readonly pids: () => number[]) {}
 
   sample(): string {
     const now = Date.now();
-    const jiffies = readHostCpuJiffies();
-    const cpu = process.cpuUsage(this.lastCpu);
-    const elapsedUs = Math.max(1, (now - this.lastAt) * 1000);
-    const processPct = ((cpu.user + cpu.system) / elapsedUs) * 100;
-    const hostPct = hostBusyPercent(this.lastJiffies, jiffies);
-    this.lastJiffies = jiffies;
-    this.lastCpu = process.cpuUsage();
+    const elapsedS = Math.max(0.001, (now - this.lastAt) / 1000);
+    let used = 0;
+    const current = new Map<number, number>();
+    for (const pid of this.pids()) {
+      const jiffies = processJiffies(pid);
+      if (jiffies === null) {
+        continue;
+      }
+      current.set(pid, jiffies);
+      const before = this.lastProc.get(pid);
+      if (before !== undefined) {
+        used += jiffies - before;
+      }
+    }
+    // Jiffies at CLK_TCK = 100 Hz, the Linux default.
+    const processPct = (used / 100 / elapsedS) * 100;
+    const jiffiesNow = readHostCpuJiffies();
+    const hostPct = hostBusyPercent(this.lastJiffies, jiffiesNow);
+    this.lastJiffies = jiffiesNow;
+    this.lastProc = current;
     this.lastAt = now;
-    const host = hostPct === null ? "n/a" : `${hostPct.toFixed(0)}%`;
-    return `[publisher host: ${host} busy | probe process: ${processPct.toFixed(0)}%]`;
+    // Like the agent host's samples: busy % summed over all cores, out of cores x 100.
+    const host = hostPct === null ? "n/a" : `${hostPct.toFixed(0)}% of ${os.cpus().length * 100}%`;
+    return `[publisher host: ${host} busy | probe processes: ${processPct.toFixed(0)}%]`;
   }
+}
+
+interface TrackRef {
+  identity: string;
+  worker: Worker;
 }
 
 async function main(): Promise<void> {
@@ -316,13 +182,24 @@ async function main(): Promise<void> {
   const audio = loadWavAsMono48k(AUDIO_FILE);
   log(
     `Probe ${RUN_ID}: agent host ${LIVEKIT_URL}, fixture ${path.basename(AUDIO_FILE)} ` +
-      `(${(audio.length / SAMPLE_RATE).toFixed(1)} s, looped), ${PUBLISHERS_PER_ROOM} publishers per room, ` +
-      `verify ${TRACK_VERIFY_TIMEOUT_MS / 1000}s, hard cap ${HARD_CAP_TRACKS}, budget ${RAMP_BUDGET_MS / 60000} min` +
+      `(${(audio.length / SAMPLE_RATE).toFixed(1)} s, looped), ${PUBLISHERS_PER_ROOM} publishers per room ` +
+      `(one worker process per room), verify ${TRACK_VERIFY_TIMEOUT_MS / 1000}s, hard cap ${HARD_CAP_TRACKS}, ` +
+      `budget ${RAMP_BUDGET_MS / 60000} min` +
       (LABEL ? `, label "${LABEL}"` : ""),
   );
 
-  const publishers: Publisher[] = [];
-  const load = new PublisherHostLoad();
+  const workers: Worker[] = [];
+  const workerForRoom = (room: number): Worker => {
+    while (workers.length <= room) {
+      workers.push(new Worker(workers.length));
+    }
+    return workers[room];
+  };
+  const tracksRefs: TrackRef[] = [];
+  const load = new PublisherHostLoad(() =>
+    [process.pid, ...workers.map((w) => w.pid)].filter((p): p is number => typeof p === "number"),
+  );
+  load.sample();
   let tracks = 0;
   let consecutiveFailures = 0;
   let joinRetries = 0;
@@ -338,9 +215,11 @@ async function main(): Promise<void> {
       stopReason = `ramp time budget of ${RAMP_BUDGET_MS / 60000} minutes exhausted`;
       break;
     }
-    const index = publishers.length + 1;
-    const roomName = `capacity-${RUN_ID}-room-${Math.floor(tracks / PUBLISHERS_PER_ROOM)}`;
-    let publisher = new Publisher(`capacity-pub-${index}`, roomName, audio);
+    const index = tracks + consecutiveFailures + 1;
+    const room = Math.floor(tracks / PUBLISHERS_PER_ROOM);
+    const roomName = `capacity-${RUN_ID}-room-${room}`;
+    const identity = `capacity-pub-${index}`;
+    const worker = workerForRoom(room);
     try {
       // A join the server refuses (HTTP 500 while it judges its node
       // unavailable for a new room, for instance) is retried after a pause:
@@ -348,10 +227,9 @@ async function main(): Promise<void> {
       // is logged and counted in the result.
       for (let attempt = 1; ; attempt++) {
         try {
-          await publisher.connect();
+          await worker.request({ type: "add", identity, roomName }, 120_000);
           break;
         } catch (error: any) {
-          await publisher.close();
           if (attempt >= JOIN_ATTEMPTS) {
             throw error;
           }
@@ -361,44 +239,57 @@ async function main(): Promise<void> {
               `(${error.message}); retrying in ${JOIN_RETRY_DELAY_MS / 1000}s`,
           );
           await sleep(JOIN_RETRY_DELAY_MS);
-          publisher = new Publisher(`capacity-pub-${index}`, roomName, audio);
         }
       }
-      await publisher.waitForOwnFinal(TRACK_VERIFY_TIMEOUT_MS);
-      publishers.push(publisher);
+      const reply = await worker.request(
+        { type: "waitFinal", identity, timeoutMs: TRACK_VERIFY_TIMEOUT_MS, after: 0 },
+        TRACK_VERIFY_TIMEOUT_MS + 30_000,
+      );
+      tracksRefs.push({ identity, worker });
       tracks += 1;
       consecutiveFailures = 0;
-      log(
-        `Capacity so far: ${tracks} simultaneous transcribed tracks ${load.sample()} first final: "${publisher.lastFinalText}"`,
-      );
+      log(`Capacity so far: ${tracks} simultaneous transcribed tracks ${load.sample()} first final: "${reply.text}"`);
     } catch (error: any) {
       consecutiveFailures += 1;
       log(
         `Track ${tracks + 1} failed (${consecutiveFailures}/${MAX_CONSECUTIVE_FAILURES} consecutive) ` +
           `${load.sample()}: ${error.message}`,
       );
-      await publisher.close();
+      await worker.request({ type: "close", identity }, 30_000).catch(() => undefined);
     }
   }
 
   // Sustained check: the FIRST publisher must still get fresh finals now that
   // every other track is live, otherwise the count reflects accepted-then-degraded tracks.
   let sustained = false;
-  if (publishers.length > 0) {
-    const oldest = publishers[0];
+  if (tracksRefs.length > 0) {
+    const oldest = tracksRefs[0];
     try {
-      await oldest.waitForOwnFinal(TRACK_VERIFY_TIMEOUT_MS, oldest.finals);
+      const stats = await oldest.worker.request({ type: "stats" }, 30_000);
+      const finals = stats.publishers.find((p: any) => p.identity === oldest.identity)?.finals ?? 0;
+      await oldest.worker.request(
+        { type: "waitFinal", identity: oldest.identity, timeoutMs: TRACK_VERIFY_TIMEOUT_MS, after: finals },
+        TRACK_VERIFY_TIMEOUT_MS + 30_000,
+      );
       sustained = true;
     } catch {
       log("Oldest track stopped receiving transcriptions at full load");
     }
   }
 
-  const finalsPerTrack = publishers.map((p) => p.finals);
-  // Tracks that produced a final during the last verify window: an agent that
-  // accepted the ramp but fell behind shows here as k/N well below N.
-  const liveAtEnd = publishers.filter(
-    (p) => Date.now() - p.lastFinalAt < TRACK_VERIFY_TIMEOUT_MS,
+  // Finals per track and the tracks still delivering in the last verify
+  // window: an agent that accepted the ramp but fell behind shows as k/N below N.
+  const finalsByIdentity = new Map<string, { finals: number; lastFinalAt: number }>();
+  for (const worker of workers) {
+    const stats = await worker.request({ type: "stats" }, 30_000).catch(() => ({ publishers: [] }));
+    for (const p of stats.publishers as Array<{ identity: string; finals: number; lastFinalAt: number }>) {
+      finalsByIdentity.set(p.identity, p);
+    }
+  }
+  const now = Date.now();
+  const finalsPerTrack = tracksRefs.map((t) => finalsByIdentity.get(t.identity)?.finals ?? 0);
+  const liveAtEnd = tracksRefs.filter(
+    (t) => now - (finalsByIdentity.get(t.identity)?.lastFinalAt ?? 0) < TRACK_VERIFY_TIMEOUT_MS,
   ).length;
   const resultLine =
     `CAPACITY RESULT: ${tracks} simultaneous transcribed tracks with headless publishers` +
@@ -432,8 +323,7 @@ async function main(): Promise<void> {
     );
   }
 
-  await Promise.all(publishers.map((p) => p.close()));
-  await dispose();
+  await Promise.all(workers.map((w) => w.exit()));
   if (tracks === 0) {
     process.exit(1);
   }
@@ -441,9 +331,5 @@ async function main(): Promise<void> {
 
 main().catch(async (error) => {
   log(`Probe failed: ${error?.stack || error}`);
-  try {
-    await dispose();
-  } finally {
-    process.exit(1);
-  }
+  process.exit(1);
 });

@@ -52,18 +52,6 @@ export default defineConfig({
       },
     },
     {
-      name: "livecaptions-capacity",
-      testMatch: /livecaptions-capacity\.spec\.ts$/,
-      use: {
-        launchOptions: {
-          args: [
-            ...commonLaunchArgs,
-            `--use-file-for-fake-audio-capture=${resource("stt-test.wav")}`,
-          ],
-        },
-      },
-    },
-    {
       name: "livecaptions-wrong-license",
       testMatch: /livecaptions-wrong-license\.spec\.ts$/,
       use: {

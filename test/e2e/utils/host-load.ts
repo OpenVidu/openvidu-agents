@@ -57,9 +57,8 @@ export function hostBusyPercent(
  *   fully busy, and RAM);
  * - every other container, as a total plus the three largest consumers;
  * - the host as a whole, busy % of all cores over the sampling window. The
- *   difference to the containers' sum is whatever runs outside docker: in the
- *   single-box CI probe that is the browser running the publishers plus the
- *   runner; on a dedicated agent host it should be close to zero;
+ *   difference to the containers' sum is whatever runs outside docker (the
+ *   GitHub runner itself); on a dedicated agent host it should be close to zero;
  * - on GPU hosts (`gpu`, default: STT_ACCEL set), VRAM and GPU utilization
  *   from nvidia-smi (host-wide).
  */

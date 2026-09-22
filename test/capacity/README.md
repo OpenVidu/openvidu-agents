@@ -3,16 +3,15 @@
 How many participants can one agent host transcribe at the same time, when the
 host runs nothing but the OpenVidu deployment and the agent?
 
-The Playwright probe (`e2e/livecaptions-capacity.spec.ts`) answers a different
-question: it runs the deployment, the agent **and** a browser publishing every
-track on the same machine, so on a 4-vCPU box it saturates the box (the browser
-starves first) at 12-13 tracks whatever the agent does. The two scripts here
-split the roles:
+A browser-based probe that ran the deployment, the agent and a browser
+publishing every track on one machine was retired in favour of this one: on a
+4-vCPU box it saturated the box (the browser starved first) at 12-13 tracks
+whatever the agent did. The two scripts here split the roles:
 
 | Script | Runs on | Does |
 | --- | --- | --- |
 | `agent-host.ts` | the machine under test | `start`: configure the agent provider in the local deployment, start it, wait for the agent worker. `hold`: keep it up while the publishers run, logging `Host load [...]` (agent CPU/RAM, other containers, host total, VRAM + GPU utilization) every 15 s. `stop`: dump the agent log tail, stop the deployment. |
-| `headless-capacity-probe.ts` | any other machine | LiveKit Node SDK publishers stream a WAV in a loop; a track counts when the agent's final transcription of it (`lk.transcription` text stream) arrives within 60 s; same ramp, stop rules and sustained check as the Playwright probe; prints `CAPACITY RESULT:`. Each publisher costs the probe process about 13 % of a core (Opus encoding), so the default `c6i.2xlarge` (8 vCPU) carries the 40-track hard cap with margin; the result line reports the publisher host's own load. |
+| `headless-capacity-probe.ts` | any other machine | LiveKit Node SDK publishers stream a WAV in a loop; a track counts when the agent's final transcription of it (`lk.transcription` text stream) arrives within 60 s; the ramp adds one publisher at a time and re-checks the oldest track at the end; prints `CAPACITY RESULT:`. Each publisher costs the probe process about 13 % of a core (Opus encoding), so the default `c6i.2xlarge` (8 vCPU) carries the 40-track hard cap with margin; the result line reports the publisher host's own load. |
 
 ## CI: `speech-processing-capacity-remote-publishers.yml`
 
@@ -25,7 +24,7 @@ it then checks connectivity, runs the probe against the agent host's private IP
 and prints the result, and its completion releases the hold. Nothing is exposed
 publicly; the deployment is reached exactly as a LAN client would.
 
-Keep `deployment-edition` at `community` (the browser probe uses it too): the
+Keep `deployment-edition` at `community`: the
 local Pro server runs in evaluation mode, which allows 8 participants across
 all rooms, agent participants included, and closes rooms after 5 minutes, so a
 ramp on it stops at 6 tracks with `HTTP 500` joins (`OpenVidu Pro evaluation

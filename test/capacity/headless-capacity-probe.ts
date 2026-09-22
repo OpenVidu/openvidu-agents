@@ -1,8 +1,7 @@
 /**
  * Headless transcription capacity probe.
  *
- * Same measurement as e2e/livecaptions-capacity.spec.ts, without a browser:
- * publishers are LiveKit Node SDK participants that stream a WAV file in a
+ * Publishers are LiveKit Node SDK participants that stream a WAV file in a
  * loop, and a track counts once the agent's final transcription of it (the
  * `lk.transcription` text stream sent on behalf of the publisher) arrives
  * within CAPACITY_VERIFY_TIMEOUT_MS. The ramp adds one publisher at a time
@@ -163,8 +162,8 @@ async function buildToken(identity: string, roomName: string): Promise<string> {
     roomJoin: true,
     canPublish: true,
     canPublishData: true,
-    // Publisher-only, like the browser probe's participants: transcriptions
-    // arrive as text streams, no media subscription is needed.
+    // Publisher-only: transcriptions arrive as text streams, no media
+    // subscription is needed.
     canSubscribe: false,
   });
   return at.toJwt();

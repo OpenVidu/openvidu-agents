@@ -1,9 +1,8 @@
 # Transcription capacity of ONE agent host, measured from ANOTHER machine.
 #
-# The single-box probe (speech-processing-capacity-e2e-gpu.yml) shares the
-# runner between the deployment, the agent and a browser publishing every
-# track, so on a 4-vCPU box it measures the box, not the agent. Here two EC2
-# runners are started in the same subnet: the "Agent host" runs the OpenVidu
+# A probe that shared one runner between the deployment, the agent and a
+# browser publishing every track measured the box, not the agent, and was
+# retired. Here two EC2 runners are started in the same subnet: the "Agent host" runs the OpenVidu
 # local deployment with the agent (GPU or CPU image), the "Publishers" runner
 # streams audio into it with LiveKit Node SDK participants
 # (test/capacity/headless-capacity-probe.ts) and counts the tracks whose

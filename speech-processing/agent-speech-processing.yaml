@@ -8,7 +8,7 @@ enabled: true
 load_threshold: 0.7
 
 # How the agent runs its Rooms when the provider is local (vosk, sherpa) [thread, process]
-# - thread: all Rooms run in the same process sharing the same model. Lower memory usage, but upper limit of 20 concurrent audio tracks due to CPU constraints.
+# - thread: all Rooms run in the same process sharing the same model. Lower memory usage, but upper limit of 20 concurrent audio tracks per process.
 # - process: each Room runs in its own process with its own copy of the model. Higher memory usage, but upper limit of concurrent audio tracks scales with CPUs.
 job_executor: thread
 
@@ -431,7 +431,7 @@ live_captions:
     # a bare code ("en", "es") or "auto" (default) for automatic detection. Pinning the language is more accurate than "auto".
     language:
     # Runtime provider for sherpa-onnx. Supported values: "cpu" or "cuda". Default is "cpu".
-    # Learn about GPU acceleration at https://openvidu.io/docs/ai/live-captions/#gpu-acceleration-for-sherpa-provider
+    # Learn about GPU acceleration at https://openvidu.io/docs/ai/live-captions/#gpu-acceleration-with-nemotron
     provider:
     # Audio sample rate in Hz. Default is 16000.
     sample_rate:

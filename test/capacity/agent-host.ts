@@ -25,6 +25,7 @@
  *                           the Nemotron 3.5 model of e2e/utils/models.ts, forced English
  *   CAPACITY_PROVIDER       sherpa (default) or vosk
  *   CAPACITY_MODEL          model directory of that provider's image (defaults: Nemotron 3.5 / vosk-model-en-us-0.22-lgraph)
+ *   CAPACITY_JOB_EXECUTOR   thread|process: JOB_EXECUTOR_TYPE for the agent container (empty: the agent's default)
  *   LOCAL_DEPLOYMENT_BASE_PATH  where openvidu-local-deployment is checked out (LocalDeployment default)
  *   OPENVIDU_PRO_LICENSE    forwarded to the operator by LocalDeployment (Pro plugins need it)
  *   HOLD_UNTIL_JOB, HOLD_MAX_MINUTES (default 75), HOLD_SAMPLE_SECONDS (default 15)
@@ -55,6 +56,8 @@ const EDITION = (process.env.DEPLOYMENT_EDITION as Edition) || "community";
 const GPU = (process.env.STT_ACCEL || "").trim() === "cuda12";
 /** LiveKit server container of the local deployment (both editions). */
 const SERVER_CONTAINER = "openvidu";
+/** thread (agent default for local providers) or process; empty leaves the agent's choice. */
+const JOB_EXECUTOR = (process.env.CAPACITY_JOB_EXECUTOR || "").trim().toLowerCase();
 /** The operator creates the agent container from agent-speech-processing.yaml (pulls its image). */
 const OPERATOR_CONTAINER = "operator";
 /** Timestamped `Host load [...]` samples written by `hold`, read by `summary`. */
@@ -108,7 +111,7 @@ async function start(): Promise<void> {
   const provider = providerConfig();
   log(
     `Starting the ${EDITION} local deployment with provider ${JSON.stringify(provider)} ` +
-      `(${GPU ? "GPU image, cuda12" : "CPU image"})`,
+      `(${GPU ? "GPU image, cuda12" : "CPU image"}${JOB_EXECUTOR ? `, job executor ${JOB_EXECUTOR}` : ""})`,
   );
   // The operator reads agent-speech-processing.yaml when its container starts
   // and `docker compose up -d` leaves a running operator alone, so a deployment
@@ -119,7 +122,11 @@ async function start(): Promise<void> {
   // LocalDeployment: sets the provider block, the agent image (+ GPU passthrough
   // when STT_ACCEL is set), the Pro license, runs configure_lan_private_ip_linux.sh,
   // `docker compose up -d` and waits for the agent worker to register.
-  await LocalDeployment.start(EDITION, provider, undefined, "automatic");
+  // JOB_EXECUTOR_TYPE=process runs every Room in its own process instead of
+  // the agent's default single process for local providers, whose one event
+  // loop saturates around 20 tracks: the probe then measures the model.
+  const agentEnvironment = JOB_EXECUTOR ? { JOB_EXECUTOR_TYPE: JOB_EXECUTOR } : undefined;
+  await LocalDeployment.start(EDITION, provider, undefined, "automatic", agentEnvironment);
   // LocalDeployment.start tolerates a worker that never registered (the e2e
   // specs then fail on their own assertions). Here the publishers would be
   // launched against nothing, so the operator's and the agent's logs are

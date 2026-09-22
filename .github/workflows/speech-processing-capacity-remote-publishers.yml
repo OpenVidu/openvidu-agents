@@ -79,6 +79,14 @@ on:
         type: string
         default: ""
         required: false
+      job-executor:
+        description: "How the agent runs its Rooms: thread (the agent's default for local providers: all Rooms in one process, whose event loop saturates around 20 tracks) or process (one process per Room, each loading its own model copy; measures the model itself)"
+        type: choice
+        default: "thread"
+        required: true
+        options:
+          - thread
+          - process
       hard-cap:
         description: "Maximum number of tracks the ramp tries"
         type: string
@@ -221,6 +229,7 @@ jobs:
       DEPLOYMENT_EDITION: ${{ inputs.deployment-edition }}
       CAPACITY_PROVIDER: ${{ inputs.provider }}
       CAPACITY_MODEL: ${{ inputs.model }}
+      CAPACITY_JOB_EXECUTOR: ${{ inputs.job-executor }}
     steps:
       - name: Setup Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -409,7 +418,7 @@ jobs:
           LIVEKIT_API_KEY: devkey
           LIVEKIT_API_SECRET: secret
           CAPACITY_HARD_CAP: ${{ inputs.hard-cap }}
-          CAPACITY_LABEL: "${{ inputs.agent-instance-type }} ${{ inputs.provider == 'vosk' && 'cpu' || inputs.accel }} ${{ inputs.deployment-edition }} ${{ inputs.provider }} ${{ inputs.model || (inputs.provider == 'vosk' && 'vosk-model-en-us-0.22-lgraph' || 'nemotron-3.5') }}"
+          CAPACITY_LABEL: "${{ inputs.agent-instance-type }} ${{ inputs.provider == 'vosk' && 'cpu' || inputs.accel }} ${{ inputs.deployment-edition }} ${{ inputs.provider }} ${{ inputs.model || (inputs.provider == 'vosk' && 'vosk-model-en-us-0.22-lgraph' || 'nemotron-3.5') }} executor=${{ inputs.job-executor }}"
         run: npm run capacity:headless
 
   stop-agent-runner:

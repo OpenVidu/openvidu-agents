@@ -110,6 +110,12 @@ async function start(): Promise<void> {
     `Starting the ${EDITION} local deployment with provider ${JSON.stringify(provider)} ` +
       `(${GPU ? "GPU image, cuda12" : "CPU image"})`,
   );
+  // The operator reads agent-speech-processing.yaml when its container starts
+  // and `docker compose up -d` leaves a running operator alone, so a deployment
+  // the workflow brought up before this step would keep the agent disabled.
+  // Like the e2e specs, stop first so every container starts from the
+  // configured files.
+  LocalDeployment.stop();
   // LocalDeployment: sets the provider block, the agent image (+ GPU passthrough
   // when STT_ACCEL is set), the Pro license, runs configure_lan_private_ip_linux.sh,
   // `docker compose up -d` and waits for the agent worker to register.

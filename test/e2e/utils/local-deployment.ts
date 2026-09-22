@@ -56,7 +56,7 @@ export class LocalDeployment {
     provider: any,
     customLicense?: string,
     processing?: Processing,
-    agentEnvironment?: Record<string, string>,
+    agentSettings?: Record<string, unknown>,
   ) {
     this.edition = edition;
     console.log(
@@ -67,7 +67,7 @@ export class LocalDeployment {
     console.log(`Deployment path: ${this.getLocalDeploymentPath()}`);
 
     this.configureLanPrivateIp();
-    this.configureProvider(provider, customLicense, processing, agentEnvironment);
+    this.configureProvider(provider, customLicense, processing, agentSettings);
 
     console.log("Restarting local deployment...");
     const dockerComposeFile = this.getDockerComposeFile();
@@ -140,7 +140,7 @@ export class LocalDeployment {
     provider: any,
     customLicense?: string,
     processing?: Processing,
-    agentEnvironment?: Record<string, string>,
+    agentSettings?: Record<string, unknown>,
   ) {
     const providerName = Object.keys(provider)[0];
 
@@ -188,10 +188,10 @@ export class LocalDeployment {
       doc.set("docker_image", "openvidu/agent-speech-processing-cloud:main");
     }
 
-    // Extra environment for the agent container (docker_options.environment,
-    // honoured by the operator), e.g. JOB_EXECUTOR_TYPE for the capacity probe.
-    for (const [name, value] of Object.entries(agentEnvironment ?? {})) {
-      doc.setIn(["docker_options", "environment", name], value);
+    // Extra top-level properties of agent-speech-processing.yaml, e.g.
+    // job_executor for the capacity probe.
+    for (const [key, value] of Object.entries(agentSettings ?? {})) {
+      doc.set(key, value);
     }
 
     this.writeYamlFile(agentSpeechProcessingFile, doc);

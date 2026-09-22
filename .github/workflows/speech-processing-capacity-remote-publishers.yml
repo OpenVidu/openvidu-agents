@@ -67,7 +67,7 @@ on:
           - community
           - pro
       provider:
-        description: "Local STT provider to measure. sherpa builds the agent-speech-processing-sherpa[-cuda12] image from the sources (or pulls docker-tag-agent-speech-processing); vosk pulls the published agent-speech-processing-vosk image and ignores accel"
+        description: "Local STT provider to measure. Its agent image (agent-speech-processing-sherpa[-cuda12] or agent-speech-processing-vosk) is built from the sources, or pulled when docker-tag-agent-speech-processing is set; vosk ignores accel"
         type: choice
         default: "sherpa"
         required: true
@@ -80,7 +80,7 @@ on:
         default: ""
         required: false
       job-executor:
-        description: "How the agent runs its Rooms: thread (the agent's default for local providers: all Rooms in one process, whose event loop saturates around 20 tracks) or process (one process per Room, each loading its own model copy; measures the model itself)"
+        description: "Value of the job_executor property of agent-speech-processing.yaml on the agent host: thread (the agent's default: all Rooms in one process sharing the model, whose event loop saturates around 20 tracks) or process (one process and one model copy per Room; measures the model itself)"
         type: choice
         default: "thread"
         required: true
@@ -106,7 +106,7 @@ on:
         required: false
         default: "development"
       docker-tag-agent-speech-processing:
-        description: "Docker tag of the published agent image to measure. Empty: sherpa is built from the repository sources, vosk uses the published main tag"
+        description: "Docker tag of the published agent image to measure. Empty: the agent image is built from the repository sources"
         type: string
         required: false
         default: ""
@@ -255,9 +255,9 @@ jobs:
           path: openvidu-agents-pro
 
       - name: Download STT model files
-        if: ${{ inputs.provider == 'sherpa' && inputs.docker-tag-agent-speech-processing == '' }}
+        if: ${{ inputs.docker-tag-agent-speech-processing == '' }}
         working-directory: ./openvidu-agents/speech-processing
-        run: ./download-models.sh --accel ${{ inputs.accel }}
+        run: ./download-models.sh --accel ${{ inputs.provider == 'vosk' && 'cpu' || inputs.accel }}
 
       - name: Build the agent image [-sherpa${{ inputs.accel == 'cuda12' && '-cuda12' || '' }}]
         if: ${{ inputs.provider == 'sherpa' && inputs.docker-tag-agent-speech-processing == '' }}
@@ -265,6 +265,11 @@ jobs:
           cd openvidu-agents-pro/speech-processing
           export GITHUB_TOKEN=${{ secrets.OPENVIDU_GITHUB_TOKEN }}
           ./build-sherpa.sh --no-cache --local-only --accel ${{ inputs.accel }} --platform linux/amd64
+
+      - name: Build the agent image [-vosk]
+        if: ${{ inputs.provider == 'vosk' && inputs.docker-tag-agent-speech-processing == '' }}
+        working-directory: ./openvidu-agents/speech-processing
+        run: ./build-vosk.sh --no-cache --local-only
 
       - name: Setup mediasoup-worker
         if: ${{ inputs.rtc-engine == 'mediasoup' }}
@@ -278,7 +283,7 @@ jobs:
       # failure (rate limit, missing tag) is visible instead of surfacing as a
       # worker that never registers while the operator retries in the background.
       - name: Pull the published agent image
-        if: ${{ inputs.provider == 'vosk' || inputs.docker-tag-agent-speech-processing != '' }}
+        if: ${{ inputs.docker-tag-agent-speech-processing != '' }}
         run: docker pull docker.io/openvidu/agent-speech-processing-${{ inputs.provider == 'vosk' && 'vosk' || format('sherpa{0}', inputs.accel == 'cuda12' && '-cuda12' || '') }}:${{ inputs.docker-tag-agent-speech-processing || 'main' }}
 
       - name: Setup OpenVidu Local Deployment

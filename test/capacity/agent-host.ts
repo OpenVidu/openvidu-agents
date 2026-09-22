@@ -25,7 +25,7 @@
  *                           the Nemotron 3.5 model of e2e/utils/models.ts, forced English
  *   CAPACITY_PROVIDER       sherpa (default) or vosk
  *   CAPACITY_MODEL          model directory of that provider's image (defaults: Nemotron 3.5 / vosk-model-en-us-0.22-lgraph)
- *   CAPACITY_JOB_EXECUTOR   thread|process: JOB_EXECUTOR_TYPE for the agent container (empty: the agent's default)
+ *   CAPACITY_JOB_EXECUTOR   thread|process: job_executor property of agent-speech-processing.yaml (empty: the file's value)
  *   LOCAL_DEPLOYMENT_BASE_PATH  where openvidu-local-deployment is checked out (LocalDeployment default)
  *   OPENVIDU_PRO_LICENSE    forwarded to the operator by LocalDeployment (Pro plugins need it)
  *   HOLD_UNTIL_JOB, HOLD_MAX_MINUTES (default 75), HOLD_SAMPLE_SECONDS (default 15)
@@ -56,7 +56,7 @@ const EDITION = (process.env.DEPLOYMENT_EDITION as Edition) || "community";
 const GPU = (process.env.STT_ACCEL || "").trim() === "cuda12";
 /** LiveKit server container of the local deployment (both editions). */
 const SERVER_CONTAINER = "openvidu";
-/** thread (agent default for local providers) or process; empty leaves the agent's choice. */
+/** job_executor of agent-speech-processing.yaml: thread (the agent's default) or process; empty leaves the file's value. */
 const JOB_EXECUTOR = (process.env.CAPACITY_JOB_EXECUTOR || "").trim().toLowerCase();
 /** The operator creates the agent container from agent-speech-processing.yaml (pulls its image). */
 const OPERATOR_CONTAINER = "operator";
@@ -122,11 +122,11 @@ async function start(): Promise<void> {
   // LocalDeployment: sets the provider block, the agent image (+ GPU passthrough
   // when STT_ACCEL is set), the Pro license, runs configure_lan_private_ip_linux.sh,
   // `docker compose up -d` and waits for the agent worker to register.
-  // JOB_EXECUTOR_TYPE=process runs every Room in its own process instead of
-  // the agent's default single process for local providers, whose one event
-  // loop saturates around 20 tracks: the probe then measures the model.
-  const agentEnvironment = JOB_EXECUTOR ? { JOB_EXECUTOR_TYPE: JOB_EXECUTOR } : undefined;
-  await LocalDeployment.start(EDITION, provider, undefined, "automatic", agentEnvironment);
+  // job_executor: process runs every Room in its own process instead of the
+  // agent's default single process for local providers, whose one event loop
+  // saturates around 20 tracks: the probe then measures the model.
+  const agentSettings = JOB_EXECUTOR ? { job_executor: JOB_EXECUTOR } : undefined;
+  await LocalDeployment.start(EDITION, provider, undefined, "automatic", agentSettings);
   // LocalDeployment.start tolerates a worker that never registered (the e2e
   // specs then fail on their own assertions). Here the publishers would be
   // launched against nothing, so the operator's and the agent's logs are

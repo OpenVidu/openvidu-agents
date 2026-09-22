@@ -32,21 +32,20 @@ mode only allows a maximum of 8 participants across all rooms` in the server
 log). The agent image is the same on both editions and receives the Pro license
 through the operator.
 
-The agent runs every Room of a local provider as a thread of one process, and
-that process's single event loop saturates around 20 tracks whatever the model:
-the SDK's events lag, the Rooms' signaling times out and no final reaches any
-publisher any more while decoding continues. The `job-executor` input
-(`thread`, the agent's default, or `process`) sets `JOB_EXECUTOR_TYPE` on the
-agent container; `process` gives every Room its own process and loop, so the
-probe measures the model instead of that ceiling (each process loads its own
-model copy).
+With its default `job_executor: thread`, the agent runs every Room of a local
+provider as a thread of one process, and that process's single event loop
+saturates around 20 tracks whatever the model: the SDK's events lag, the
+Rooms' signaling times out and no final reaches any publisher any more while
+decoding continues. The `job-executor` input (`thread` or `process`) sets that
+property in the agent host's `agent-speech-processing.yaml`; `process` gives
+every Room its own process, loop and model copy, so the probe measures the
+model instead of that ceiling.
 
 The `provider` (`sherpa` or `vosk`) and `model` inputs select what is measured:
 any model directory of that provider's image, with the same ramp for all of
-them. `sherpa` builds the image from the sources (or pulls
-`docker-tag-agent-speech-processing`); `vosk` pulls the published
-`agent-speech-processing-vosk` image and ignores `accel`. The result label
-carries the provider and the model.
+them. Both images are built from the sources (or pulled when
+`docker-tag-agent-speech-processing` is set); `vosk` ignores `accel`. The
+result label carries the provider and the model.
 
 For the CPU vs GPU comparison, dispatch it twice with the same vCPU count and RAM:
 

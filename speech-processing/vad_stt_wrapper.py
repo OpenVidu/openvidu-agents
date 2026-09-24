@@ -331,25 +331,10 @@ class VADTriggeredSpeechStream(stt.SpeechStream):
                     continue
 
                 # Forward transcription events
-                if ev.type == stt.SpeechEventType.FINAL_TRANSCRIPT:
-                    text = ev.alternatives[0].text if ev.alternatives else ""
-                    confidence = (
-                        ev.alternatives[0].confidence if ev.alternatives else 0.0
-                    )
-                    logger.debug(
-                        f"[VADTriggeredStream:{self._stream_id}] STT FINAL_TRANSCRIPT "
-                        f"(event #{stt_event_count}, elapsed={elapsed:.2f}s): "
-                        f"'{text}' (confidence={confidence:.2f})"
-                    )
-                elif ev.type == stt.SpeechEventType.INTERIM_TRANSCRIPT:
-                    text = ev.alternatives[0].text if ev.alternatives else ""
-                    logger.debug(
-                        f"[VADTriggeredStream:{self._stream_id}] STT INTERIM: '{text}'"
-                    )
-                else:
-                    logger.debug(
-                        f"[VADTriggeredStream:{self._stream_id}] STT event: {ev.type}"
-                    )
+                logger.debug(
+                    f"[VADTriggeredStream:{self._stream_id}] STT event: {ev.type} "
+                    f"(event #{stt_event_count}, elapsed={elapsed:.2f}s)"
+                )
 
                 self._event_ch.send_nowait(ev)
 

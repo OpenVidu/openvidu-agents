@@ -557,7 +557,6 @@ class SpeechStream(stt.SpeechStream):
                     )
                     final_result = json.loads(final_result_json)
                     text = final_result.get("text", "")
-                    logger.debug(f"[Vosk SpeechStream] FinalResult: '{text}'")
 
                     if text:
                         confidence = _extract_confidence(final_result)
@@ -566,10 +565,6 @@ class SpeechStream(stt.SpeechStream):
                         )
                         end_time = _extract_end_time(
                             final_result, self.start_time_offset
-                        )
-                        logger.debug(
-                            f"[Vosk SpeechStream] FINAL (from flush): '{text}' "
-                            f"(confidence={confidence:.2f}, start={start_time:.2f}s, end={end_time:.2f}s)"
                         )
                         self._event_ch.send_nowait(
                             stt.SpeechEvent(
@@ -668,10 +663,6 @@ class SpeechStream(stt.SpeechStream):
                 confidence = _extract_confidence(result)
                 start_time = _extract_start_time(result, self.start_time_offset)
                 end_time = _extract_end_time(result, self.start_time_offset)
-                logger.info(
-                    f"[Vosk SpeechStream] FINAL (from internal endpointing): '{text}' "
-                    f"(confidence={confidence:.2f}, start={start_time:.2f}s, end={end_time:.2f}s)"
-                )
                 self._event_ch.send_nowait(
                     stt.SpeechEvent(
                         type=stt.SpeechEventType.FINAL_TRANSCRIPT,
@@ -705,7 +696,6 @@ class SpeechStream(stt.SpeechStream):
                     )
                     self._speaking = True
 
-                logger.debug(f"[Vosk SpeechStream] INTERIM: '{text}'")
                 self._event_ch.send_nowait(
                     stt.SpeechEvent(
                         type=stt.SpeechEventType.INTERIM_TRANSCRIPT,

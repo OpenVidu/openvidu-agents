@@ -233,6 +233,9 @@ class VADTriggeredSpeechStream(stt.SpeechStream):
 
         # Channel to coordinate flush signals
         flush_event = asyncio.Event()
+        # Set once audio_forward_task has ended input on both inner streams, so the
+        # cleanup below does not end it a second time (which raises RuntimeError)
+        inner_input_ended = False
 
         @utils.log_exceptions(logger=logging.getLogger(__name__))
         async def vad_task() -> None:
@@ -346,6 +349,7 @@ class VADTriggeredSpeechStream(stt.SpeechStream):
         @utils.log_exceptions(logger=logging.getLogger(__name__))
         async def audio_forward_task() -> None:
             """Forward audio to both VAD and STT, flush STT on VAD signal."""
+            nonlocal inner_input_ended
             logger.debug(
                 f"[VADTriggeredStream:{self._stream_id}] audio_forward_task started - forwarding audio"
             )
@@ -407,6 +411,7 @@ class VADTriggeredSpeechStream(stt.SpeechStream):
             )
             self._stt_stream.end_input()
             self._vad_stream.end_input()
+            inner_input_ended = True
             logger.debug(
                 f"[VADTriggeredStream:{self._stream_id}] end_input() called on both streams"
             )
@@ -447,7 +452,8 @@ class VADTriggeredSpeechStream(stt.SpeechStream):
                 # Signal end-of-input before aclose(). If audio_forward_task was cancelled before it
                 # could call end_input() itself, the underlying STT stream stays blocked waiting for
                 # the next frame. Calling end_input() here lets it drain naturally
-                self._stt_stream.end_input()
+                if not inner_input_ended:
+                    self._stt_stream.end_input()
                 await self._stt_stream.aclose()
                 logger.debug(
                     f"[VADTriggeredStream:{self._stream_id}] STT stream closed"
@@ -458,7 +464,8 @@ class VADTriggeredSpeechStream(stt.SpeechStream):
                 # Signal end-of-input before aclose(). This lets the ONNX inference loop see the closed
                 # channel and exit cleanly after its current frame, rather than being cancelled
                 # mid-inference and potentially leaving background ONNX threads running.
-                self._vad_stream.end_input()
+                if not inner_input_ended:
+                    self._vad_stream.end_input()
                 await self._vad_stream.aclose()
                 logger.debug(
                     f"[VADTriggeredStream:{self._stream_id}] VAD stream closed"

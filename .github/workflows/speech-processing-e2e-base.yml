@@ -67,7 +67,7 @@ jobs:
           node-version: 24
 
       - name: Install safe-chain
-        uses: OpenVidu/actions/install-safe-chain@ccd21721ffb48bdeb889526d3a0b496c451ffd48 # v1.0.24
+        uses: OpenVidu/actions/install-safe-chain@26a149ff32c72503a7c7ce4fb5fa4d000cb3262d # 1.0.25
 
       - name: Checkout OpenVidu/openvidu-agents
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -126,13 +126,13 @@ jobs:
       - name: Setup mediasoup-worker
         if: ${{ inputs.rtc-engine == 'mediasoup' }}
         id: setup-mediasoup-worker
-        uses: OpenVidu/actions/setup-mediasoup-worker@ccd21721ffb48bdeb889526d3a0b496c451ffd48 # v1.0.24
+        uses: OpenVidu/actions/setup-mediasoup-worker@26a149ff32c72503a7c7ce4fb5fa4d000cb3262d # 1.0.25
         with:
           ref-openvidu-pro-mediasoup: ${{ inputs.ref-openvidu-pro-mediasoup }}
           github-token: ${{ secrets.OPENVIDU_GITHUB_TOKEN }}
 
       - name: Setup OpenVidu Local Deployment
-        uses: OpenVidu/actions/start-openvidu-local-deployment@ccd21721ffb48bdeb889526d3a0b496c451ffd48 # v1.0.24
+        uses: OpenVidu/actions/start-openvidu-local-deployment@26a149ff32c72503a7c7ce4fb5fa4d000cb3262d # 1.0.25
         with:
           ref-openvidu-local-deployment: ${{ inputs.ref-openvidu-local-deployment || 'development' }}
           pre_startup_commands: "sed -i 's|docker_image: docker.io/openvidu/agent-speech-processing-cloud:main|docker_image: docker.io/openvidu/agent-speech-processing-cloud:${{ inputs.docker-tag-agent-speech-processing || 'main' }}|g' agent-speech-processing.yaml"
@@ -195,4 +195,4 @@ jobs:
 
       - name: Clean up
         if: always()
-        uses: OpenVidu/actions/cleanup@ccd21721ffb48bdeb889526d3a0b496c451ffd48 # v1.0.24
+        uses: OpenVidu/actions/cleanup@26a149ff32c72503a7c7ce4fb5fa4d000cb3262d # 1.0.25

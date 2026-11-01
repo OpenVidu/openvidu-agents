@@ -64,7 +64,7 @@ jobs:
     steps:
       - name: Start AWS EC2 Runner
         id: start-ec2-runner
-        uses: OpenVidu/actions/start-aws-runner@ccd21721ffb48bdeb889526d3a0b496c451ffd48 # v1.0.24
+        uses: OpenVidu/actions/start-aws-runner@26a149ff32c72503a7c7ce4fb5fa4d000cb3262d # v1.0.25
         if: ${{ inputs.use-aws }}
         with:
           aws-instance-type: ${{ inputs.aws-instance-type || 'g4dn.xlarge' }}

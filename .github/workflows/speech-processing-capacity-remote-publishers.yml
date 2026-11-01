@@ -140,7 +140,7 @@ jobs:
     steps:
       - name: Start AWS EC2 Runner (agent host)
         id: start-ec2-runner
-        uses: OpenVidu/actions/start-aws-runner@ccd21721ffb48bdeb889526d3a0b496c451ffd48 # v1.0.24
+        uses: OpenVidu/actions/start-aws-runner@26a149ff32c72503a7c7ce4fb5fa4d000cb3262d # v1.0.25
         with:
           aws-instance-type: ${{ inputs.agent-instance-type }}
           # The GPU AMI needs room for the cuda12 image; the standard AMI ships a
@@ -204,7 +204,7 @@ jobs:
 
       - name: Start AWS EC2 Runner (publishers)
         id: start-ec2-runner
-        uses: OpenVidu/actions/start-aws-runner@ccd21721ffb48bdeb889526d3a0b496c451ffd48 # v1.0.24
+        uses: OpenVidu/actions/start-aws-runner@26a149ff32c72503a7c7ce4fb5fa4d000cb3262d # v1.0.25
         with:
           aws-instance-type: ${{ inputs.publisher-instance-type }}
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}

@@ -16,6 +16,15 @@ FROM ${BASE_IMAGE} AS builder
 # Get target architecture for multi-arch builds
 ARG TARGETARCH
 
+# git: pip installs openviduagentutils and the vosk bindings from GitHub, and
+# patches/apply.sh uses "git apply". gcc/g++: packages without a prebuilt wheel.
+# Only this stage has them: the final stage copies just /opt/venv.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    gcc \
+    g++ \
+  && rm -rf /var/lib/apt/lists/*
+
 # Create a virtual environment for clean package isolation
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
@@ -60,6 +69,10 @@ RUN LIBVOSK_FILE="vosk-libvosk/libvosk-${TARGETARCH}.so" && \
         exit 1; \
     fi && \
     cp "$LIBVOSK_FILE" /opt/venv/lib/python3.13/site-packages/vosk/libvosk.so
+
+# The runtime image installs nothing: drop pip (and the copies of urllib3,
+# msgpack, certifi and pkg_resources it vendors) from the virtualenv
+RUN pip uninstall -y pip
 
 # =============================================================================
 # STAGE 2: Final - Clean image (without language models)

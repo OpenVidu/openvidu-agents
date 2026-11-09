@@ -2,7 +2,22 @@
 # Dockerfile for cloud-based STT providers
 
 ARG BASE_IMAGE=openvidu/agent-speech-processing-base:main
-FROM ${BASE_IMAGE}
+
+# =============================================================================
+# STAGE 1: builder - install the Python dependencies into /opt/venv
+# =============================================================================
+FROM ${BASE_IMAGE} AS builder
+
+# git: pip installs openviduagentutils from GitHub, and patches/apply.sh uses
+# "git apply". gcc/g++: packages without a prebuilt wheel for this platform.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    gcc \
+    g++ \
+  && rm -rf /var/lib/apt/lists/*
+
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
 
 # Copy cloud requirements and install dependencies
 COPY requirements-base.txt requirements-cloud.txt ./
@@ -13,6 +28,18 @@ RUN pip install --no-cache-dir -r requirements-cloud.txt
 # dependency in use includes https://github.com/livekit/agents/pull/7225
 COPY patches ./patches
 RUN ./patches/apply.sh && rm -rf ./patches
+
+# The runtime image installs nothing: drop pip (and the copies of urllib3,
+# msgpack, certifi and pkg_resources it vendors) from the virtualenv
+RUN pip uninstall -y pip
+
+# =============================================================================
+# STAGE 2: final - base image + virtualenv, no build tools
+# =============================================================================
+FROM ${BASE_IMAGE}
+
+COPY --from=builder /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
 
 # Pre-download any ML models or files the agent needs
 # This ensures the container is ready to run immediately without downloading

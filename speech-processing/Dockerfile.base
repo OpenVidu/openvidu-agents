@@ -30,19 +30,24 @@ RUN adduser \
     --uid "${UID}" \
     appuser
 
-# Install build dependencies required for Python packages with native extensions
-# gcc: C compiler needed for building Python packages with C extensions
-# g++: C++ compiler needed for building Python packages with C++ extensions
-# python3-dev: Python development headers needed for compilation
-# We clean up the apt cache after installation to keep the image size down
-RUN apt-get update && apt-get install -y \
-    gcc \
-    g++ \
-    python3-dev \
-    git \
+# Runtime OS packages only, with every pending Debian update applied.
+# Compilers, headers and git are not part of this image: the images built on it
+# (Dockerfile.cloud, Dockerfile.vosk-base) install their Python dependencies in a
+# builder stage that adds those tools, and copy only the resulting virtualenv.
+RUN apt-get update \
+  && apt-get upgrade -y --no-install-recommends \
+  && apt-get install -y --no-install-recommends \
     # Missing dependencies for some speech processing libraries
     libglib2.0-0 \
   && rm -rf /var/lib/apt/lists/*
+
+# Remove the interpreter-wide pip: nothing installs packages at runtime, and pip
+# vendors its own copies of urllib3, msgpack, certifi and pkg_resources, which
+# vulnerability scanners report. Builder stages create their virtualenv with
+# "python -m venv", which bootstraps pip from the stdlib ensurepip wheel.
+RUN rm -rf /usr/local/lib/python*/site-packages/pip \
+    /usr/local/lib/python*/site-packages/pip-*.dist-info \
+    /usr/local/bin/pip /usr/local/bin/pip3*
 
 # Create a new directory for our application code
 # And set it as the working directory

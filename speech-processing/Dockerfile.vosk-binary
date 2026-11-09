@@ -81,6 +81,15 @@ FROM ${BASE_IMAGE} AS builder
 # Build argument to determine target architecture
 ARG TARGETARCH
 
+# git: pip installs openviduagentutils and the vosk bindings from GitHub, and
+# patches/apply.sh uses "git apply". gcc/g++: packages without a prebuilt wheel.
+# Only this stage has them: the final stage copies just /opt/venv.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    gcc \
+    g++ \
+  && rm -rf /var/lib/apt/lists/*
+
 # Create a virtual environment for clean package isolation
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
@@ -115,6 +124,10 @@ RUN pip install --no-cache-dir -r requirements-vosk.txt
 # dependency in use includes https://github.com/livekit/agents/pull/7225
 COPY patches ./patches
 RUN ./patches/apply.sh && rm -rf ./patches
+
+# The runtime image installs nothing: drop pip (and the copies of urllib3,
+# msgpack, certifi and pkg_resources it vendors) from the virtualenv
+RUN pip uninstall -y pip
 
 # =============================================================================
 # STAGE 3: Final - Clean image with no trace of secrets

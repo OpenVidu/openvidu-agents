@@ -25,8 +25,9 @@ from livekit.rtc._ffi_client import FfiClient
 import main
 
 
-def _listen_task_cleanup_calls() -> list[str]:
-    """The `self.<name>()` calls at the tail of `rtc.Room._listen_task`.
+def _listen_task_cleanup_calls() -> list[tuple[str, list[str]]]:
+    """The `self.<name>(...)` calls at the tail of `rtc.Room._listen_task`, each
+    with the source of its arguments.
 
     That tail is the cleanup the task runs after breaking out of its event loop on
     'eos' -- exactly what `_release_room_ffi_subscription` replays by hand when it
@@ -43,7 +44,7 @@ def _listen_task_cleanup_calls() -> list[str]:
             "main.py's _release_room_ffi_subscription against it."
         )
 
-    names: list[str] = []
+    calls: list[tuple[str, list[str]]] = []
     for statement in func.body[loops[-1] + 1 :]:
         if not isinstance(statement, ast.Expr):
             continue
@@ -56,8 +57,14 @@ def _listen_task_cleanup_calls() -> list[str]:
             and isinstance(call.func.value, ast.Name)
             and call.func.value.id == "self"
         ):
-            names.append(call.func.attr)
-    return names
+            args = [ast.unparse(arg) for arg in call.args]
+            args += [ast.unparse(keyword) for keyword in call.keywords]
+            calls.append((call.func.attr, args))
+    return calls
+
+
+def _cleanup_names() -> list[str]:
+    return [name for name, _ in main._ROOM_LISTEN_TASK_CLEANUPS]
 
 
 class TestRoomListenTaskCleanups(unittest.TestCase):
@@ -66,7 +73,7 @@ class TestRoomListenTaskCleanups(unittest.TestCase):
     def test_every_cleanup_name_exists_on_room(self):
         """A name that is gone is skipped silently by the workaround."""
         self.assertGreater(len(main._ROOM_LISTEN_TASK_CLEANUPS), 0)
-        for name in main._ROOM_LISTEN_TASK_CLEANUPS:
+        for name in _cleanup_names():
             with self.subTest(cleanup=name):
                 self.assertTrue(
                     hasattr(rtc.Room, name),
@@ -86,9 +93,9 @@ class TestRoomListenTaskCleanups(unittest.TestCase):
         Deliberately strict: a cleanup added upstream is one the workaround would
         stop performing, which is the same silent failure as a rename.
         """
-        upstream = _listen_task_cleanup_calls()
+        upstream = [name for name, _ in _listen_task_cleanup_calls()]
         self.assertEqual(
-            list(main._ROOM_LISTEN_TASK_CLEANUPS),
+            _cleanup_names(),
             upstream,
             f"main._ROOM_LISTEN_TASK_CLEANUPS is out of sync with the tail of "
             f"rtc.Room._listen_task in rtc {_rtc_version()}. Upstream now runs "
@@ -96,11 +103,28 @@ class TestRoomListenTaskCleanups(unittest.TestCase):
             f"room gets the same cleanup a normal 'eos' close would.",
         )
 
+    def test_cleanup_arguments_match_the_listen_task_tail(self):
+        """Wrong arguments make a cleanup fail inside the workaround's
+        `contextlib.suppress(Exception)`, so it is skipped silently, like a renamed
+        one. Compares the source of upstream's arguments with the repr of ours."""
+        upstream = dict(_listen_task_cleanup_calls())
+        for name, make_args in main._ROOM_LISTEN_TASK_CLEANUPS:
+            if name not in upstream:
+                continue  # reported by test_cleanup_names_match_the_listen_task_tail
+            with self.subTest(cleanup=name):
+                self.assertEqual(
+                    [repr(arg) for arg in make_args()],
+                    upstream[name],
+                    f"rtc.Room._listen_task calls {name}({', '.join(upstream[name])}) "
+                    f"in rtc {_rtc_version()}; update the arguments of that entry "
+                    f"of main._ROOM_LISTEN_TASK_CLEANUPS.",
+                )
+
     def test_cleanups_may_be_sync_or_async(self):
         """Both shapes must stay handled: 1.1.13's was async, 1.1.18's are sync."""
         shapes = {
             name: inspect.iscoroutinefunction(getattr(rtc.Room, name))
-            for name in main._ROOM_LISTEN_TASK_CLEANUPS
+            for name in _cleanup_names()
             if hasattr(rtc.Room, name)
         }
         self.assertTrue(shapes, "no cleanup resolved on rtc.Room")

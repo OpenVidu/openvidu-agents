@@ -1,1 +1,0 @@
-TODO: remove folder openvidu-agents/speech-processing/patches whenever PR https://github.com/livekit/agents/pull/7225 is included in the livekit-agents version in use

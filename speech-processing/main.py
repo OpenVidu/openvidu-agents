@@ -649,13 +649,18 @@ async def session_end(ctx: JobContext) -> None:
 # after an 'eos' break. _release_room_ffi_subscription replays them when it cancels
 # a listen task that will never see one, so this must stay in sync with that tail:
 # livekit 1.1.18 replaced the single async _drain_data_stream_tasks() of 1.1.13 with
-# the two sync _error_stream_readers() / _dispose_open_stream_writers(). A name that
-# disappears is skipped silently there, so test_rtc_private_api.py checks this tuple
-# against the installed livekit rtc instead.
+# the two sync _error_stream_readers() / _dispose_open_stream_writers(). A wrong name
+# or argument is skipped silently there, so test_rtc_private_api.py checks this tuple
+# against the installed livekit rtc instead. Arguments come from a factory so that
+# every room gets its own exception.
 _ROOM_LISTEN_TASK_CLEANUPS = (
-    "_drain_rpc_invocation_tasks",
-    "_error_stream_readers",
-    "_dispose_open_stream_writers",
+    ("_drain_rpc_invocation_tasks", lambda: ()),
+    ("_error_stream_readers", lambda: ()),
+    ("_dispose_open_stream_writers", lambda: ()),
+    (
+        "_fail_first_sid",
+        lambda: (RuntimeError("room disconnected before receiving sid"),),
+    ),
 )
 
 
@@ -692,11 +697,11 @@ async def _release_room_ffi_subscription(room: rtc.Room) -> None:
                 await asyncio.wait_for(asyncio.gather(task, return_exceptions=True), 5)
             # run the cleanups _listen_task's cancellation skipped (they only
             # run after an 'eos' break upstream), whether sync or async
-            for cleanup_name in _ROOM_LISTEN_TASK_CLEANUPS:
+            for cleanup_name, cleanup_args in _ROOM_LISTEN_TASK_CLEANUPS:
                 cleanup = getattr(room, cleanup_name, None)
                 if cleanup is not None:
                     with contextlib.suppress(Exception):
-                        result = cleanup()
+                        result = cleanup(*cleanup_args())
                         if inspect.isawaitable(result):
                             await result
         ffi_queue = getattr(room, "_ffi_queue", None)

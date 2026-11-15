@@ -8,8 +8,8 @@ ARG BASE_IMAGE=openvidu/agent-speech-processing-base:main
 # =============================================================================
 FROM ${BASE_IMAGE} AS builder
 
-# git: pip installs openviduagentutils from GitHub, and patches/apply.sh uses
-# "git apply". gcc/g++: packages without a prebuilt wheel for this platform.
+# git: pip installs openviduagentutils from GitHub. gcc/g++: packages without a
+# prebuilt wheel for this platform.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     gcc \
@@ -22,12 +22,6 @@ ENV PATH="/opt/venv/bin:$PATH"
 # Copy cloud requirements and install dependencies
 COPY requirements-base.txt requirements-cloud.txt ./
 RUN pip install --no-cache-dir -r requirements-cloud.txt
-
-# TODO: apply the pending upstream fixes to the installed livekit-agents (see patches/apply.sh)
-# Remove these two lines below (with folder speech-processing/patches) whenever the livekit-agents
-# dependency in use includes https://github.com/livekit/agents/pull/7225
-COPY patches ./patches
-RUN ./patches/apply.sh && rm -rf ./patches
 
 # The runtime image installs nothing: drop pip (and the copies of urllib3,
 # msgpack, certifi and pkg_resources it vendors) from the virtualenv

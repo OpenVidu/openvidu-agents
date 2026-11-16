@@ -44,6 +44,7 @@ from livekit.agents import (
     JobContext,
     JobExecutorType,
     JobProcess,
+    JobRequest,
     cli,
     stt,
     WorkerPermissions,
@@ -61,7 +62,7 @@ from stt_impl import (
     warn_about_retired_keys,
 )
 from vad_stt_wrapper import VADTriggeredSTT
-from openviduagentutils.openvidu_agent import OpenViduAgent
+from openviduagentutils.openvidu_agent import OpenViduAgent, openvidu_agent_attributes
 from openviduagentutils.config_manager import ConfigManager
 from livekit.agents.types import NotGiven
 
@@ -627,6 +628,12 @@ async def main_entrypoint(ctx: JobContext) -> None:
     await entrypoint(ctx)
 
 
+async def accept_job(req: JobRequest) -> None:
+    """Accepts every job as the default handler does, marking the agent participant as an
+    OpenVidu agent. A constant, not agent_name, which users can set to anything."""
+    await req.accept(attributes=openvidu_agent_attributes("speech-processing"))
+
+
 async def session_end(ctx: JobContext) -> None:
     """Close all sessions BEFORE the framework calls room.disconnect().
 
@@ -1167,12 +1174,15 @@ if __name__ == "__main__":
     # Set agent name for explicit dispatch only in manual processing mode.
     if agent_config["live_captions"]["processing"] == "manual":
         server.rtc_session(
-            type=ServerType.ROOM, agent_name=agent_name, on_session_end=session_end
+            type=ServerType.ROOM,
+            agent_name=agent_name,
+            on_request=accept_job,
+            on_session_end=session_end,
         )(main_entrypoint)
     else:
-        server.rtc_session(type=ServerType.ROOM, on_session_end=session_end)(
-            main_entrypoint
-        )
+        server.rtc_session(
+            type=ServerType.ROOM, on_request=accept_job, on_session_end=session_end
+        )(main_entrypoint)
 
     # Preload local models into memory before starting the server.
     # THREAD only: it ensures all thread-based agents share the same model

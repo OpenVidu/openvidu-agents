@@ -9,6 +9,15 @@ from dotenv import load_dotenv
 
 T = TypeVar("T", bound=Enum)
 
+# Participant attribute that marks an OpenVidu agent (allows telling them apart from other agents)
+OPENVIDU_AGENT_ATTRIBUTE = "openvidu.agent"
+
+
+def openvidu_agent_attributes(agent_type: str) -> dict[str, str]:
+    """Participant attributes an OpenVidu agent accepts its jobs with (agent_type: e.g. "speech-processing")."""
+    return {OPENVIDU_AGENT_ATTRIBUTE: agent_type}
+
+
 # Singleton pattern for OpenViduAgent
 openvidu_agent = None
 

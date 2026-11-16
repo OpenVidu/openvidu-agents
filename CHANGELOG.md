@@ -6,6 +6,12 @@ built together with `openvidu-agents-pro`, and their changes are listed in its C
 
 ## [Unreleased]
 
+### Added
+
+- **OpenVidu agent mark**: the speech-processing agent joins every Room with the participant
+  attribute `openvidu.agent: speech-processing`, which tells it apart from any other LiveKit agent.
+  Its key and value come from `openviduagentutils` (`openvidu_agent_attributes`).
+
 ### Changed
 
 - **livekit-agents 1.8.12** (from 1.8.2), with every cloud STT plugin at the same version.

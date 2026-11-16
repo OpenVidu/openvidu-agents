@@ -44,7 +44,7 @@ on:
           - cuda12
           - cpu
       agent-image-id:
-        description: "AMI for the agent host. Empty: AWS_GITHUB_ACTIONS_GPU_AMI when accel=cuda12, else AWS_GITHUB_ACTIONS_AMI, falling back to the GPU AMI (the only one this repository can read; it boots fine without a GPU)"
+        description: "AMI for the agent host. Empty: AWS_GITHUB_ACTIONS_GPU_AMI when accel=cuda12, else AWS_GITHUB_ACTIONS_AMI, falling back to the GPU AMI (it boots fine without a GPU). Both are repository variables updated every week by openvidu-github-actions"
         type: string
         default: ""
         required: false

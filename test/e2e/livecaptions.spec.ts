@@ -63,19 +63,9 @@ const STT_AI_PROVIDERS = [
     },
   },
   {
-    openai: {
-      api_key: process.env.OPENAI_API_KEY,
-    },
-  },
-  {
     speechmatics: {
       api_key: process.env.SPEECHMATICS_API_KEY,
       max_concurrent_transcriptions: 2, // https://docs.speechmatics.com/speech-to-text/realtime/limits
-    },
-  },
-  {
-    mistralai: {
-      api_key: process.env.MISTRALAI_API_KEY,
     },
   },
   {
@@ -162,6 +152,19 @@ const STT_AI_PROVIDERS = [
   //   clova: {
   //     api_key:
   //       process.env.CLOVA_API_KEY,
+  //   },
+  // },
+  // REASON THIS PROVIDER CAN'T BE AUTOMATICALLY TESTED: no free tier available (API keys require a paid subscription plan)
+  // {
+  //   mistralai: {
+  //     api_key: process.env.MISTRALAI_API_KEY,
+  //   },
+  // },
+  // REASON THIS PROVIDER CAN'T BE AUTOMATICALLY TESTED: no free tier available (API usage is prepaid).
+  // Its STT class is still covered by azure_openai
+  // {
+  //   openai: {
+  //     api_key: process.env.OPENAI_API_KEY,
   //   },
   // },
 ] as const;

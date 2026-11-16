@@ -194,9 +194,7 @@ jobs:
           GLADIA_API_KEY: ${{ secrets.GLADIA_API_KEY }}
           DEEPGRAM_API_KEY: ${{ secrets.DEEPGRAM_API_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           SPEECHMATICS_API_KEY: ${{ secrets.SPEECHMATICS_API_KEY }}
-          MISTRALAI_API_KEY: ${{ secrets.MISTRALAI_API_KEY }}
           CARTESIA_API_KEY: ${{ secrets.CARTESIA_API_KEY }}
           SONIOX_API_KEY: ${{ secrets.SONIOX_API_KEY }}
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
@@ -204,6 +202,8 @@ jobs:
           ELEVEN_API_KEY: ${{ secrets.ELEVEN_API_KEY }}
           SIMPLISMART_API_KEY: ${{ secrets.SIMPLISMART_API_KEY }}
           # FAL_API_KEY: ${{ secrets.FAL_API_KEY }}
+          # MISTRALAI_API_KEY: ${{ secrets.MISTRALAI_API_KEY }}
+          # OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           # CLOVA_API_KEY: ${{ secrets.CLOVA_API_KEY }}
 
       - name: Publish Test Report

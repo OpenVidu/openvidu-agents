@@ -113,7 +113,8 @@ jobs:
         run: |
           cd openvidu-agents-pro/speech-processing
           export GITHUB_TOKEN=${{ secrets.OPENVIDU_GITHUB_TOKEN }}
-          ./build-sherpa.sh --no-cache --local-only --accel cuda12 --platform linux/amd64
+          # --local-only builds for the runner's own architecture (amd64 or arm64)
+          ./build-sherpa.sh --no-cache --local-only --accel cuda12
 
       - name: Install openvidu-testapp dependencies
         working-directory: ./openvidu/openvidu-testapp

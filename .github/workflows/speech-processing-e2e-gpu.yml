@@ -1,5 +1,7 @@
 # GPU variant of "speech-processing-e2e.yml". Runs ONLY the GPU-compatible local
 # provider tests (sherpa) on an AWS NVIDIA GPU EC2 runner.
+# arch=arm64 covers the arm64 cuda12 sherpa image: it runs only the Nemotron float32
+# test on a g5g (Graviton + T4G) in eu-south-2, as eu-west-1 has no ARM GPU instance.
 name: Speech Processing agent E2E tests (GPU)
 on:
   workflow_dispatch:
@@ -9,13 +11,20 @@ on:
         type: boolean
         default: true
         required: true
+      arch:
+        description: "Runner architecture. arm64 runs only the Nemotron float32 test, on a g5g (Graviton + T4G). amd64 runs all tests on a g4dn.xlarge (T4)."
+        type: choice
+        default: "amd64"
+        options:
+          - amd64
+          - arm64
       aws-instance-type:
-        description: "AWS EC2 instance type (must be an NVIDIA GPU instance)"
+        description: "AWS EC2 instance type (must be an NVIDIA GPU instance). Defaults to g4dn.xlarge (amd64) or g5g.2xlarge (arm64)"
         type: string
-        default: "g4dn.xlarge"
+        default: ""
         required: false
       aws-image-id:
-        description: "AWS AMI id to boot the runner from. Must be GPU-capable (NVIDIA driver + NVIDIA Container Toolkit preinstalled, e.g. an AWS Deep Learning Base AMI). Defaults to the AWS_GITHUB_ACTIONS_GPU_AMI repo/org variable, falling back to AWS_GITHUB_ACTIONS_AMI."
+        description: "AWS AMI id to boot the runner from. Must be GPU-capable (NVIDIA driver + NVIDIA Container Toolkit preinstalled, e.g. an AWS Deep Learning Base AMI). Defaults to the AWS_GITHUB_ACTIONS_GPU_AMI repo/org variable, falling back to AWS_GITHUB_ACTIONS_AMI (amd64), or to the latest AWS Deep Learning ARM64 Base GPU AMI (arm64)."
         type: string
         default: ""
         required: false
@@ -62,20 +71,31 @@ jobs:
       label: ${{ steps.start-ec2-runner.outputs.label }}
       ec2-instance-id: ${{ steps.start-ec2-runner.outputs.ec2-instance-id }}
     steps:
+      - name: Check the eu-south-2 runner secrets
+        if: ${{ inputs.use-aws && inputs.arch == 'arm64' }}
+        env:
+          SUBNET_ID: ${{ secrets.AWS_SUBNET_ID_EU_SOUTH_2 }}
+          SECURITY_GROUP_ID: ${{ secrets.AWS_SECURITY_GROUP_ID_EU_SOUTH_2 }}
+        run: |
+          if [ -z "$SUBNET_ID" ] || [ -z "$SECURITY_GROUP_ID" ]; then
+            echo "::error::arch=arm64 needs the AWS_SUBNET_ID_EU_SOUTH_2 and AWS_SECURITY_GROUP_ID_EU_SOUTH_2 secrets"
+            exit 1
+          fi
+
       - name: Start AWS EC2 Runner
         id: start-ec2-runner
         uses: OpenVidu/actions/start-aws-runner@000cbf6a8b545a5588f11028f71fe18a54c18579 # v1.0.27
         if: ${{ inputs.use-aws }}
         with:
-          aws-instance-type: ${{ inputs.aws-instance-type || 'g4dn.xlarge' }}
+          aws-instance-type: ${{ inputs.aws-instance-type || (inputs.arch == 'arm64' && 'g5g.2xlarge' || 'g4dn.xlarge') }}
           aws-volume-size: "150"
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region: ${{ inputs.arch == 'arm64' && 'eu-south-2' || secrets.AWS_REGION }}
           github-token: ${{ secrets.OPENVIDU_GITHUB_TOKEN }}
-          ec2-image-id: ${{ inputs.aws-image-id || vars.AWS_GITHUB_ACTIONS_GPU_AMI || vars.AWS_GITHUB_ACTIONS_AMI }}
-          subnet-id: ${{ secrets.AWS_SUBNET_ID }}
-          security-group-id: ${{ secrets.AWS_SECURITY_GROUP_ID }}
+          ec2-image-id: ${{ inputs.aws-image-id || (inputs.arch == 'arm64' && 'resolve:ssm:/aws/service/deeplearning/ami/arm64/base-oss-nvidia-driver-gpu-ubuntu-24.04/latest/ami-id' || vars.AWS_GITHUB_ACTIONS_GPU_AMI || vars.AWS_GITHUB_ACTIONS_AMI) }}
+          subnet-id: ${{ inputs.arch == 'arm64' && secrets.AWS_SUBNET_ID_EU_SOUTH_2 || secrets.AWS_SUBNET_ID }}
+          security-group-id: ${{ inputs.arch == 'arm64' && secrets.AWS_SECURITY_GROUP_ID_EU_SOUTH_2 || secrets.AWS_SECURITY_GROUP_ID }}
           workflow-name: ${{ github.workflow }}
           repository-name: ${{ github.repository }}
 
@@ -91,7 +111,7 @@ jobs:
       docker-tag-agent-speech-processing: ${{ inputs.docker-tag-agent-speech-processing }}
       rtc-engine: ${{ inputs.rtc-engine }}
       ref-openvidu-pro-mediasoup: ${{ inputs.ref-openvidu-pro-mediasoup }}
-      test-npm-script: test:e2e:gpu
+      test-npm-script: ${{ inputs.arch == 'arm64' && 'test:e2e:gpu:nemotron' || 'test:e2e:gpu' }}
       runs-on: ${{ needs.start-runner.outputs.label || 'ubuntu-latest' }}
       gpu: true
 
@@ -109,7 +129,7 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region: ${{ inputs.arch == 'arm64' && 'eu-south-2' || secrets.AWS_REGION }}
           github-token: ${{ secrets.OPENVIDU_GITHUB_TOKEN }}
           label: ${{ needs.start-runner.outputs.label }}
           ec2-instance-id: ${{ needs.start-runner.outputs.ec2-instance-id }}

@@ -9,3 +9,7 @@ livekit-agents[aws,azure,google,groq,openai,deepgram,assemblyai,fal,clova,speech
 # livekit-plugins-clova pulls in pydub, which imports the stdlib `audioop` module.
 # `audioop` was removed in Python 3.13; audioop-lts is the official backport.
 audioop-lts; python_version >= "3.13"
+
+# aws-sdk-transcribe-streaming 0.13.0 renamed AsyncTranscribeStreamingClient, which
+# livekit-plugins-aws 1.8.12 imports: with it the AWS STT reports the SDK as not installed.
+aws-sdk-transcribe-streaming==0.12.0

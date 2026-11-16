@@ -29,4 +29,5 @@ built together with `openvidu-agents-pro`, and their changes are listed in its C
 - **Silero VAD from livekit-agents**: the VAD used with `use_silero_vad`, with providers that do not
   stream and with Speechmatics is now livekit-agents' own Silero VAD instead of the
   `livekit-plugins-silero` plugin. It segments speech the same way with less than half the CPU, and
-  the images no longer contain the plugin's ONNX Runtime (about 80 MB).
+  the images no longer contain the plugin's ONNX Runtime (about 80 MB). Providers that do not stream
+  now run one VAD per audio track instead of two.

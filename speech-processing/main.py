@@ -436,8 +436,9 @@ class MultiUserTranscriber:
             logging.info(
                 f"Provider {stt_impl.provider} does not support streaming. Wrapping with StreamAdapter"
             )
-            vad_model = self._get_vad_model()
-            stt_impl = stt.StreamAdapter(stt=stt_impl, vad=vad_model)
+            # The VAD goes to the adapter only: giving it to the agent too would run a second
+            # VAD stream on the same audio, used only to track whether the user is speaking.
+            stt_impl = stt.StreamAdapter(stt=stt_impl, vad=self._get_vad_model())
             # ######################################
             # TODO: use turn detection when required
             # ######################################

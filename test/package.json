@@ -23,5 +23,10 @@
   },
   "dependencies": {
     "yaml": "^2.9.1"
+  },
+  "overrides": {
+    "ctrf": {
+      "glob": "^14.0.6"
+    }
   }
 }

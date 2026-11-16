@@ -83,11 +83,15 @@ function providerConfig(): Record<string, any> {
   // defaults are the Nemotron export of the accel for sherpa and the large
   // English model for vosk. Only the multilingual NeMo transducer takes a
   // language prompt; zipformer and vosk models ignore the option.
+  // CAPACITY_SILERO_VAD=true runs the provider with use_silero_vad.
   const provider = process.env.CAPACITY_PROVIDER || "sherpa";
   const model =
     process.env.CAPACITY_MODEL ||
     (provider === "vosk" ? "vosk-model-en-us-0.22-lgraph" : SHERPA_NEMOTRON_MODEL);
-  const config: Record<string, any> = { model, use_silero_vad: false };
+  const config: Record<string, any> = {
+    model,
+    use_silero_vad: process.env.CAPACITY_SILERO_VAD === "true",
+  };
   if (provider === "sherpa" && model.includes("nemotron")) {
     config.language = "en";
   }

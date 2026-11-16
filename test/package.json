@@ -5,7 +5,7 @@
     "test:e2e": "playwright test --project=livecaptions --project=livecaptions-processing-dispatch --project=livecaptions-wrong-license",
     "test:e2e:memory": "playwright test --project=livecaptions-memory-usage",
     "test:e2e:gpu": "STT_ACCEL=cuda12 playwright test --project=livecaptions --grep sherpa",
-    "test:e2e:gpu:nemotron": "STT_ACCEL=cuda12 playwright test --project=livecaptions --grep \"sherpa-3 testing simple STT\"",
+    "test:e2e:gpu:arm64": "STT_ACCEL=cuda12 playwright test --project=livecaptions --grep \"sherpa-3 testing|sherpa-2 testing simple STT\"",
     "test:e2e:memory:gpu": "STT_ACCEL=cuda12 playwright test --project=livecaptions-memory-usage --grep sherpa",
     "capacity:headless": "ts-node --transpile-only capacity/headless-capacity-probe.ts",
     "capacity:agent-host": "ts-node --transpile-only capacity/agent-host.ts",

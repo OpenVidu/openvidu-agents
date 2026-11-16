@@ -1,7 +1,9 @@
 # GPU variant of "speech-processing-e2e.yml". Runs ONLY the GPU-compatible local
 # provider tests (sherpa) on an AWS NVIDIA GPU EC2 runner.
-# arch=arm64 covers the arm64 cuda12 sherpa image: it runs only the Nemotron float32
-# test on a g5g (Graviton + T4G) in eu-south-2, as eu-west-1 has no ARM GPU instance.
+# arch=arm64 covers the arm64 cuda12 sherpa image on a g5g (Graviton + T4G) in eu-south-2,
+# as eu-west-1 has no ARM GPU instance. It runs only three tests: Nemotron float32 with one
+# and several users, and kroko with Silero VAD (the only one loading pip's onnxruntime next
+# to sherpa's, with CUDA on).
 name: Speech Processing agent E2E tests (GPU)
 on:
   workflow_dispatch:
@@ -12,7 +14,7 @@ on:
         default: true
         required: true
       arch:
-        description: "Runner architecture. arm64 runs only the Nemotron float32 test, on a g5g (Graviton + T4G). amd64 runs all tests on a g4dn.xlarge (T4)."
+        description: "Runner architecture. arm64 runs on a g5g (Graviton + T4G). amd64 runs on a g4dn.xlarge (T4)."
         type: choice
         default: "amd64"
         options:
@@ -111,7 +113,7 @@ jobs:
       docker-tag-agent-speech-processing: ${{ inputs.docker-tag-agent-speech-processing }}
       rtc-engine: ${{ inputs.rtc-engine }}
       ref-openvidu-pro-mediasoup: ${{ inputs.ref-openvidu-pro-mediasoup }}
-      test-npm-script: ${{ inputs.arch == 'arm64' && 'test:e2e:gpu:nemotron' || 'test:e2e:gpu' }}
+      test-npm-script: ${{ inputs.arch == 'arm64' && 'test:e2e:gpu:arm64' || 'test:e2e:gpu' }}
       runs-on: ${{ needs.start-runner.outputs.label || 'ubuntu-latest' }}
       gpu: true
 

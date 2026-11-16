@@ -55,6 +55,10 @@ interface SttProviderConfig {
   maxVramMB?: number;
 }
 
+// Idle caps without a GPU are about 1.5x the idle measured in run 43931513117
+// (livekit-agents 1.8.12, no local inference preload): vosk 125-182 MiB, kroko
+// 233-249, Nemotron int8 1044, azure 344, aws 288, elevenlabs 251. The preload
+// (about +315 MiB) breaks every one of them except Nemotron's.
 const LOCAL_STT_PROVIDERS: SttProviderConfig[] = [
   // Local provider without VAD model
   {
@@ -62,7 +66,7 @@ const LOCAL_STT_PROVIDERS: SttProviderConfig[] = [
       model: "vosk-model-en-us-0.22-lgraph",
       use_silero_vad: false,
     },
-    maxIdleMemoryMB: 550,
+    maxIdleMemoryMB: 300,
     maxMemoryMB: 2300,
     maxTracks: 8,
     maxMemoryAfterTeardownMB: 700,
@@ -73,7 +77,7 @@ const LOCAL_STT_PROVIDERS: SttProviderConfig[] = [
       model: "sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06",
       use_silero_vad: false,
     },
-    maxIdleMemoryMB: process.env.STT_ACCEL ? 1000 : 700,
+    maxIdleMemoryMB: process.env.STT_ACCEL ? 1000 : 400,
     maxMemoryMB: process.env.STT_ACCEL ? 1500 : 900,
     maxTracks: 12,
     // GPU teardown is an absolute cap, not %-over-idle: CUDA host-side
@@ -92,7 +96,7 @@ const LOCAL_STT_PROVIDERS: SttProviderConfig[] = [
       model: "vosk-model-en-us-0.22-lgraph",
       use_silero_vad: true,
     },
-    maxIdleMemoryMB: 550,
+    maxIdleMemoryMB: 300,
     maxMemoryMB: 2500,
     maxTracks: 8,
     maxMemoryAfterTeardownMB: 700,
@@ -109,7 +113,7 @@ const LOCAL_STT_PROVIDERS: SttProviderConfig[] = [
       model: "sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06",
       use_silero_vad: true,
     },
-    maxIdleMemoryMB: process.env.STT_ACCEL ? 600 : 700,
+    maxIdleMemoryMB: process.env.STT_ACCEL ? 600 : 400,
     maxMemoryMB: process.env.STT_ACCEL ? 3000 : 2000,
     maxTracks: 12,
     // GPU: absolute cap (see the VAD-disabled sherpa entry above)
@@ -148,7 +152,7 @@ const CLOUD_STT_PROVIDERS: SttProviderConfig[] = [
       speech_key: process.env.AZURE_SPEECH_KEY,
       speech_region: process.env.AZURE_SPEECH_REGION,
     },
-    maxIdleMemoryMB: 750,
+    maxIdleMemoryMB: 550,
     maxMemoryMB: 1000,
     maxTracks: 12,
     maxMemoryAfterTeardownMB: "5%",
@@ -160,7 +164,7 @@ const CLOUD_STT_PROVIDERS: SttProviderConfig[] = [
       aws_secret_access_key: process.env.AWS_SECRET_ACCESS_KEY,
       aws_default_region: process.env.AWS_DEFAULT_REGION,
     },
-    maxIdleMemoryMB: 750,
+    maxIdleMemoryMB: 450,
     maxMemoryMB: 1000,
     maxTracks: 12,
     maxMemoryAfterTeardownMB: "5%",
@@ -170,7 +174,7 @@ const CLOUD_STT_PROVIDERS: SttProviderConfig[] = [
     elevenlabs: {
       api_key: process.env.ELEVEN_API_KEY,
     },
-    maxIdleMemoryMB: 750,
+    maxIdleMemoryMB: 400,
     maxMemoryMB: 2000,
     maxTracks: 12,
     maxMemoryAfterTeardownMB: "5%",

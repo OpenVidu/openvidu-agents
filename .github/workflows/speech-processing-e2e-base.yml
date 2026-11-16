@@ -116,6 +116,32 @@ jobs:
           # --local-only builds for the runner's own architecture (amd64 or arm64)
           ./build-sherpa.sh --no-cache --local-only --accel cuda12
 
+      # The image must hold our prebuilt cuda12 wheel for the runner's architecture: version
+      # "<sherpa>+cuda" (k2-fsa's are "+cuda12.cudnn9", PyPI's have no CUDA) bundling the ORT
+      # version pinned in Dockerfile.sherpa-base, with its CUDA provider library.
+      - name: Check the sherpa-onnx wheel of the -sherpa-cuda12 image
+        if: ${{ inputs.gpu }}
+        working-directory: ./openvidu-agents-pro/speech-processing
+        run: |
+          sherpa=$(sed -n 's/^ARG SHERPA_ONNX_VERSION=//p' Dockerfile.sherpa-base)
+          ort=$(sed -n 's/^ARG SHERPA_ONNX_GPU_ONNXRUNTIME_VERSION=//p' Dockerfile.sherpa-base)
+          docker run --rm -i --entrypoint python3 openvidu/agent-speech-processing-sherpa-cuda12:main - "$sherpa" "$ort" <<'PY'
+          import ctypes, glob, os, platform, sys
+          import sherpa_onnx
+          want_sherpa, want_ort = sys.argv[1:]
+          lib_dir = os.path.join(os.path.dirname(sherpa_onnx.__file__), "lib")
+          F = ctypes.CFUNCTYPE(ctypes.c_char_p)
+          B = type("B", (ctypes.Structure,), {"_fields_": [("GetApi", ctypes.c_void_p), ("GetVersionString", F)]})
+          ort = ctypes.CDLL(glob.glob(lib_dir + "/libonnxruntime.so*")[0])
+          ort.OrtGetApiBase.restype = ctypes.POINTER(B)
+          ort_version = ort.OrtGetApiBase().contents.GetVersionString().decode()
+          cuda = bool(glob.glob(lib_dir + "/libonnxruntime_providers_cuda.so"))
+          print(f"{platform.machine()}: sherpa-onnx {sherpa_onnx.__version__}, bundled ORT {ort_version}, CUDA provider: {cuda}")
+          if sherpa_onnx.__version__ != f"{want_sherpa}+cuda" or ort_version != want_ort or not cuda:
+              print(f"::error::expected sherpa-onnx {want_sherpa}+cuda bundling ORT {want_ort} with its CUDA provider")
+              sys.exit(1)
+          PY
+
       - name: Install openvidu-testapp dependencies
         working-directory: ./openvidu/openvidu-testapp
         run: npm ci

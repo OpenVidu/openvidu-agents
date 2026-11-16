@@ -259,6 +259,34 @@ function providerModel(
   return (provider as any)[providerName]?.model ?? "";
 }
 
+/**
+ * On GPU runs the Nemotron float32 model must load onto the GPU. The sherpa plugin
+ * logs how much GPU memory each model load took: its 2.4 GB of weights must show up
+ * there, or the CUDA provider silently fell back to the CPU.
+ */
+function expectModelOnGpu(providerLabel: string, model: string) {
+  if (!process.env.STT_ACCEL || model !== SHERPA_NEMOTRON_MODEL) {
+    return;
+  }
+  const logs = execCommand("docker logs agent-speech-processing 2>&1");
+  const deltas = [
+    ...logs.matchAll(
+      /GPU \[\d+\] memory after model load: \d+ MiB \(delta: \+?(-?\d+) MiB\)/g,
+    ),
+  ].map((match) => Number(match[1]));
+  console.log(
+    `GPU RESULT provider=${providerLabel} model=${model} load_delta_mib=${deltas.join(",") || "none"}`,
+  );
+  expect(
+    deltas.length,
+    "the agent logged no GPU memory after loading the model",
+  ).toBeGreaterThan(0);
+  expect(
+    Math.max(...deltas),
+    "the model's weights did not reach the GPU (silent CPU fallback)",
+  ).toBeGreaterThanOrEqual(1000);
+}
+
 describeProviderTests(
   "Single user STT tests",
   ({ provider, providerName, providerLabel }) => {
@@ -338,6 +366,7 @@ describeProviderTests(
         lastFinalEventText,
         providerModel(provider, providerName),
       );
+      expectModelOnGpu(providerLabel, providerModel(provider, providerName));
     });
   },
 );
@@ -402,6 +431,7 @@ describeProviderTests(
           providerModel(provider, providerName),
         );
       }
+      expectModelOnGpu(providerLabel, providerModel(provider, providerName));
     });
   },
 );

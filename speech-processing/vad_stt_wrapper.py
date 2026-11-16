@@ -9,9 +9,10 @@ have slower internal endpointing compared to cloud-based STTs.
 
 Usage:
     from vad_stt_wrapper import VADTriggeredSTT
-    from livekit.plugins import vosk, silero
+    from livekit.agents import inference
+    from livekit.plugins import vosk
 
-    vad_model = silero.VAD.load()
+    vad_model = inference.VAD(min_silence_duration=0.55)  # Silero, from livekit-agents
     base_stt = vosk.STT(model_path="...")
 
     # Create a VAD-triggered STT that flushes on VAD END_OF_SPEECH

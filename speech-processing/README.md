@@ -132,10 +132,10 @@ live_captions:
 
 #### Step 5: Install Dependencies
 
-Add the plugin to `requirements.txt`:
+Add the plugin to `requirements-cloud.txt`:
 
 ```txt
-livekit-agents[silero,turn_detector,...,newprovider]==1.8.12
+livekit-agents[aws,azure,...,newprovider]==1.8.12
 ```
 
 Or install separately:

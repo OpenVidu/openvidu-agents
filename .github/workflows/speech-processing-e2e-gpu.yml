@@ -2,8 +2,8 @@
 # provider tests (sherpa) on an AWS NVIDIA GPU EC2 runner.
 # arch=arm64 covers the arm64 cuda12 sherpa image on a g5g (Graviton + T4G) in eu-south-2,
 # as eu-west-1 has no ARM GPU instance. It runs only three tests: Nemotron float32 with one
-# and several users, and kroko with Silero VAD (the only one loading pip's onnxruntime next
-# to sherpa's, with CUDA on).
+# and several users, and kroko with Silero VAD (the only one also running the VAD next to
+# sherpa's CUDA provider).
 name: Speech Processing agent E2E tests (GPU)
 on:
   workflow_dispatch:

@@ -110,6 +110,19 @@ def _require_plugin(plugin_name: str):
 _cached_silero_vad = None
 _vad_load_lock = threading.Lock()
 
+# livekit-agents' own Silero VAD (livekit-local-inference) defaults to 0.25 s of silence to end
+# speech; 0.55 s keeps the segmentation of the livekit-plugins-silero plugin it replaces.
+SILERO_MIN_SILENCE_DURATION = 0.55
+
+
+def load_silero_vad():
+    """A new Silero VAD, with its model loaded now rather than in the first job."""
+    import livekit.local_inference
+    from livekit.agents import inference
+
+    livekit.local_inference.init_vad()
+    return inference.VAD(min_silence_duration=SILERO_MIN_SILENCE_DURATION)
+
 
 def set_cached_silero_vad(vad_model) -> None:
     global _cached_silero_vad
@@ -134,8 +147,7 @@ def _get_cached_silero_vad(load_if_missing: bool = False):
         return _cached_silero_vad
 
     # Only load if explicitly requested
-    silero = _load_plugin("silero") if load_if_missing else None
-    if load_if_missing and silero is not None:
+    if load_if_missing:
         with _vad_load_lock:
             # Double-check: another thread may have loaded it while we waited for the lock
             if _cached_silero_vad is not None:
@@ -145,7 +157,7 @@ def _get_cached_silero_vad(load_if_missing: bool = False):
             logging.info(
                 "Loading Silero VAD model on-demand. Will be cached for reuse across all threads"
             )
-            _cached_silero_vad = silero.VAD.load()
+            _cached_silero_vad = load_silero_vad()
             return _cached_silero_vad
 
     return None
@@ -1257,17 +1269,12 @@ def get_vosk_stt_impl(agent_config) -> stt.STT:
     base_stt = vosk.STT(**kwargs)
 
     # Optionally wrap with VADTriggeredSTT to flush final transcripts based on VAD
-    silero = _load_plugin("silero") if use_silero_vad is True else None
-    if use_silero_vad is True and silero is not None:
+    if use_silero_vad is True:
         logging.info(
             "vosk.use_silero_vad=true - Using VAD wrapper around Vosk STT. Final transcripts will be forced by Silero VAD detection"
         )
         vad_model = _get_cached_silero_vad(load_if_missing=True)
         return VADTriggeredSTT(stt_impl=base_stt, vad_impl=vad_model)
-    elif use_silero_vad is True and silero is None:
-        logging.warning(
-            "use_silero_vad=true but silero plugin not available, using Vosk without VAD wrapper"
-        )
     elif use_silero_vad is False:
         logging.info(
             "vosk.use_silero_vad=false - Not using VAD wrapper for Vosk STT. Final transcripts will be triggered by Vosk EOU detection"
@@ -1430,8 +1437,7 @@ def get_sherpa_stt_impl(agent_config) -> stt.STT:
     base_stt = sherpa.STT(**kwargs)
 
     # Optionally wrap with VADTriggeredSTT to flush final transcripts based on VAD
-    silero = _load_plugin("silero") if use_silero_vad is True else None
-    if use_silero_vad is True and silero is not None:
+    if use_silero_vad is True:
         logging.info(
             "sherpa.use_silero_vad=true - Using VAD wrapper around sherpa STT. Final transcripts will be forced by Silero VAD detection"
         )
@@ -1440,10 +1446,6 @@ def get_sherpa_stt_impl(agent_config) -> stt.STT:
             stt_impl=base_stt,
             vad_impl=vad_model,
             flush_delay=0.4,  # Give Sherpa 400ms to catch up after VAD detection
-        )
-    elif use_silero_vad is True and silero is None:
-        logging.warning(
-            "use_silero_vad=true but silero plugin not available, using sherpa without VAD wrapper"
         )
     elif use_silero_vad is False:
         logging.info(

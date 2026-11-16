@@ -23,3 +23,10 @@ built together with `openvidu-agents-pro`, and their changes are listed in its C
   base image now needs `python -m ensurepip` or a build stage of its own.
 - **Vosk Python bindings** updated to the latest vosk-api commit, which fixes the model lookup by
   language and the cleanup of models and recognizers that failed to load.
+- **Less memory per agent**: the agent no longer preloads livekit-agents' own VAD and end-of-turn
+  models, which it never uses (with the vosk English model, about 124 MiB at idle instead of
+  338 MiB in 3.9.0). Set `LIVEKIT_AGENTS_PRELOAD_LOCAL_INFERENCE=1` to preload them again.
+- **Silero VAD from livekit-agents**: the VAD used with `use_silero_vad`, with providers that do not
+  stream and with Speechmatics is now livekit-agents' own Silero VAD instead of the
+  `livekit-plugins-silero` plugin. It segments speech the same way with less than half the CPU, and
+  the images no longer contain the plugin's ONNX Runtime (about 80 MB).

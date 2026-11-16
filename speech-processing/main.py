@@ -11,6 +11,11 @@ import signal
 import sys
 import time
 
+# livekit-agents preloads its local VAD and end-of-turn models in every worker, about 315 MiB
+# with livekit-agents 1.8.12. This agent never uses the end-of-turn model and loads the VAD only
+# when its provider needs it (stt_impl.load_silero_vad), so skip that unless the env says otherwise.
+os.environ.setdefault("LIVEKIT_AGENTS_PRELOAD_LOCAL_INFERENCE", "0")
+
 
 def _is_job_subprocess() -> bool:
     """True when called inside a job child process (JobExecutorType.PROCESS).
@@ -57,6 +62,7 @@ from livekit import rtc
 
 from stt_impl import (
     get_stt_impl,
+    load_silero_vad,
     set_cached_silero_vad,
     stt_provider_requires_vad,
     warn_about_retired_keys,
@@ -969,10 +975,7 @@ def _preload_silero_vad() -> None:
     """
     try:
         logging.info("Preloading Silero VAD model for shared thread-based execution...")
-        from livekit.plugins import silero
-
-        vad_model = silero.VAD.load()
-        set_cached_silero_vad(vad_model)
+        set_cached_silero_vad(load_silero_vad())
         logging.info(
             "Silero VAD model preloaded successfully. Will be shared across all agent threads"
         )
@@ -1069,10 +1072,6 @@ if __name__ == "__main__":
 
     # If calling "python main.py download-files" do not initialize the OpenViduAgent
     if len(sys.argv) > 1 and sys.argv[1] == "download-files":
-        from livekit.plugins import silero
-
-        silero.VAD.load()
-
         # ######################################
         # TODO: use turn detection when required
         # ######################################
@@ -1139,13 +1138,6 @@ if __name__ == "__main__":
         server_kwargs["initialize_process_timeout"] = (
             120.0 if is_local_provider else 60.0
         )
-        if provider_requires_vad:
-            # Import (only) the silero plugin in the supervisor so it gets
-            # registered with livekit and therefore included in the forkserver
-            # preload list: job subprocesses then inherit the module pages via
-            # copy-on-write instead of each paying the full cold import. The
-            # VAD model itself is still loaded per child in prewarm().
-            import livekit.plugins.silero  # noqa: F401
 
     server = AgentServer(
         job_executor_type=job_executor_type,

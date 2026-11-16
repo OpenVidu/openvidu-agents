@@ -101,12 +101,32 @@ jobs:
         if: ${{ !inputs.gpu && inputs.docker-tag-agent-speech-processing == '' }}
         run: |
           cd openvidu-agents/speech-processing
-          docker build --no-cache -f Dockerfile.base -t openvidu/agent-speech-processing-base:main .
-          docker build --no-cache -f Dockerfile.cloud -t openvidu/agent-speech-processing-cloud:main .
-          ./build-vosk.sh --no-cache --local-only
+          # The base image carries the agent code. It gets a name that does not exist on Docker
+          # Hub, so the cloud and vosk builds can only use this one: under the published name the
+          # cloud build took the published base, and with it the last released code.
+          base=openvidu-e2e/agent-speech-processing-base:local
+          docker build --no-cache -f Dockerfile.base -t "$base" .
+          docker buildx build --builder default --load --no-cache --build-arg BASE_IMAGE="$base" \
+            -f Dockerfile.cloud -t openvidu/agent-speech-processing-cloud:main .
+          ./build-vosk.sh --no-cache --local-only --parent-base-image "$base"
           cd ../../openvidu-agents-pro/speech-processing
           export GITHUB_TOKEN=${{ secrets.OPENVIDU_GITHUB_TOKEN }}
           ./build-sherpa.sh --no-cache --local-only
+
+      - name: Check the cloud and vosk images hold the checked-out code
+        if: ${{ !inputs.gpu && inputs.docker-tag-agent-speech-processing == '' }}
+        working-directory: ./openvidu-agents/speech-processing
+        run: |
+          expected=$(sha256sum main.py stt_impl.py vad_stt_wrapper.py)
+          for image in openvidu/agent-speech-processing-cloud:main openvidu/agent-speech-processing-vosk:main; do
+            actual=$(docker run --rm --entrypoint sh "$image" -c 'cd /app && sha256sum main.py stt_impl.py vad_stt_wrapper.py')
+            if [ "$actual" != "$expected" ]; then
+              echo "::error::$image does not hold the checked-out agent code"
+              diff <(echo "$expected") <(echo "$actual") || true
+              exit 1
+            fi
+          done
+          echo "Both images hold the checked-out agent code"
 
       - name: Build agent containers [-sherpa-cuda12]
         if: ${{ inputs.gpu && inputs.docker-tag-agent-speech-processing == '' }}

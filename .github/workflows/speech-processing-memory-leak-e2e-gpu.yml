@@ -64,7 +64,7 @@ jobs:
     steps:
       - name: Start AWS EC2 Runner
         id: start-ec2-runner
-        uses: OpenVidu/actions/start-aws-runner@b4ecef6892b666b42fe037bc66b696ac9807f205 # v1.0.26
+        uses: OpenVidu/actions/start-aws-runner@000cbf6a8b545a5588f11028f71fe18a54c18579 # v1.0.27
         if: ${{ inputs.use-aws }}
         with:
           aws-instance-type: ${{ inputs.aws-instance-type || 'g4dn.xlarge' }}
@@ -105,7 +105,7 @@ jobs:
     steps:
       - name: Stop AWS EC2 Runner
         id: stop-ec2-runner
-        uses: OpenVidu/actions/stop-aws-runner@b4ecef6892b666b42fe037bc66b696ac9807f205 # v1.0.26
+        uses: OpenVidu/actions/stop-aws-runner@000cbf6a8b545a5588f11028f71fe18a54c18579 # v1.0.27
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}

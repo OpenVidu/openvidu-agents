@@ -184,6 +184,7 @@ jobs:
         uses: ctrf-io/github-test-reporter@dbb08957b5b2af918b39136ab2c5532002c7649b # v1.3.2
         with:
           report-path: "openvidu-agents/test/test-results/ctrf-report.json"
+          use-suite-name: true
         if: always()
 
       - name: Upload failed test videos

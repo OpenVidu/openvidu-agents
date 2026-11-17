@@ -58,7 +58,9 @@ interface SttProviderConfig {
 // Idle caps without a GPU are about 1.5x the idle measured in run 43931513117
 // (livekit-agents 1.8.12, no local inference preload): vosk 125-182 MiB, kroko
 // 233-249, Nemotron int8 1044, azure 344, aws 288, elevenlabs 251. The preload
-// (about +315 MiB) breaks every one of them except Nemotron's.
+// (about +315 MiB) breaks every one of them except Nemotron's. With a GPU,
+// kroko and Nemotron float32 get 1800: the -sherpa-cuda12 agent idled at
+// 0.92-1.21 GiB in runs 43892264445 and 43974147351 (CUDA libraries).
 const LOCAL_STT_PROVIDERS: SttProviderConfig[] = [
   // Local provider without VAD model
   {
@@ -77,7 +79,7 @@ const LOCAL_STT_PROVIDERS: SttProviderConfig[] = [
       model: "sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06",
       use_silero_vad: false,
     },
-    maxIdleMemoryMB: process.env.STT_ACCEL ? 1000 : 400,
+    maxIdleMemoryMB: process.env.STT_ACCEL ? 1800 : 400,
     maxMemoryMB: process.env.STT_ACCEL ? 1500 : 900,
     maxTracks: 12,
     // GPU teardown is an absolute cap, not %-over-idle: CUDA host-side
@@ -124,9 +126,10 @@ const LOCAL_STT_PROVIDERS: SttProviderConfig[] = [
   },
   // Nemotron 3.5 through the sherpa provider (int8 on CPU, float32 on GPU; see
   // utils/models.ts). GPU, measured on a T4 (run 35590603737): idle 4.15 GiB
-  // RSS (ONNX Runtime keeps the 2.4 GB of float32 weights in host memory next
-  // to the GPU copy; the NeMo plugin idled at 2.76 GiB) and 3445 MiB VRAM,
-  // 4.41 GiB / 3871 MiB with 12 tracks, clean return to baseline. CPU (int8,
+  // RSS (ONNX Runtime kept the 2.4 GB of float32 weights in host memory next
+  // to the GPU copy) and 3445 MiB VRAM, 4.41 GiB / 3871 MiB with 12 tracks.
+  // Since sherpa-onnx 2.0.1 / ORT 1.32 it idles at 921 MiB RSS and 3437 MiB
+  // VRAM (run 43974147351). CPU (int8,
   // run 35601280770 on ubuntu-latest): idle 1.17 GiB, 1.30 GiB with 12 tracks,
   // clean return to baseline.
   {
@@ -135,7 +138,7 @@ const LOCAL_STT_PROVIDERS: SttProviderConfig[] = [
       language: "en",
       use_silero_vad: false,
     },
-    maxIdleMemoryMB: process.env.STT_ACCEL ? 4800 : 1600,
+    maxIdleMemoryMB: process.env.STT_ACCEL ? 1800 : 1600,
     maxMemoryMB: process.env.STT_ACCEL ? 5500 : 1800,
     maxTracks: 12,
     maxMemoryAfterTeardownMB: process.env.STT_ACCEL ? 5000 : "20%",

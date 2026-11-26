@@ -4,3 +4,25 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+  # The Playwright E2E tests. No workflow runs on pull requests: validate one by dispatching
+  # speech-processing-e2e.yml with ref-openvidu-agents set to its branch before merging it
+  - package-ecosystem: "npm"
+    directory: "/test"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "E2E tests"
+    ignore:
+      # ts-node 10 needs the TypeScript compiler API, which TypeScript 7 (native) does not ship
+      - dependency-name: "typescript"
+        update-types:
+          - "version-update:semver-major"
+      # A new Node.js types major is adopted by hand, together with the node-version of the E2E workflows
+      - dependency-name: "@types/node"
+        update-types:
+          - "version-update:semver-major"
+    groups:
+      minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
